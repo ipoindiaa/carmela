@@ -1,7 +1,10 @@
 // AutoBooks Pro — Frontend JavaScript
+document.documentElement.classList.add('js');
 
 document.addEventListener('DOMContentLoaded', function() {
+    restoreSidebarState();
     enhanceSearchableSelects();
+    initLazyTables();
 
     // Auto-dismiss alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(alert => {
@@ -13,13 +16,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
 
-    // Confirm dialogs
-    document.querySelectorAll('[data-confirm]').forEach(el => {
-        el.addEventListener('click', function(e) {
-            if (!confirm(this.dataset.confirm)) {
-                e.preventDefault();
-            }
-        });
+    // Confirm dialogs. Delegated so lazy-loaded rows behave the same way.
+    document.addEventListener('click', function(e) {
+        const el = e.target.closest('[data-confirm]');
+        if (!el) return;
+        if (!confirm(el.dataset.confirm)) {
+            e.preventDefault();
+        }
     });
 
     // Amount input formatting
@@ -84,6 +87,78 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+function restoreSidebarState() {
+    const nav = document.querySelector('.sidebar-nav');
+    if (!nav) return;
+
+    const key = 'autobooks.sidebar.scrollTop';
+    const saved = sessionStorage.getItem(key);
+    if (saved !== null) {
+        nav.scrollTop = parseInt(saved, 10) || 0;
+    } else {
+        document.querySelector('.sidebar .nav-link.active')?.scrollIntoView({ block: 'center' });
+    }
+
+    nav.addEventListener('scroll', () => {
+        sessionStorage.setItem(key, String(nav.scrollTop));
+    }, { passive: true });
+
+    document.querySelectorAll('.sidebar .nav-link').forEach((link) => {
+        link.addEventListener('click', () => {
+            sessionStorage.setItem(key, String(nav.scrollTop));
+        });
+    });
+}
+
+function initLazyTables() {
+    document.querySelectorAll('[data-lazy-list]').forEach((container) => {
+        const tbody = container.querySelector('tbody');
+        const sentinel = container.querySelector('[data-lazy-sentinel]');
+        if (!tbody || !sentinel || !container.dataset.nextUrl) return;
+
+        let loading = false;
+        const status = container.querySelector('[data-lazy-status]');
+
+        const loadNext = async () => {
+            if (loading || !container.dataset.nextUrl) return;
+            loading = true;
+            container.classList.add('is-loading-next');
+            if (status) status.textContent = 'Preparing more rows...';
+
+            try {
+                const response = await fetch(container.dataset.nextUrl, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!response.ok) throw new Error('Could not load next rows');
+                const payload = await response.json();
+
+                if (payload.html) {
+                    const template = document.createElement('template');
+                    template.innerHTML = payload.html.trim();
+                    tbody.append(...template.content.childNodes);
+                }
+
+                container.dataset.nextUrl = payload.next_url || '';
+                sentinel.hidden = !payload.next_url;
+                if (status) {
+                    status.textContent = payload.next_url ? 'More rows will load as you scroll.' : 'All rows loaded.';
+                }
+            } catch (error) {
+                if (status) status.textContent = 'Could not load more rows. Use refresh and try again.';
+            } finally {
+                loading = false;
+                container.classList.remove('is-loading-next');
+            }
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some(entry => entry.isIntersecting)) loadNext();
+        }, { rootMargin: '900px 0px 900px 0px' });
+
+        observer.observe(sentinel);
+    });
+}
 
 function enhanceSearchableSelects(scope = document) {
     scope.querySelectorAll('select.searchable-select:not([data-search-enhanced])').forEach(select => {

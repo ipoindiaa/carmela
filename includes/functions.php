@@ -192,7 +192,9 @@ function verifyCsrf() {
  * Pagination helper
  */
 function paginate($total, $perPage = 20, $currentPage = 1) {
-    $totalPages = ceil($total / $perPage);
+    $total = max(0, (int) $total);
+    $perPage = max(1, (int) $perPage);
+    $totalPages = max(1, (int) ceil($total / $perPage));
     $currentPage = max(1, min($currentPage, $totalPages));
     $offset = ($currentPage - 1) * $perPage;
     return [

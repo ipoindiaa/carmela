@@ -207,6 +207,11 @@ $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read'
                 </div>
             </div>
             <div class="header-right">
+                <?php if ($canWritePrimaryBooks): ?>
+                <a href="<?= APP_URL ?>transactions/new.php" class="btn btn-primary btn-sm top-entry-btn">
+                    <i class="ri-add-line"></i> New Entry
+                </a>
+                <?php endif; ?>
                 <div class="header-btn" style="font-size:12px; color: var(--text-muted);">
                     <i class="ri-calendar-line"></i>
                     FY <?= getFYLabel() ?>
