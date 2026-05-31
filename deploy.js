@@ -99,7 +99,7 @@ function buildRemoteDeployCommand() {
     '  fi',
     `  GIT_SSH_COMMAND='${remoteGitSsh}' git clone "${REMOTE_REPO}" .`,
     'fi',
-  ].join('; ');
+  ].join('\n');
 }
 
 function deploy() {
