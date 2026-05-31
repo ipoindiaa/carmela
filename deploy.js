@@ -46,7 +46,12 @@ function git(args, extraEnv = {}) {
 }
 
 function escapeForExpect(value) {
-  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\$/g, '\\$');
 }
 
 function sshExpect(remoteCommand) {
