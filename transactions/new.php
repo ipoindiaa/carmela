@@ -247,15 +247,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-add-circle-line"></i> New Entry</h1>
-    <p class="text-muted">Ek j screen mathi badhi entry: simple entry, car entry, salary, loan, ane motu split bill.</p>
+    <p class="text-muted">All entries from one screen: simple entry, car entry, salary, loan, and large split bills.</p>
 </div>
 
 <div class="entry-helper-strip">
     <div>
         <strong>Operator shortcut</strong>
-        <span>Large bill hoy to “Motu Bill / Split Entry” select karo, pachhi split modal open thashe.</span>
+        <span>For a large bill, select “Large Bill / Split Entry” and complete the split details in the modal.</span>
     </div>
-    <button type="button" class="btn btn-outline btn-sm" onclick="selectSplitEntryType()"><i class="ri-bill-line"></i> Split bill add karo</button>
+    <button type="button" class="btn btn-outline btn-sm" onclick="selectSplitEntryType()"><i class="ri-bill-line"></i> Add split bill</button>
 </div>
 
 <div class="card entry-card">
@@ -275,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE">🧾 Office / Business Expense</option>
-                            <option value="JOURNAL_VOUCHER">🧩 Motu Bill / Split Entry</option>
+                            <option value="JOURNAL_VOUCHER">🧩 Large Bill / Split Entry</option>
                             <option value="CONTRA_TRANSFER">🔄 Cash ↔ Bank Transfer</option>
                             <option value="GST_PAYMENT">📋 GST Payment</option>
                         </optgroup>
@@ -583,18 +583,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="split-bill-section" style="display:none;">
                 <div class="split-entry-panel">
                     <div>
-                        <h4><i class="ri-bill-line"></i> Motu Bill / Split Entry</h4>
-                        <p>Example: garage bill ek vaar pay thay, pan andar repair 4 car ma divide karvu hoy. Aa modal ma badha split add karo.</p>
+                        <h4><i class="ri-bill-line"></i> Large Bill / Split Entry</h4>
+                        <p>Example: pay one garage bill once, then split the repair amount across multiple cars or accounts.</p>
                     </div>
                     <div class="split-entry-summary">
                         <span>Total amount</span>
                         <strong id="split-total-display">₹0.00</strong>
                     </div>
                     <button type="button" class="btn btn-primary" onclick="openSplitEntryModal()">
-                        <i class="ri-add-box-line"></i> Split details kholo
+                        <i class="ri-add-box-line"></i> Open split details
                     </button>
                 </div>
-                <div class="form-hint">Aa entry save karta direct posted JV banse. Correction mate reversal entry use karvi.</div>
+                <div class="form-hint">Saving this entry creates a posted JV. Corrections should be done through reversal entries.</div>
             </div>
 
             <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; gap: 12px;">
@@ -611,30 +611,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="modal modal-wide">
         <div class="modal-header">
             <div>
-                <h3><i class="ri-bill-line"></i> Motu Bill Split Karo</h3>
-                <p class="modal-subtitle">Paise kai account mathi gaya/aaya ane saamne kai kai car/account ma divide karvu chhe.</p>
+                <h3><i class="ri-bill-line"></i> Split Large Bill</h3>
+                <p class="modal-subtitle">Choose the main cash/bank/GST account, then split the amount across cars or accounts.</p>
             </div>
             <button type="button" class="modal-close" onclick="closeModal('split-entry-modal')">&times;</button>
         </div>
         <div class="modal-body">
             <div class="split-guide">
-                <div><strong>1.</strong> Main form ma total amount nakho.</div>
-                <div><strong>2.</strong> Ahiya account/car search kari split rows add karo.</div>
-                <div><strong>3.</strong> Remaining zero thay pachhi Save Entry.</div>
+                <div><strong>1.</strong> Enter the total amount in the main form.</div>
+                <div><strong>2.</strong> Search accounts/cars and add split rows here.</div>
+                <div><strong>3.</strong> Save only when the remaining amount is zero.</div>
             </div>
 
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Entry direction</label>
                     <select name="jv_direction" class="form-control searchable-select" form="transaction-form">
-                        <option value="PAYMENT">Paise gaya / Payment</option>
-                        <option value="RECEIPT">Paise aaya / Receipt</option>
+                        <option value="PAYMENT">Payment / Money Out</option>
+                        <option value="RECEIPT">Receipt / Money In</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Split type</label>
                     <select name="jv_voucher_type" class="form-control searchable-select" form="transaction-form">
-                        <option value="SPLIT_BILL">Motu Bill Split</option>
+                        <option value="SPLIT_BILL">Large Bill Split</option>
                         <option value="GARAGE_BILL_SPLIT">Garage Bill Across Cars</option>
                         <option value="AUCTION_PURCHASE_SPLIT">Auction / Mela Purchase Split</option>
                         <option value="COMMON_EXPENSE_ALLOCATION">Common Expense Allocation</option>
@@ -664,7 +664,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="split-account-cell">
                         <label class="form-label">Account / Car *</label>
                         <button type="button" class="picker-trigger" onclick="openAccountPicker(this)">
-                            <span>Select karo - account/car search</span>
+                            <span>Select account/car</span>
                             <i class="ri-search-line"></i>
                         </button>
                     </div>
@@ -696,12 +696,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="modal-header">
             <div>
                 <h3><i class="ri-search-eye-line"></i> Account / Car Search</h3>
-                <p class="modal-subtitle">Name, code, car number, group thi search karo.</p>
+                <p class="modal-subtitle">Search by name, code, car number, or group.</p>
             </div>
             <button type="button" class="modal-close" onclick="closeModal('account-picker-modal')">&times;</button>
         </div>
         <div class="modal-body">
-            <input type="search" class="form-control picker-search" id="account-picker-search" placeholder="Type karo: car no, garage, expense, partner..." autocomplete="off">
+            <input type="search" class="form-control picker-search" id="account-picker-search" placeholder="Type: car no, garage, expense, partner..." autocomplete="off">
             <div class="picker-results" id="account-picker-results"></div>
         </div>
     </div>
@@ -784,7 +784,7 @@ function addSplitLine() {
     if (!container || !baseRow) return;
     const clone = baseRow.cloneNode(true);
     clone.querySelectorAll('input').forEach((input) => input.value = '');
-    clone.querySelector('.picker-trigger span').textContent = 'Select karo - account/car search';
+    clone.querySelector('.picker-trigger span').textContent = 'Select account/car';
     container.appendChild(clone);
     updateSplitTotals();
 }
@@ -795,7 +795,7 @@ function removeSplitLine(button) {
     if (!row) return;
     if (rows.length === 1) {
         row.querySelectorAll('input').forEach((input) => input.value = '');
-        row.querySelector('.picker-trigger span').textContent = 'Select karo - account/car search';
+        row.querySelector('.picker-trigger span').textContent = 'Select account/car';
     } else {
         row.remove();
     }
@@ -837,7 +837,7 @@ function renderAccountPickerResults(query) {
         .slice(0, 80);
 
     if (!matches.length) {
-        results.innerHTML = '<div class="picker-empty">No match. Spelling/carnumber check karo.</div>';
+        results.innerHTML = '<div class="picker-empty">No match. Check spelling or car number.</div>';
         return;
     }
 

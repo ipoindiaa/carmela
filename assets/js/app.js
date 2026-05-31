@@ -96,7 +96,7 @@ function enhanceSearchableSelects(scope = document) {
         const search = document.createElement('input');
         search.type = 'search';
         search.className = 'select-search-input';
-        search.placeholder = select.dataset.searchPlaceholder || 'Search karo...';
+        search.placeholder = select.dataset.searchPlaceholder || 'Search...';
         search.setAttribute('aria-label', 'Search options');
         wrapper.insertBefore(search, select);
 

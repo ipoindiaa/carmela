@@ -109,13 +109,13 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
     <div>
         <div class="dashboard-eyebrow">AutoBooks Pro Command Center</div>
         <h1>Roz ni entry fast, clear ane mistake-proof.</h1>
-        <p>Cash, bank, GST, car expense, partner, salary, loan ane motu split bill - badhu ek New Entry flow mathi manage karo.</p>
+        <p>Manage cash, bank, GST, car expenses, partners, salary, loans, and large split bills from one New Entry flow.</p>
         <div class="dashboard-hero-actions">
             <?php if ($canWritePrimaryBooks): ?>
-                <a href="transactions/new.php" class="btn btn-primary btn-lg"><i class="ri-add-circle-line"></i> Navi Entry</a>
-                <a href="transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-outline btn-lg"><i class="ri-bill-line"></i> Motu Bill Split</a>
+                <a href="transactions/new.php" class="btn btn-primary btn-lg"><i class="ri-add-circle-line"></i> New Entry</a>
+                <a href="transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-outline btn-lg"><i class="ri-bill-line"></i> Large Bill Split</a>
             <?php endif; ?>
-            <a href="transactions/list.php" class="btn btn-outline btn-lg"><i class="ri-list-check-2"></i> Entries Jo</a>
+            <a href="transactions/list.php" class="btn btn-outline btn-lg"><i class="ri-list-check-2"></i> View Entries</a>
         </div>
     </div>
     <div class="dashboard-focus-card">
@@ -194,7 +194,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                 <div class="empty-state">
                     <div class="empty-icon">📝</div>
                     <h3>No ledger activity yet</h3>
-                    <p>First entry add karta ledger ahiya dekhase.</p>
+                    <p>Your first entry will appear here after it is saved.</p>
                 </div>
             <?php else: ?>
                 <?php foreach ($accountLedger as $line): ?>
