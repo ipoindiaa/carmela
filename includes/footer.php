@@ -2,6 +2,7 @@
     </main>
 </div><!-- /.app-container -->
 
-<script src="<?= APP_URL ?>assets/js/app.js"></script>
+<?php $jsVersion = @filemtime(__DIR__ . '/../assets/js/app.js') ?: APP_VERSION; ?>
+<script src="<?= APP_URL ?>assets/js/app.js?v=<?= $jsVersion ?>"></script>
 </body>
 </html>

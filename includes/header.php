@@ -11,6 +11,7 @@ $unreadAlerts = $alertCount['cnt'] ?? 0;
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
 $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read');
+$cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -19,7 +20,7 @@ $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read'
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
-    <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css">
+    <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css?v=<?= $cssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body>
