@@ -1,0 +1,9 @@
+<?php
+
+return [
+    'host' => '127.0.0.1',
+    'name' => 'u772891971_your_database_name',
+    'user' => 'u772891971_your_database_user',
+    'pass' => 'your_database_password',
+    'charset' => 'utf8mb4',
+];
