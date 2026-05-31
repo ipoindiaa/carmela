@@ -19,7 +19,9 @@ const SERVER = {
   password: process.env.DEPLOY_PASSWORD || '',
 };
 
-const REMOTE_PATH = process.env.DEPLOY_PATH || '';
+const REMOTE_PATH =
+  process.env.DEPLOY_PATH ||
+  '/home/u772891971/domains/darkgreen-turtle-127042.hostingersite.com/public_html';
 const REMOTE_REPO = process.env.DEPLOY_REPO || 'git@github.com:ipoindiaa/carmela.git';
 const REMOTE_GITHUB_KEY = process.env.DEPLOY_GITHUB_KEY || '~/.ssh/github_carmela_deploy';
 const LOCAL_GIT_SSH_COMMAND =
@@ -82,8 +84,9 @@ function buildRemoteDeployCommand() {
     '  git reset --hard origin/main',
     'else',
     '  if [ -n "$(ls -A . 2>/dev/null)" ]; then',
-    '    echo "Remote path exists but is not an empty git repo. Aborting."',
-    '    exit 1',
+    '    backup_dir="../deployment_backup_$(date +%Y%m%d_%H%M%S)"',
+    '    mkdir -p "$backup_dir"',
+    '    find . -mindepth 1 -maxdepth 1 -exec mv {} "$backup_dir"/ \\;',
     '  fi',
     `  GIT_SSH_COMMAND='${remoteGitSsh}' git clone "${REMOTE_REPO}" .`,
     'fi',
