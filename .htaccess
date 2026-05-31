@@ -1,0 +1,25 @@
+RewriteEngine On
+
+# Redirect to login if not authenticated
+# RewriteCond %{REQUEST_URI} !^/(login|setup|assets|favicon) [NC]
+# RewriteCond %{HTTP_COOKIE} !PHPSESSID
+# RewriteRule ^(.*)$ /login.php [R=302,L]
+
+# Deny access to config and includes
+<FilesMatch "\.(php)$">
+    <If "%{REQUEST_URI} =~ m#/(config|includes)/#">
+        Require all denied
+    </If>
+</FilesMatch>
+
+# Deny access to SQL files
+<FilesMatch "\.(sql|md|docx)$">
+    Require all denied
+</FilesMatch>
+
+# Default index
+DirectoryIndex index.php
+
+# PHP error settings (production)
+php_flag display_errors Off
+php_flag log_errors On
