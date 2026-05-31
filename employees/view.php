@@ -48,12 +48,12 @@ $advanceLedger = $db->fetchAll(
     <div class="card">
         <div class="card-header"><h3>Advance Ledger</h3></div>
         <div class="card-body" style="padding:0;">
-            <table><thead><tr><th>Date</th><th>Narration</th><th class="text-right">Given</th><th class="text-right">Recovered</th></tr></thead>
+            <table><thead><tr><th>Date</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
             <tbody>
             <?php foreach ($advanceLedger as $l): ?>
             <tr><td><?= formatDate($l['entry_date']) ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
-                <td class="text-right amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                <td class="text-right amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+                <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+                <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
             <?php if (empty($advanceLedger)): ?><tr><td colspan="4" class="text-center text-muted" style="padding: 30px;">No advance entries</td></tr><?php endif; ?>
             </tbody></table>

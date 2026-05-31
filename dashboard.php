@@ -207,7 +207,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                             <span><?= clean(mb_substr($line['narration'] ?? '', 0, 70)) ?></span>
                         </div>
                         <div class="activity-side">
-                            <strong><?= formatAmount($line['amount']) ?></strong>
+                            <strong class="amount <?= $line['entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($line['amount']) ?></strong>
                             <span><?= clean($line['reference_no']) ?> · <?= formatDate($line['entry_date']) ?></span>
                         </div>
                     </a>

@@ -68,7 +68,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <div class="card-body" style="padding: 0;">
             <table>
                 <thead>
-                    <tr><th>Account</th><th class="text-right">Debit (₹)</th><th class="text-right">Credit (₹)</th></tr>
+                    <tr><th>Account</th><th class="text-right debit-amount">Debit (₹)</th><th class="text-right credit-amount">Credit (₹)</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($lines as $line): ?>
@@ -77,14 +77,14 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                             <div class="text-bold"><?= clean($line['account_name']) ?></div>
                             <div class="text-muted" style="font-size: 11px;"><?= $line['account_code'] ?><?= $line['narration'] ? ' — ' . clean($line['narration']) : '' ?></div>
                         </td>
-                        <td class="text-right amount"><?= $line['entry_type'] === 'DR' ? formatAmount($line['amount']) : '' ?></td>
-                        <td class="text-right amount"><?= $line['entry_type'] === 'CR' ? formatAmount($line['amount']) : '' ?></td>
+                        <td class="text-right amount debit-amount"><?= $line['entry_type'] === 'DR' ? formatAmount($line['amount']) : '' ?></td>
+                        <td class="text-right amount credit-amount"><?= $line['entry_type'] === 'CR' ? formatAmount($line['amount']) : '' ?></td>
                     </tr>
                     <?php endforeach; ?>
                     <tr style="background: var(--bg-secondary); font-weight: 700;">
                         <td>Total</td>
-                        <td class="text-right amount"><?= formatAmount($totalDr) ?></td>
-                        <td class="text-right amount"><?= formatAmount($totalCr) ?></td>
+                        <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
+                        <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
                     </tr>
                 </tbody>
             </table>

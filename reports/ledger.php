@@ -52,13 +52,13 @@ if ($accountId) {
 <div class="card" style="margin-bottom:16px;">
     <div class="card-body" style="display:flex;gap:40px;">
         <div><span class="text-muted">Account:</span> <strong><?= clean($selectedAccount['name']) ?></strong></div>
-        <div><span class="text-muted">Balance:</span> <strong class="amount"><?= formatAmount($selectedAccount['current_balance']) ?> <?= $selectedAccount['current_balance_type'] ?></strong></div>
+        <div><span class="text-muted">Balance:</span> <strong class="amount <?= $selectedAccount['current_balance_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($selectedAccount['current_balance']) ?> <?= $selectedAccount['current_balance_type'] ?></strong></div>
     </div>
 </div>
 
 <div class="table-container">
     <table>
-        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Debit</th><th class="text-right">Credit</th><th class="text-right">Balance</th></tr></thead>
+        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
         <?php $bal = 0; foreach ($entries as $e):
             if ($e['entry_type'] === 'DR') $bal += $e['amount']; else $bal -= $e['amount'];
@@ -67,9 +67,9 @@ if ($accountId) {
             <td><?= formatDate($e['entry_date']) ?></td><td><?= $e['reference_no'] ?></td>
             <td><span class="badge badge-blue" style="font-size:10px;"><?= TXN_TYPES[$e['transaction_type']] ?? $e['transaction_type'] ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
-            <td class="text-right amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount"><?= formatAmount(abs($bal)) ?> <?= $bal >= 0 ? 'Dr' : 'Cr' ?></td>
+            <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
+            <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
+            <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($bal)) ?> <?= $bal >= 0 ? 'Dr' : 'Cr' ?></td>
         </tr>
         <?php endforeach; ?>
         <?php if (empty($entries)): ?><tr><td colspan="7" class="text-center text-muted" style="padding:30px;">No entries for this period</td></tr><?php endif; ?>

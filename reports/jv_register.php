@@ -40,8 +40,8 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo);
                         <td class="text-bold"><?= clean($voucher['reference_no']) ?></td>
                         <td><?= formatDate($voucher['voucher_date']) ?></td>
                         <td><?= clean($voucher['voucher_type']) ?></td>
-                        <td><?= clean($voucher['primary_account_name']) ?> <span class="text-muted">(<?= $voucher['primary_entry_type'] ?>)</span></td>
-                        <td class="text-right amount"><?= formatAmount($voucher['primary_amount']) ?></td>
+                        <td><?= clean($voucher['primary_account_name']) ?> <span class="dr-cr-pill <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= $voucher['primary_entry_type'] ?></span></td>
+                        <td class="text-right amount <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($voucher['primary_amount']) ?></td>
                         <td><span class="badge <?= $voucher['status'] === 'POSTED' ? 'badge-green' : 'badge-gray' ?>"><?= clean($voucher['status']) ?></span></td>
                         <td>
                             <?php if (!empty($voucher['posted_entry_id'])): ?>

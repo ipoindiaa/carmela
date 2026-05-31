@@ -30,13 +30,13 @@ $entries = $db->fetchAll(
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-body" style="display:flex;gap:40px;">
-        <div><span class="text-muted">Current Balance:</span> <strong class="amount"><?= formatAmount($cashAccount['current_balance'] ?? 0) ?></strong></div>
+        <div><span class="text-muted">Current Balance:</span> <strong class="amount <?= ($cashAccount['current_balance_type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($cashAccount['current_balance'] ?? 0) ?></strong></div>
     </div>
 </div>
 
 <div class="table-container">
     <table>
-        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Receipt (Dr)</th><th class="text-right">Payment (Cr)</th><th class="text-right">Balance</th></tr></thead>
+        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Receipt (Dr)</th><th class="text-right credit-amount">Payment (Cr)</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
         <?php $bal = $cashAccount['opening_balance'] ?? 0; $totalDr = 0; $totalCr = 0; ?>
         <?php foreach ($entries as $e): 
@@ -46,13 +46,13 @@ $entries = $db->fetchAll(
             <td><?= formatDate($e['entry_date']) ?></td><td><?= $e['reference_no'] ?></td>
             <td><span class="badge badge-blue" style="font-size:10px;"><?= TXN_TYPES[$e['transaction_type']] ?? $e['transaction_type'] ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
-            <td class="text-right amount positive"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount negative"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount"><?= formatAmount($bal) ?></td>
+            <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
+            <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
+            <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
         </tr>
         <?php endforeach; ?>
         <tr style="background:var(--bg-secondary);font-weight:700;">
-            <td colspan="4">Total</td><td class="text-right amount"><?= formatAmount($totalDr) ?></td><td class="text-right amount"><?= formatAmount($totalCr) ?></td><td class="text-right amount"><?= formatAmount($bal) ?></td>
+            <td colspan="4">Total</td><td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td><td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td><td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
         </tr>
         </tbody>
     </table>

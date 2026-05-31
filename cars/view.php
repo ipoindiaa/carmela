@@ -149,7 +149,7 @@ $contributions = $db->fetchAll(
     <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Ledger</h3></div>
     <div class="card-body" style="padding: 0;">
         <table>
-            <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Debit</th><th class="text-right">Credit</th></tr></thead>
+            <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
                     <tr><td colspan="6" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
@@ -160,8 +160,8 @@ $contributions = $db->fetchAll(
                         <td><a href="../transactions/view.php?id=<?= $l['entry_id'] ?>"><?= $l['reference_no'] ?></a></td>
                         <td><span class="badge badge-blue" style="font-size: 10px;"><?= TXN_TYPES[$l['transaction_type']] ?? $l['transaction_type'] ?></span></td>
                         <td><?= clean(mb_substr($l['narration'] ?? '', 0, 50)) ?></td>
-                        <td class="text-right amount"><?= $l['entry_type'] === 'DR' ? formatAmount($l['amount']) : '' ?></td>
-                        <td class="text-right amount"><?= $l['entry_type'] === 'CR' ? formatAmount($l['amount']) : '' ?></td>
+                        <td class="text-right amount debit-amount"><?= $l['entry_type'] === 'DR' ? formatAmount($l['amount']) : '' ?></td>
+                        <td class="text-right amount credit-amount"><?= $l['entry_type'] === 'CR' ? formatAmount($l['amount']) : '' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

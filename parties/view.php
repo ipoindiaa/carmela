@@ -28,14 +28,14 @@ $ledger = $db->fetchAll(
     <div class="card-header"><h3>Account Ledger</h3></div>
     <div class="card-body" style="padding:0;">
         <table>
-            <thead><tr><th>Date</th><th>Ref</th><th>Narration</th><th class="text-right">Dr</th><th class="text-right">Cr</th></tr></thead>
+            <thead><tr><th>Date</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>
             <?php $runBal = 0; foreach ($ledger as $l): 
                 $runBal += $l['entry_type'] === 'DR' ? $l['amount'] : -$l['amount'];
             ?>
             <tr><td><?= formatDate($l['entry_date']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,50)) ?></td>
-                <td class="text-right amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                <td class="text-right amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+                <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+                <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
             <?php if (empty($ledger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:30px;">No entries</td></tr><?php endif; ?>
             </tbody>
