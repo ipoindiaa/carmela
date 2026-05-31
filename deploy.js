@@ -25,7 +25,8 @@ const REMOTE_PATH =
 const REMOTE_REPO = process.env.DEPLOY_REPO || 'git@github.com:ipoindiaa/carmela.git';
 const REMOTE_GITHUB_KEY = process.env.DEPLOY_GITHUB_KEY || '~/.ssh/github_carmela_deploy';
 const LOCAL_GIT_SSH_COMMAND =
-  process.env.LOCAL_GIT_SSH_COMMAND || 'ssh -F /dev/null -o StrictHostKeyChecking=accept-new';
+  process.env.LOCAL_GIT_SSH_COMMAND ||
+  'ssh -F /dev/null -i ~/.ssh/carmela_github_push -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new';
 
 function run(command, args, options = {}) {
   execFileSync(command, args, {
