@@ -15,7 +15,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo);
 <div class="page-header">
     <h1><i class="ri-booklet-line"></i> JV Register</h1>
     <div style="display:flex; gap:12px;">
-        <a href="../transactions/jv.php" class="btn btn-primary btn-sm"><i class="ri-file-edit-line"></i> New JV</a>
+        <a href="../transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-primary btn-sm"><i class="ri-add-circle-line"></i> New Split Entry</a>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>
 </div>

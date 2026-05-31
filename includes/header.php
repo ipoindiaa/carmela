@@ -47,12 +47,6 @@ $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read'
                     New Entry
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('jv_register', 'write')): ?>
-                <a href="<?= APP_URL ?>transactions/jv.php" class="nav-link <?= $currentPage === 'jv' ? 'active' : '' ?>">
-                    <span class="nav-icon"><i class="ri-file-edit-line"></i></span>
-                    JV Composer
-                </a>
-                <?php endif; ?>
                 <?php if ($canReadPrimaryBooks): ?>
                 <a href="<?= APP_URL ?>transactions/list.php" class="nav-link <?= $currentPage === 'list' && strpos($_SERVER['PHP_SELF'], 'transactions') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-exchange-line"></i></span>

@@ -1,6 +1,8 @@
 // AutoBooks Pro — Frontend JavaScript
 
 document.addEventListener('DOMContentLoaded', function() {
+    enhanceSearchableSelects();
+
     // Auto-dismiss alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(alert => {
         setTimeout(() => {
@@ -44,6 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'CAR_SALE': ['car-select-section', 'buyer-section'],
                 'CAR_EXPENSE': ['car-select-section', 'category-section'],
                 'GENERAL_EXPENSE': ['category-section'],
+                'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
                 'PARTNER_WITHDRAW': ['partner-section'],
                 'PARTNER_SETTLEMENT': ['partner-section', 'partner-settlement-section'],
@@ -67,11 +70,61 @@ document.addEventListener('DOMContentLoaded', function() {
             const pLabel = document.getElementById('payment-account-label');
             if (pLabel) {
                 const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED'];
-                pLabel.textContent = inTypes.includes(type) ? 'Receiving Account' : 'Payment Account';
+                if (type === 'JOURNAL_VOUCHER') {
+                    pLabel.textContent = 'Cash / Bank / GST account';
+                } else {
+                    pLabel.textContent = inTypes.includes(type) ? 'Receiving Account' : 'Payment Account';
+                }
             }
         });
+
+        if (txnTypeSelect.dataset.preselectedType) {
+            txnTypeSelect.value = txnTypeSelect.dataset.preselectedType;
+            txnTypeSelect.dispatchEvent(new Event('change'));
+        }
     }
 });
+
+function enhanceSearchableSelects(scope = document) {
+    scope.querySelectorAll('select.searchable-select:not([data-search-enhanced])').forEach(select => {
+        select.dataset.searchEnhanced = '1';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'searchable-select-wrap';
+        select.parentNode.insertBefore(wrapper, select);
+        wrapper.appendChild(select);
+
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'select-search-input';
+        search.placeholder = select.dataset.searchPlaceholder || 'Search karo...';
+        search.setAttribute('aria-label', 'Search options');
+        wrapper.insertBefore(search, select);
+
+        const allOptions = Array.from(select.querySelectorAll('option')).map(option => ({
+            option,
+            parent: option.parentElement,
+            text: option.textContent.toLowerCase(),
+        }));
+        const groups = Array.from(select.querySelectorAll('optgroup'));
+
+        search.addEventListener('input', () => {
+            const query = search.value.trim().toLowerCase();
+            allOptions.forEach(({ option, text }) => {
+                option.hidden = !!query && !text.includes(query);
+            });
+            groups.forEach(group => {
+                const visibleOptions = Array.from(group.querySelectorAll('option')).some(option => !option.hidden);
+                group.hidden = !!query && !visibleOptions;
+            });
+        });
+
+        select.addEventListener('change', () => {
+            search.value = '';
+            search.dispatchEvent(new Event('input'));
+        });
+    });
+}
+window.enhanceSearchableSelects = enhanceSearchableSelects;
 
 // Modal helpers
 function openModal(id) {

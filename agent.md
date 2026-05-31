@@ -11,6 +11,10 @@
 ## Product Rules
 
 - The app must be simple enough for non-accounting staff to use daily.
+- Operators should add entries from one place: `transactions/new.php`.
+- JV/split-allocation behavior should open as an in-page modal inside New Entry, not as a separate daily-use section.
+- Large selection fields must include search because the system will have hundreds of accounts and thousands of cars.
+- User-facing labels can use simple English plus Gujlish where it improves clarity for Gujarati operators.
 - Every transaction must preserve double-entry balance.
 - The main accounting gateway remains Cash, Bank, and GST Bank.
 - Corrections happen through reversal, not silent edits.
@@ -54,16 +58,19 @@ Rules:
 - Added admin-managed user creation with email and password.
 - Added per-book read/write permissions and server-side enforcement.
 - Added report/sidebar visibility rules based on permissions.
+- Moved daily JV/split-entry authoring into the New Entry flow and hid the separate JV composer route from navigation.
+- Added searchable selection UX for New Entry dropdowns and split allocation account/car picking.
 
 ### In Progress
 
 - Replace the current dark theme with a clean light-mode UI foundation.
 - Reduce visual heaviness so pages feel faster and easier to scan.
+- Redesign daily-use pages so the dashboard and entry form feel premium but still simple for non-accounting staff.
 
 ### Next
 
 1. Finish light-mode foundation across layout, forms, tables, and login/setup screens.
-2. Review the transaction flow against the pasted spec for missing JV and split-allocation behavior.
+2. Continue refining the New Entry modal flows for large bills, car-wise allocations, partner funding, and mixed funding.
 3. Expand partnership logic for funding ratio vs profit ratio handling.
 4. Tighten report accuracy and date-based ledger calculations.
 5. Add repeatable verification for posting rules and report correctness.
@@ -78,4 +85,3 @@ Rules:
   - balances
   - reports
   - access control
-
