@@ -782,9 +782,22 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .btn:active { transform: translateY(0); }
 
 .btn-primary { background: var(--gradient-blue); color: white; box-shadow: none; }
-.btn-primary:hover { box-shadow: none; }
+.btn-primary:hover,
+.btn-primary:focus-visible {
+    color: white;
+    box-shadow: 0 12px 28px rgba(37, 99, 235, 0.18);
+    filter: saturate(1.04);
+}
 
 .btn-success { background: var(--gradient-green); color: white; box-shadow: none; }
+.btn-success:hover,
+.btn-success:focus-visible,
+.btn-danger:hover,
+.btn-danger:focus-visible,
+.btn-purple:hover,
+.btn-purple:focus-visible {
+    color: white;
+}
 .btn-danger { background: var(--gradient-red); color: white; }
 .btn-purple { background: var(--gradient-purple); color: white; }
 
@@ -1267,6 +1280,21 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 
 .dashboard-panel {
     overflow: hidden;
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.96));
+}
+
+.dashboard-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20px;
+    right: 20px;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.55), rgba(21, 128, 61, 0.22), rgba(124, 58, 237, 0.42));
+    opacity: 0.9;
 }
 
 .dashboard-panel-head {
@@ -1282,12 +1310,22 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     padding: 8px 0;
 }
 
+.dashboard-panel-foot {
+    padding: 14px 20px 18px;
+    border-top: 1px solid rgba(219, 227, 236, 0.92);
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.3), rgba(239, 244, 250, 0.72));
+}
+
 .dashboard-activity-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     padding: 13px 20px;
     border-bottom: 1px solid var(--border);
+}
+
+.dashboard-activity-row:hover {
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.05), rgba(255, 255, 255, 0.96) 38%);
 }
 
 .dashboard-activity-row:last-child {
@@ -1331,6 +1369,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .dashboard-alert {
     padding: 14px 20px;
     border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.02), rgba(255, 255, 255, 0.95));
 }
 
 /* ============ PAGINATION ============ */

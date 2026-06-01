@@ -4,6 +4,8 @@ $pageIcon = '<i class="ri-dashboard-3-line"></i>';
 require_once __DIR__ . '/includes/header.php';
 
 $businessId = Auth::user('business_id');
+$todayDate = date('Y-m-d');
+$dashboardMinimumRows = 8;
 
 $primaryAccounts = Auth::getAccessiblePrimaryAccounts($businessId, 'read');
 $tabMeta = [
@@ -37,18 +39,38 @@ if (!$activeTab || !isset($availableTabs[$activeTab])) {
 $activeAccountId = $availableTabs[$activeTab]['account']['id'] ?? null;
 $activeAccountLabel = $availableTabs[$activeTab]['label'] ?? 'Account';
 $activeBookKey = $availableTabs[$activeTab]['book_key'] ?? null;
+$bookViewMoreUrl = match ($activeBookKey) {
+    'cash_book' => 'reports/cashbook.php',
+    'bank_book' => 'reports/bankbook.php',
+    'gst_book' => $activeAccountId ? 'reports/ledger.php?account_id=' . urlencode($activeAccountId) : 'reports/ledger.php',
+    default => 'transactions/list.php',
+};
 
 $accountLedger = [];
 if ($activeAccountId) {
-    $accountLedger = $db->fetchAll(
+    $todayLedger = $db->fetchAll(
         "SELECT jl.*, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.id as entry_id
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
-         WHERE jl.account_id = ? AND je.status = 'POSTED'
+         WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date = ?
          ORDER BY je.entry_date DESC, je.created_at DESC
-         LIMIT 8",
-        [$activeAccountId]
+         LIMIT 24",
+        [$activeAccountId, $todayDate]
     );
+    $olderLedger = [];
+    $remainingLedger = max(0, $dashboardMinimumRows - count($todayLedger));
+    if ($remainingLedger > 0) {
+        $olderLedger = $db->fetchAll(
+            "SELECT jl.*, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.id as entry_id
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date <> ?
+             ORDER BY je.entry_date DESC, je.created_at DESC
+             LIMIT ?",
+            [$activeAccountId, $todayDate, $remainingLedger]
+        );
+    }
+    $accountLedger = array_merge($todayLedger, $olderLedger);
 }
 
 $totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'IN_STOCK'", [$businessId]);
@@ -59,11 +81,11 @@ $totalEmployees = $db->fetch("SELECT COUNT(*) as cnt FROM employees WHERE busine
 $recentTxns = [];
 if (!empty($accessibleAccountIds)) {
     $placeholders = implode(',', array_fill(0, count($accessibleAccountIds), '?'));
-    $recentTxns = $db->fetchAll(
+    $todayTxns = $db->fetchAll(
         "SELECT je.*, u.full_name as created_by_name
          FROM journal_entries je
          LEFT JOIN users u ON u.id = je.created_by
-         WHERE je.business_id = ? AND je.status = 'POSTED'
+         WHERE je.business_id = ? AND je.status = 'POSTED' AND je.entry_date = ?
            AND EXISTS (
                SELECT 1
                FROM journal_lines jl_filter
@@ -71,9 +93,29 @@ if (!empty($accessibleAccountIds)) {
                  AND jl_filter.account_id IN ($placeholders)
            )
          ORDER BY je.created_at DESC
-         LIMIT 8",
-        array_merge([$businessId], $accessibleAccountIds)
+         LIMIT 24",
+        array_merge([$businessId, $todayDate], $accessibleAccountIds)
     );
+    $olderTxns = [];
+    $remainingTxns = max(0, $dashboardMinimumRows - count($todayTxns));
+    if ($remainingTxns > 0) {
+        $olderTxns = $db->fetchAll(
+            "SELECT je.*, u.full_name as created_by_name
+             FROM journal_entries je
+             LEFT JOIN users u ON u.id = je.created_by
+             WHERE je.business_id = ? AND je.status = 'POSTED' AND je.entry_date <> ?
+               AND EXISTS (
+                   SELECT 1
+                   FROM journal_lines jl_filter
+                   WHERE jl_filter.journal_entry_id = je.id
+                     AND jl_filter.account_id IN ($placeholders)
+               )
+             ORDER BY je.created_at DESC
+             LIMIT ?",
+            array_merge([$businessId, $todayDate], $accessibleAccountIds, [$remainingTxns])
+        );
+    }
+    $recentTxns = array_merge($todayTxns, $olderTxns);
 }
 
 $alerts = $db->fetchAll(
@@ -214,6 +256,9 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
+        <div class="dashboard-panel-foot">
+            <a href="<?= clean($bookViewMoreUrl) ?>" class="btn btn-outline btn-sm">View more ledger</a>
+        </div>
     </section>
 
     <section class="dashboard-panel" id="alerts">
@@ -255,6 +300,9 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                     </a>
                 <?php endforeach; ?>
             <?php endif; ?>
+        </div>
+        <div class="dashboard-panel-foot">
+            <a href="transactions/list.php" class="btn btn-outline btn-sm">View more entries</a>
         </div>
     </section>
 </div>
