@@ -35,7 +35,7 @@ $totalWithdrawn = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM jo
 
 <div class="page-header">
     <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?></h1>
-    <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+    <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
 <div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">

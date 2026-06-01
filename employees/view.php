@@ -19,7 +19,7 @@ $advanceLedger = $db->fetchAll(
     <div style="display:flex;gap:10px;">
         <a href="../transactions/new.php?type=SALARY_PAYMENT" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
         <a href="../transactions/new.php?type=EMPLOYEE_ADVANCE" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a>
-        <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 

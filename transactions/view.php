@@ -39,7 +39,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
             <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm" data-confirm="Reverse this entry?"><i class="ri-arrow-go-back-line"></i> Reverse</a>
         <?php endif; ?>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
-        <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 

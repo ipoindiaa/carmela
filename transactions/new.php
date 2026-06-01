@@ -601,7 +601,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button type="submit" class="btn btn-primary btn-lg">
                     <i class="ri-save-line"></i> Save Entry
                 </button>
-                <a href="list.php" class="btn btn-outline btn-lg">Cancel</a>
+                <a href="list.php" class="btn btn-outline btn-lg" data-smart-back="1">Cancel</a>
             </div>
         </form>
     </div>

@@ -6,8 +6,10 @@ document.addEventListener('DOMContentLoaded', function() {
     initResponsiveSidebar();
     initTableShells();
     syncViewportTableHeights();
+    initScrollMemory();
     enhanceSearchableSelects();
     initLazyTables();
+    initSmartBackLinks();
 
     // Auto-dismiss alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(alert => {
@@ -191,6 +193,7 @@ function initLazyTables() {
 
                 container.dataset.nextUrl = payload.next_url || '';
                 sentinel.hidden = !payload.next_url;
+                tryRestoreContainerScroll(container);
                 if (status) {
                     status.textContent = payload.next_url ? 'More rows will load as you scroll.' : 'All rows loaded.';
                 }
@@ -210,6 +213,7 @@ function initLazyTables() {
         });
 
         observer.observe(sentinel);
+        tryRestoreContainerScroll(container);
     });
 }
 
@@ -234,6 +238,145 @@ function syncViewportTableHeights() {
         const targetHeight = Math.max(260, Math.floor(viewportHeight - rect.top - bottomOffset));
         container.style.height = `${targetHeight}px`;
     });
+}
+
+function initScrollMemory() {
+    const pageKey = getPageScrollStorageKey();
+    const savedState = readScrollMemory(pageKey);
+    const containers = getTrackedScrollContainers();
+
+    containers.forEach((container, index) => {
+        if (!container.dataset.scrollMemoryId) {
+            container.dataset.scrollMemoryId = `scroll-container-${index}`;
+        }
+        const savedContainer = savedState?.containers?.[container.dataset.scrollMemoryId];
+        if (savedContainer) {
+            container.dataset.restoreScrollTop = String(savedContainer.top || 0);
+            container.dataset.restoreScrollLeft = String(savedContainer.left || 0);
+        }
+    });
+
+    const saveState = () => {
+        const payload = {
+            windowY: Math.max(window.scrollY, 0),
+            windowX: Math.max(window.scrollX, 0),
+            containers: {},
+            savedAt: Date.now(),
+        };
+
+        getTrackedScrollContainers().forEach((container, index) => {
+            if (!container.dataset.scrollMemoryId) {
+                container.dataset.scrollMemoryId = `scroll-container-${index}`;
+            }
+            payload.containers[container.dataset.scrollMemoryId] = {
+                top: container.scrollTop,
+                left: container.scrollLeft,
+            };
+        });
+
+        sessionStorage.setItem(pageKey, JSON.stringify(payload));
+    };
+
+    window.addEventListener('pagehide', saveState);
+    window.addEventListener('beforeunload', saveState);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveState();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (event.target.closest('a[href]')) {
+            saveState();
+        }
+    });
+
+    document.querySelectorAll('form').forEach((form) => {
+        form.addEventListener('submit', saveState);
+    });
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            getTrackedScrollContainers().forEach(tryRestoreContainerScroll);
+            if (savedState && typeof savedState.windowY === 'number') {
+                window.scrollTo(savedState.windowX || 0, savedState.windowY || 0);
+            }
+        });
+    });
+}
+
+function getTrackedScrollContainers() {
+    return Array.from(document.querySelectorAll('.table-container, [data-scroll-memory]'))
+        .filter((container) => !container.classList.contains('sidebar-nav'));
+}
+
+function getPageScrollStorageKey() {
+    return `autobooks.scroll.${location.pathname}${location.search}`;
+}
+
+function readScrollMemory(pageKey) {
+    try {
+        const raw = sessionStorage.getItem(pageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return parsed;
+    } catch (error) {
+        return null;
+    }
+}
+
+function tryRestoreContainerScroll(container) {
+    const topValue = container.dataset.restoreScrollTop;
+    const leftValue = container.dataset.restoreScrollLeft;
+    const hasTop = topValue !== undefined && topValue !== '';
+    const hasLeft = leftValue !== undefined && leftValue !== '';
+    const targetTop = hasTop ? Number(topValue) : 0;
+    const targetLeft = hasLeft ? Number(leftValue) : 0;
+    if (!hasTop && !hasLeft) return;
+
+    const maxTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    const maxLeft = Math.max(container.scrollWidth - container.clientWidth, 0);
+
+    if (hasLeft) {
+        container.scrollLeft = Math.min(targetLeft, maxLeft);
+    }
+
+    if (hasTop && (maxTop >= targetTop || !container.dataset.nextUrl)) {
+        container.scrollTop = Math.min(targetTop, maxTop);
+        delete container.dataset.restoreScrollTop;
+        delete container.dataset.restoreScrollLeft;
+        return;
+    }
+
+    if (container.dataset.nextUrl && !container.dataset.restoreLoading) {
+        container.dataset.restoreLoading = '1';
+        const status = container.querySelector('[data-lazy-status]');
+        if (status) status.textContent = 'Returning you to the last position...';
+        container.scrollTop = maxTop;
+        setTimeout(() => {
+            delete container.dataset.restoreLoading;
+            tryRestoreContainerScroll(container);
+        }, 180);
+    }
+}
+
+function initSmartBackLinks() {
+    document.querySelectorAll('a[data-smart-back]').forEach((link) => {
+        link.addEventListener('click', (event) => {
+            if (!shouldUseHistoryBack()) return;
+            event.preventDefault();
+            history.back();
+        });
+    });
+}
+
+function shouldUseHistoryBack() {
+    if (history.length <= 1 || !document.referrer) return false;
+    try {
+        const referrer = new URL(document.referrer);
+        return referrer.origin === location.origin;
+    } catch (error) {
+        return false;
+    }
 }
 
 function enhanceSearchableSelects(scope = document) {

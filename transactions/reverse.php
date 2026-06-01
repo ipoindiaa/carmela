@@ -56,7 +56,7 @@ if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
             </div>
             <div style="display: flex; gap: 12px;">
                 <button type="submit" class="btn btn-danger"><i class="ri-arrow-go-back-line"></i> Confirm Reversal</button>
-                <a href="view.php?id=<?= $id ?>" class="btn btn-outline">Cancel</a>
+                <a href="view.php?id=<?= $id ?>" class="btn btn-outline" data-smart-back="1">Cancel</a>
             </div>
         </form>
     </div>

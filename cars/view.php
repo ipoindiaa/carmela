@@ -39,7 +39,7 @@ $contributions = $db->fetchAll(
             <a href="../transactions/new.php?type=CAR_EXPENSE" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
             <a href="../transactions/new.php?type=CAR_SALE" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
-        <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 
