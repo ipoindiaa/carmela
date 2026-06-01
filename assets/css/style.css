@@ -198,6 +198,29 @@ a:hover { color: #1d4ed8; }
 .sidebar-user .user-name { font-size: 13px; font-weight: 600; }
 .sidebar-user .user-role { font-size: 11px; color: var(--text-muted); }
 
+.sidebar-logout-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #ffffff;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sidebar-logout-btn:hover {
+    background: var(--bg-card-hover);
+    color: var(--accent-red);
+    border-color: rgba(220, 38, 38, 0.18);
+}
+
 /* Main Content */
 .main-content {
     margin-left: var(--sidebar-width);
@@ -1637,6 +1660,12 @@ html.js .pagination.no-js-pagination { display: none; }
         line-height: 1.2;
     }
     .top-entry-btn { display: none; }
+    .desktop-logout-btn {
+        display: none;
+    }
+    .sidebar-logout-btn {
+        display: inline-flex;
+    }
     .table-container {
         max-height: min(52vh, 460px);
     }

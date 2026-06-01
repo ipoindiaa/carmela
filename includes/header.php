@@ -191,6 +191,10 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <div class="user-role"><?= Auth::user('role') ?></div>
                 </div>
             </div>
+            <a href="<?= APP_URL ?>logout.php" class="sidebar-logout-btn">
+                <i class="ri-logout-box-r-line"></i>
+                Logout
+            </a>
         </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -224,7 +228,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                         <span class="badge"><?= $unreadAlerts ?></span>
                     <?php endif; ?>
                 </a>
-                <a href="<?= APP_URL ?>logout.php" class="header-btn" title="Logout">
+                <a href="<?= APP_URL ?>logout.php" class="header-btn desktop-logout-btn" title="Logout">
                     <i class="ri-logout-box-r-line"></i>
                 </a>
             </div>
