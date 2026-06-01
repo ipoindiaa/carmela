@@ -31,7 +31,7 @@ foreach ($creditors as $creditor) {
     <div class="stat-card"><div class="stat-value text-yellow"><?= formatAmount($totalOutstanding) ?></div><div class="stat-label">Total Outstanding</div></div>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th class="text-right">Outstanding</th><th class="text-center">Action</th></tr></thead>
         <tbody>

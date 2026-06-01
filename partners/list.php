@@ -38,7 +38,7 @@ $partners = $db->fetchAll(
     <button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Profit Share</th><th class="text-right">Capital Balance</th><th>Joined</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>

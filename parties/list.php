@@ -82,7 +82,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true) 
     <button onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button>
 </div>
 
-<div class="table-container" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
+<div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
     <table>
         <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th class="text-right">Balance</th><th>Bad Debt</th><th class="text-center">Actions</th></tr></thead>
         <tbody>

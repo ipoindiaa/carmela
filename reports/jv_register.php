@@ -28,7 +28,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo);
     </form>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>JV Ref</th><th>Date</th><th>Type</th><th>Primary Account</th><th class="text-right">Amount</th><th>Status</th><th>Posted Ref</th><th>Narration</th></tr></thead>
         <tbody>

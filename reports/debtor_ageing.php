@@ -19,7 +19,7 @@ $grandTotal = 0;
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Debtor</th><th>Type</th><th>Phone</th><th class="text-right">Outstanding</th><th>Bad Debt</th><th class="text-right">Since</th></tr></thead>
         <tbody>

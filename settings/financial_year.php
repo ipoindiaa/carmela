@@ -34,7 +34,7 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
     <button onclick="openModal('add-fy')" class="btn btn-primary"><i class="ri-add-line"></i> New FY</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Year</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Closed</th><th class="text-center">Actions</th></tr></thead>
         <tbody>

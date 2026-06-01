@@ -156,7 +156,7 @@ foreach ($users as $user) {
     </div>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead>
             <tr>

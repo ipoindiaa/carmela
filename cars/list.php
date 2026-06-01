@@ -98,7 +98,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
     <a href="list.php?status=PENDING_PAYMENT" class="btn btn-sm <?= $filter === 'PENDING_PAYMENT' ? 'btn-primary' : 'btn-outline' ?>">Pending</a>
 </div>
 
-<div class="table-container" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
+<div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
     <table>
         <thead>
             <tr>

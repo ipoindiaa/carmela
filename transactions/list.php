@@ -165,7 +165,7 @@ $nextUrl = $page < $pagination['total_pages']
     </form>
 </div>
 
-<div class="table-container" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
+<div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
     <table>
         <thead>
             <tr>

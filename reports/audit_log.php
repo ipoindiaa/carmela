@@ -20,7 +20,7 @@ $logs = $db->fetchAll(
     <h1><i class="ri-shield-check-line"></i> Audit Log</h1>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th><th>IP</th></tr></thead>
         <tbody>

@@ -56,7 +56,7 @@ if ($accountId) {
     </div>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
         <tbody>

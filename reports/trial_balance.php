@@ -31,7 +31,7 @@ $balanced = abs($totalDr - $totalCr) < 0.01;
     </div>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Account Code</th><th>Account Name</th><th>Group</th><th class="text-right debit-amount">Debit (₹)</th><th class="text-right credit-amount">Credit (₹)</th></tr></thead>
         <tbody>

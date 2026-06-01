@@ -3,7 +3,9 @@ document.documentElement.classList.add('js');
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarState();
+    initResponsiveSidebar();
     initTableShells();
+    syncViewportTableHeights();
     enhanceSearchableSelects();
     initLazyTables();
 
@@ -87,6 +89,11 @@ document.addEventListener('DOMContentLoaded', function() {
             txnTypeSelect.dispatchEvent(new Event('change'));
         }
     }
+
+    window.addEventListener('resize', syncViewportTableHeights, { passive: true });
+    window.addEventListener('orientationchange', function() {
+        setTimeout(syncViewportTableHeights, 120);
+    });
 });
 
 function restoreSidebarState() {
@@ -110,6 +117,48 @@ function restoreSidebarState() {
             sessionStorage.setItem(key, String(nav.scrollTop));
         });
     });
+}
+
+function initResponsiveSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const toggle = document.getElementById('sidebar-toggle');
+    if (!sidebar || !backdrop || !toggle) return;
+
+    const closeSidebar = () => {
+        sidebar.classList.remove('open');
+        document.body.classList.remove('sidebar-open');
+    };
+
+    const openSidebar = () => {
+        sidebar.classList.add('open');
+        document.body.classList.add('sidebar-open');
+    };
+
+    toggle.addEventListener('click', () => {
+        if (window.innerWidth > 768) return;
+        if (sidebar.classList.contains('open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    });
+
+    backdrop.addEventListener('click', closeSidebar);
+
+    document.querySelectorAll('.sidebar .nav-link').forEach((link) => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth <= 768) {
+                closeSidebar();
+            }
+        });
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            closeSidebar();
+        }
+    }, { passive: true });
 }
 
 function initLazyTables() {
@@ -169,12 +218,21 @@ function initTableShells(scope = document) {
         if (table.closest('.table-container')) return;
         if (!table.querySelector('thead')) return;
         if (table.dataset.staticTable === '1') return;
-        if (table.closest('.modal')) return;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'table-container table-container-inline';
         table.parentNode.insertBefore(wrapper, table);
         wrapper.appendChild(table);
+    });
+}
+
+function syncViewportTableHeights() {
+    const viewportHeight = window.innerHeight;
+    document.querySelectorAll('.table-container-fill').forEach((container) => {
+        const rect = container.getBoundingClientRect();
+        const bottomOffset = window.innerWidth <= 768 ? 12 : 18;
+        const targetHeight = Math.max(260, Math.floor(viewportHeight - rect.top - bottomOffset));
+        container.style.height = `${targetHeight}px`;
     });
 }
 

@@ -33,7 +33,7 @@ $employees = $db->fetchAll(
     <button onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Joined</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>

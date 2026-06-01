@@ -62,6 +62,10 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+body.sidebar-open {
+    overflow: hidden;
+}
+
 /* ============ SCROLLBAR ============ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
@@ -198,16 +202,17 @@ a:hover { color: #1d4ed8; }
 .main-content {
     margin-left: var(--sidebar-width);
     flex: 1;
-    min-height: 100vh;
+    min-height: 100dvh;
 }
 
 /* Header */
 .top-header {
-    height: var(--header-height);
+    min-height: var(--header-height);
     background: rgba(255, 255, 255, 0.82);
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0 32px;
+    gap: 16px;
+    padding: 10px 32px;
     position: sticky; top: 0; z-index: 50;
     backdrop-filter: blur(16px);
 }
@@ -217,13 +222,20 @@ a:hover { color: #1d4ed8; }
 .page-title {
     font-size: 20px; font-weight: 700;
     display: flex; align-items: center; gap: 10px;
+    min-width: 0;
 }
 
 .page-title .title-icon {
     font-size: 22px; opacity: 0.8;
 }
 
-.header-right { display: flex; align-items: center; gap: 16px; }
+.header-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
 
 .header-btn {
     background: var(--bg-card);
@@ -259,6 +271,12 @@ a:hover { color: #1d4ed8; }
     font-size: 24px; font-weight: 700;
     display: flex; align-items: center; gap: 10px;
     line-height: 1.15;
+}
+
+.page-header p {
+    flex-basis: 100%;
+    margin-top: -10px;
+    color: var(--text-muted);
 }
 
 .page-header > div,
@@ -501,6 +519,11 @@ a:hover { color: #1d4ed8; }
     border: 1px solid var(--border);
     background: var(--bg-card);
     box-shadow: var(--shadow-sm);
+}
+
+.table-container-fill {
+    max-height: none;
+    min-height: 320px;
 }
 
 .table-container table {
@@ -1401,6 +1424,10 @@ html.js .pagination.no-js-pagination { display: none; }
 .filter-bar .form-control { width: auto; min-width: 160px; }
 .top-entry-btn { box-shadow: var(--shadow-sm); }
 
+.sidebar-backdrop {
+    display: none;
+}
+
 /* ============ ANIMATIONS ============ */
 @keyframes slideIn {
     from { opacity: 0; transform: translateY(-10px); }
@@ -1517,6 +1544,9 @@ html.js .pagination.no-js-pagination { display: none; }
 @media (max-width: 1200px) {
     .account-cards { grid-template-columns: repeat(2, 1fr); }
     .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .stats-grid[style] {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
     .dashboard-hero,
     .dashboard-main-grid {
         grid-template-columns: 1fr;
@@ -1527,15 +1557,33 @@ html.js .pagination.no-js-pagination { display: none; }
 }
 
 @media (max-width: 768px) {
+    .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.32);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease;
+        z-index: 140;
+    }
+    body.sidebar-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+    }
     .sidebar {
         transform: translateX(-100%);
+        z-index: 160;
+        width: min(88vw, 320px);
+        box-shadow: 18px 0 42px rgba(15, 23, 42, 0.18);
     }
     .sidebar.open { transform: translateX(0); }
     .main-content { margin-left: 0; }
     .account-cards { grid-template-columns: 1fr; }
-    .stats-grid { grid-template-columns: 1fr; }
+    .stats-grid,
+    .stats-grid[style] { grid-template-columns: 1fr !important; }
     .form-row, .form-row-3 { grid-template-columns: 1fr; }
-    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr !important; }
     .entry-helper-strip,
     .split-entry-panel,
     .dashboard-book-grid,
@@ -1562,7 +1610,32 @@ html.js .pagination.no-js-pagination { display: none; }
         text-align: left;
     }
     .page-content { padding: 16px; }
-    .top-header { padding: 0 16px; }
+    .top-header {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px 16px;
+    }
+    .header-left,
+    .header-right {
+        width: 100%;
+    }
+    .header-right {
+        justify-content: flex-start;
+        gap: 10px;
+    }
+    .header-right > * {
+        flex: 1 1 calc(50% - 10px);
+        min-width: 0;
+    }
+    .header-right .btn,
+    .header-right .header-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    .page-title {
+        font-size: 18px;
+        line-height: 1.2;
+    }
     .top-entry-btn { display: none; }
     .table-container {
         max-height: min(52vh, 460px);
@@ -1573,9 +1646,22 @@ html.js .pagination.no-js-pagination { display: none; }
     .table-container table {
         width: max(100%, 720px);
     }
+    .table-container-fill {
+        min-height: 260px;
+    }
     .page-header {
         align-items: flex-start;
         flex-direction: column;
+    }
+    .page-header > div,
+    .page-header > form,
+    .page-header form,
+    .page-header .btn,
+    .page-header .header-btn {
+        width: 100%;
+    }
+    .page-header p {
+        width: 100%;
     }
     .filter-bar,
     .filter-bar form {
@@ -1585,6 +1671,35 @@ html.js .pagination.no-js-pagination { display: none; }
     .filter-bar .form-control,
     .filter-bar .btn {
         width: 100%;
+    }
+    .card-body[style*="display:flex"] {
+        flex-direction: column !important;
+        gap: 12px !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+    }
+    .modal {
+        width: calc(100% - 20px);
+        max-height: calc(100dvh - 20px);
+    }
+    .modal-body,
+    .modal-header,
+    .modal-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+    .modal-footer {
+        flex-direction: column;
+    }
+    .modal-footer .btn {
+        width: 100%;
+    }
+    .split-line-row .split-remove-btn {
+        width: 100%;
+    }
+    #transaction-form > div[style*="display: flex"] {
+        flex-direction: column;
     }
 }
 

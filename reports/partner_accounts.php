@@ -15,7 +15,7 @@ $partners = $db->fetchAll("SELECT * FROM partners WHERE business_id = ? ORDER BY
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Partner</th><th class="text-right">Capital</th><th class="text-right">Current A/c</th><th class="text-right">Committed Funding</th><th class="text-right">Pending Payable</th><th class="text-right">Pending Receivable</th><th class="text-center">Action</th></tr></thead>
         <tbody>

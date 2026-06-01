@@ -20,7 +20,7 @@ $employees = $db->fetchAll(
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="table-container">
+<div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Employee</th><th>Role</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Status</th><th class="text-center">Action</th></tr></thead>
         <tbody>

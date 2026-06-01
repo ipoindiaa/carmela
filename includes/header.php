@@ -193,13 +193,14 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
             </div>
         </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <!-- Main Content -->
     <main class="main-content">
         <!-- Top Header -->
         <header class="top-header">
             <div class="header-left">
-                <button class="header-btn" id="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+                <button class="header-btn" id="sidebar-toggle" type="button" aria-label="Toggle navigation menu">
                     <i class="ri-menu-line"></i>
                 </button>
                 <div class="page-title">
