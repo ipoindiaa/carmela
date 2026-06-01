@@ -4,7 +4,7 @@ $pageIcon = '<i class="ri-book-2-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 Auth::requireBookAccess('cash_book', 'read');
 $businessId = Auth::user('business_id');
-$dateFrom = get('from', date('Y-m-01'));
+$dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 $cashAccount = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL", [$businessId]);
 

@@ -4,7 +4,7 @@ $pageIcon = '<i class="ri-bank-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 Auth::requireBookAccess('bank_book', 'read');
 $businessId = Auth::user('business_id');
-$dateFrom = get('from', date('Y-m-01'));
+$dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 $bankAccount = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'BANK' AND entity_id IS NULL", [$businessId]);
 

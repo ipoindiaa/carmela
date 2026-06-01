@@ -39,12 +39,7 @@ if (!$activeTab || !isset($availableTabs[$activeTab])) {
 $activeAccountId = $availableTabs[$activeTab]['account']['id'] ?? null;
 $activeAccountLabel = $availableTabs[$activeTab]['label'] ?? 'Account';
 $activeBookKey = $availableTabs[$activeTab]['book_key'] ?? null;
-$bookViewMoreUrl = match ($activeBookKey) {
-    'cash_book' => 'reports/cashbook.php',
-    'bank_book' => 'reports/bankbook.php',
-    'gst_book' => $activeAccountId ? 'reports/ledger.php?account_id=' . urlencode($activeAccountId) : 'reports/ledger.php',
-    default => 'transactions/list.php',
-};
+$fyStartDate = getCurrentFY() . '-04-01';
 
 $accountLedger = [];
 if ($activeAccountId) {
@@ -72,6 +67,30 @@ if ($activeAccountId) {
     }
     $accountLedger = array_merge($todayLedger, $olderLedger);
 }
+
+$accountLedgerFromDate = !empty($accountLedger)
+    ? min(array_column($accountLedger, 'entry_date'))
+    : $fyStartDate;
+$accountLedgerToDate = !empty($accountLedger)
+    ? max(array_column($accountLedger, 'entry_date'))
+    : $todayDate;
+
+$bookViewMoreUrl = match ($activeBookKey) {
+    'cash_book' => 'reports/cashbook.php?' . http_build_query([
+        'from' => $accountLedgerFromDate,
+        'to' => $accountLedgerToDate,
+    ]),
+    'bank_book' => 'reports/bankbook.php?' . http_build_query([
+        'from' => $accountLedgerFromDate,
+        'to' => $accountLedgerToDate,
+    ]),
+    'gst_book' => 'reports/ledger.php?' . http_build_query([
+        'account_id' => $activeAccountId,
+        'from' => $accountLedgerFromDate,
+        'to' => $accountLedgerToDate,
+    ]),
+    default => 'transactions/list.php',
+};
 
 $totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'IN_STOCK'", [$businessId]);
 $totalSold = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'SOLD'", [$businessId]);

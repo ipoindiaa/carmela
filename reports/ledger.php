@@ -5,7 +5,7 @@ require_once __DIR__ . '/../includes/header.php';
 Auth::requireBookAccess('general_ledger', 'read');
 $businessId = Auth::user('business_id');
 $accountId = get('account_id', '');
-$dateFrom = get('from', date('Y-m-01'));
+$dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 
 $accounts = $db->fetchAll("SELECT id, code, name, group_name FROM accounts WHERE business_id = ? ORDER BY group_name, code", [$businessId]);
