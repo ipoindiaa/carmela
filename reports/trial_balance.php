@@ -37,7 +37,7 @@ $balanced = abs($totalDr - $totalCr) < 0.01;
         <tbody>
         <?php $lastGroup = ''; foreach ($accounts as $a): 
             if ($a['group_name'] !== $lastGroup) { $lastGroup = $a['group_name']; ?>
-                <tr style="background: var(--bg-secondary);"><td colspan="5" style="font-weight: 700; color: var(--accent-blue);"><?= ACCOUNT_GROUPS[$a['group_name']] ?? $a['group_name'] ?></td></tr>
+                <tr class="table-group-row"><td colspan="5"><?= ACCOUNT_GROUPS[$a['group_name']] ?? $a['group_name'] ?></td></tr>
             <?php } ?>
             <tr>
                 <td class="text-muted"><?= $a['code'] ?></td>
@@ -47,12 +47,14 @@ $balanced = abs($totalDr - $totalCr) < 0.01;
                 <td class="text-right amount credit-amount"><?= $a['balance_type'] === 'CR' ? formatAmount($a['balance_amount']) : '' ?></td>
             </tr>
         <?php endforeach; ?>
-        <tr style="background: var(--bg-secondary); font-weight: 700; font-size: 15px;">
-            <td colspan="3">Total</td>
-            <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
-            <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
-        </tr>
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3">Total</td>
+                <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
+                <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

@@ -50,14 +50,16 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             <td style="font-size:12px;"><?= !empty($settlementSummary) ? clean(implode(' | ', $settlementSummary)) : '<span class="text-muted">Business only</span>' ?></td>
         </tr>
         <?php endforeach; ?>
-        <tr style="background:var(--bg-secondary);font-weight:700;">
-            <td colspan="6">Grand Total (Sold Cars)</td>
-            <td class="text-right amount"><?= formatAmount($grandTotalCost) ?></td>
-            <td class="text-right amount"><?= formatAmount($grandTotalSale) ?></td>
-            <td class="text-right amount <?= $grandProfit >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($grandProfit, true) ?></td>
-            <td></td>
-        </tr>
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="6">Grand Total (Sold Cars)</td>
+                <td class="text-right amount"><?= formatAmount($grandTotalCost) ?></td>
+                <td class="text-right amount"><?= formatAmount($grandTotalSale) ?></td>
+                <td class="text-right amount <?= $grandProfit >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($grandProfit, true) ?></td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

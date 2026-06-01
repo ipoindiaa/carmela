@@ -81,12 +81,14 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                         <td class="text-right amount credit-amount"><?= $line['entry_type'] === 'CR' ? formatAmount($line['amount']) : '' ?></td>
                     </tr>
                     <?php endforeach; ?>
-                    <tr style="background: var(--bg-secondary); font-weight: 700;">
+                </tbody>
+                <tfoot>
+                    <tr>
                         <td>Total</td>
                         <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
                         <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
                     </tr>
-                </tbody>
+                </tfoot>
             </table>
             <?php if (abs($totalDr - $totalCr) < 0.01): ?>
                 <div style="padding: 10px 16px; text-align: center; font-size: 12px; color: var(--accent-green);">

@@ -41,8 +41,14 @@ $grandTotal = 0;
         </tr>
         <?php endforeach; ?>
         <?php if (empty($debtors)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:40px;">No outstanding debtors! 🎉</td></tr><?php endif; ?>
-        <tr style="background:var(--bg-secondary);font-weight:700;"><td colspan="3">Total Outstanding</td><td class="text-right amount text-red"><?= formatAmount($grandTotal) ?></td><td colspan="2"></td></tr>
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3">Total Outstanding</td>
+                <td class="text-right amount text-red"><?= formatAmount($grandTotal) ?></td>
+                <td colspan="2"></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

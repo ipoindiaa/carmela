@@ -49,10 +49,15 @@ $entries = $db->fetchAll(
             <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
         </tr>
         <?php endforeach; ?>
-        <tr style="background:var(--bg-secondary);font-weight:700;">
-            <td colspan="4">Total</td><td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td><td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td><td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
-        </tr>
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4">Total</td>
+                <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
+                <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
+                <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

@@ -26,40 +26,52 @@ $bs = $engine->getBalanceSheet($asOnDate);
     <div class="card">
         <div class="card-header"><h3 class="text-blue"><i class="ri-safe-2-line"></i> Assets</h3></div>
         <div class="card-body" style="padding:0;">
-            <table>
-                <?php $lastSub = ''; foreach ($bs['ASSET'] as $item): 
-                    if ($item['sub_group'] !== $lastSub) { $lastSub = $item['sub_group']; ?>
-                    <tr style="background:var(--bg-secondary);"><td colspan="2" style="font-weight: 600; color: var(--text-muted); font-size: 12px;"><?= $lastSub ?></td></tr>
-                    <?php } ?>
-                <tr><td style="padding-left: 24px;"><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
-                <?php endforeach; ?>
-                <tr style="background:var(--bg-secondary);font-weight:700;font-size:15px;"><td>Total Assets</td><td class="text-right amount text-blue"><?= formatAmount($bs['total_assets']) ?></td></tr>
-            </table>
+            <div class="table-container table-container-inline">
+                <table>
+                    <tbody>
+                        <?php $lastSub = ''; foreach ($bs['ASSET'] as $item):
+                            if ($item['sub_group'] !== $lastSub) { $lastSub = $item['sub_group']; ?>
+                            <tr class="table-group-row"><td colspan="2"><?= $lastSub ?></td></tr>
+                            <?php } ?>
+                        <tr><td style="padding-left: 24px;"><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php endforeach; ?>
+                        <tr class="table-summary-row"><td>Total Assets</td><td class="text-right amount text-blue"><?= formatAmount($bs['total_assets']) ?></td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     <div>
         <div class="card" style="margin-bottom: 24px;">
             <div class="card-header"><h3 class="text-yellow"><i class="ri-hand-coin-line"></i> Liabilities</h3></div>
             <div class="card-body" style="padding:0;">
-                <table>
-                <?php foreach ($bs['LIABILITY'] as $item): ?>
-                <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
-                <?php endforeach; ?>
-                <?php if (empty($bs['LIABILITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
-                <tr style="background:var(--bg-secondary);font-weight:700;"><td>Total Liabilities</td><td class="text-right amount"><?= formatAmount($bs['total_liabilities']) ?></td></tr>
-                </table>
+                <div class="table-container table-container-inline">
+                    <table>
+                        <tbody>
+                        <?php foreach ($bs['LIABILITY'] as $item): ?>
+                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($bs['LIABILITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
+                        <tr class="table-summary-row"><td>Total Liabilities</td><td class="text-right amount"><?= formatAmount($bs['total_liabilities']) ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
         <div class="card">
             <div class="card-header"><h3 class="text-purple"><i class="ri-group-line"></i> Equity / Capital</h3></div>
             <div class="card-body" style="padding:0;">
-                <table>
-                <?php foreach ($bs['EQUITY'] as $item): ?>
-                <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
-                <?php endforeach; ?>
-                <?php if (empty($bs['EQUITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
-                <tr style="background:var(--bg-secondary);font-weight:700;"><td>Total Equity</td><td class="text-right amount"><?= formatAmount($bs['total_equity']) ?></td></tr>
-                </table>
+                <div class="table-container table-container-inline">
+                    <table>
+                        <tbody>
+                        <?php foreach ($bs['EQUITY'] as $item): ?>
+                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($bs['EQUITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
+                        <tr class="table-summary-row"><td>Total Equity</td><td class="text-right amount"><?= formatAmount($bs['total_equity']) ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

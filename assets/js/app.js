@@ -3,6 +3,7 @@ document.documentElement.classList.add('js');
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarState();
+    initTableShells();
     enhanceSearchableSelects();
     initLazyTables();
 
@@ -154,9 +155,26 @@ function initLazyTables() {
 
         const observer = new IntersectionObserver((entries) => {
             if (entries.some(entry => entry.isIntersecting)) loadNext();
-        }, { rootMargin: '900px 0px 900px 0px' });
+        }, {
+            root: container,
+            rootMargin: '240px 0px 240px 0px',
+        });
 
         observer.observe(sentinel);
+    });
+}
+
+function initTableShells(scope = document) {
+    scope.querySelectorAll('table').forEach((table) => {
+        if (table.closest('.table-container')) return;
+        if (!table.querySelector('thead')) return;
+        if (table.dataset.staticTable === '1') return;
+        if (table.closest('.modal')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-container table-container-inline';
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
     });
 }
 

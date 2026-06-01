@@ -42,6 +42,9 @@
     --radius-xl: 20px;
     --sidebar-width: 260px;
     --header-height: 64px;
+    --table-shell-height: min(62vh, 720px);
+    --table-shell-inline-height: min(46vh, 430px);
+    --table-min-width: 960px;
     --transition: all 0.18s ease;
 }
 
@@ -249,11 +252,27 @@ a:hover { color: #1d4ed8; }
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px;
     margin-bottom: 28px;
+    flex-wrap: wrap;
 }
 
 .page-header h1 {
     font-size: 24px; font-weight: 700;
     display: flex; align-items: center; gap: 10px;
+    line-height: 1.15;
+}
+
+.page-header > div,
+.page-header > form,
+.page-header form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.page-header .form-control,
+.filter-bar .form-control {
+    min-height: 42px;
 }
 
 /* ============ CARDS ============ */
@@ -473,17 +492,40 @@ a:hover { color: #1d4ed8; }
 
 /* ============ TABLES ============ */
 .table-container {
+    position: relative;
+    display: block;
     overflow-x: auto;
+    overflow-y: auto;
+    max-height: var(--table-shell-height);
     border-radius: var(--radius-xl);
     border: 1px solid var(--border);
     background: var(--bg-card);
     box-shadow: var(--shadow-sm);
 }
 
+.table-container table {
+    width: max(100%, var(--table-min-width));
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.table-container-inline {
+    max-height: var(--table-shell-inline-height);
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+}
+
+.table-container-inline table {
+    width: max(100%, 760px);
+}
+
 table {
     width: 100%; border-collapse: collapse;
 }
 
+.table-container thead th,
 thead th {
     padding: 14px 16px;
     text-align: left;
@@ -493,21 +535,62 @@ thead th {
     background: linear-gradient(180deg, #f8fafc, #eef4fa);
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
-    position: sticky;
-    top: var(--header-height);
-    z-index: 2;
 }
 
+.table-container thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+}
+
+.table-container tbody td,
 tbody td {
     padding: 14px 16px;
     font-size: 13.5px;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
+    line-height: 1.45;
+}
+
+.table-container td,
+.table-container th {
+    word-break: break-word;
+}
+
+.table-container td:first-child,
+.table-container th:first-child {
+    padding-left: 18px;
+}
+
+.table-container td:last-child,
+.table-container th:last-child {
+    padding-right: 18px;
 }
 
 tbody tr { transition: var(--transition); }
 tbody tr:hover { background: var(--bg-card-hover); }
 tbody tr:last-child td { border-bottom: none; }
+
+.table-container tfoot td,
+.table-summary-row td {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: linear-gradient(180deg, #f8fbff, #eef4fa);
+    border-top: 1px solid var(--border);
+    font-weight: 700;
+}
+
+.table-container tfoot .amount,
+.table-summary-row .amount {
+    font-weight: 800;
+}
+
+.table-group-row td {
+    background: var(--bg-secondary);
+    font-weight: 700;
+    color: var(--accent-blue);
+}
 
 .text-right { text-align: right; }
 .text-center { text-align: center; }
@@ -1067,6 +1150,11 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     color: var(--text-primary);
 }
 
+.dashboard-book-card.active {
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: var(--shadow-md);
+}
+
 .dashboard-book-card:hover {
     border-color: rgba(37, 99, 235, 0.28);
     box-shadow: var(--shadow-md);
@@ -1108,6 +1196,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .dashboard-book-balance {
     font-size: 25px;
     font-weight: 800;
+    line-height: 1.1;
 }
 
 .dashboard-mini-stat {
@@ -1121,6 +1210,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     color: var(--text-primary);
     font-size: 22px;
     font-weight: 800;
+    line-height: 1.05;
 }
 
 .dashboard-main-grid {
@@ -1147,6 +1237,9 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 }
 
 .dashboard-activity-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
     padding: 13px 20px;
     border-bottom: 1px solid var(--border);
 }
@@ -1158,6 +1251,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .activity-info strong {
     display: block;
     font-size: 14px;
+    line-height: 1.3;
 }
 
 .activity-info span,
@@ -1165,10 +1259,27 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     display: block;
     color: var(--text-muted);
     font-size: 12px;
+    line-height: 1.45;
+}
+
+.activity-info,
+.activity-side {
+    min-width: 0;
+}
+
+.activity-info span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .activity-side {
     text-align: right;
+}
+
+.activity-side strong,
+.activity-side span {
+    white-space: nowrap;
 }
 
 .dashboard-alert {
@@ -1197,10 +1308,16 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 html.js .pagination.no-js-pagination { display: none; }
 
 .lazy-list-footer {
+    position: sticky;
+    left: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 56px;
+    padding: 0 16px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), #ffffff);
+    border-top: 1px solid var(--border);
     color: var(--text-muted);
     font-size: 13px;
 }
@@ -1271,6 +1388,14 @@ html.js .pagination.no-js-pagination { display: none; }
     border-radius: var(--radius-lg);
     background: rgba(255, 255, 255, 0.74);
     box-shadow: var(--shadow-sm);
+}
+
+.filter-bar form {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    width: 100%;
 }
 
 .filter-bar .form-control { width: auto; min-width: 160px; }
@@ -1439,6 +1564,15 @@ html.js .pagination.no-js-pagination { display: none; }
     .page-content { padding: 16px; }
     .top-header { padding: 0 16px; }
     .top-entry-btn { display: none; }
+    .table-container {
+        max-height: min(52vh, 460px);
+    }
+    .table-container-inline {
+        max-height: min(44vh, 340px);
+    }
+    .table-container table {
+        width: max(100%, 720px);
+    }
     .page-header {
         align-items: flex-start;
         flex-direction: column;
@@ -1452,7 +1586,6 @@ html.js .pagination.no-js-pagination { display: none; }
     .filter-bar .btn {
         width: 100%;
     }
-    thead th { top: var(--header-height); }
 }
 
 /* ============ PRINT ============ */
