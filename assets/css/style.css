@@ -374,13 +374,15 @@ body.sidebar-collapsed .main-content {
 
 /* Breadcrumbs */
 .breadcrumb-trail {
-    display: flex;
-    align-items: center;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex: none !important;
     gap: 6px;
     font-size: 13.5px;
     color: var(--text-muted);
     font-weight: 500;
-    margin-right: auto;
+    margin-right: auto !important;
 }
 .breadcrumb-trail a {
     color: var(--text-muted);
