@@ -173,7 +173,7 @@ async function renderLedgerAccountResults(query) {
             });
         });
     } catch (error) {
-        ledgerAccountResults.innerHTML = '<div class="picker-empty">Could not search accounts right now.</div>';
+        ledgerAccountResults.innerHTML = `<div class="picker-empty">Could not search accounts right now. Error: ${escapeHtml(error.message)}.</div>`;
     }
 }
 

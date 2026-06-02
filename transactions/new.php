@@ -1321,7 +1321,7 @@ async function renderEntityPickerResults(query) {
             });
         });
     } catch (error) {
-        results.innerHTML = '<div class="picker-empty">Could not search right now. Please try again.</div>';
+        results.innerHTML = `<div class="picker-empty">Could not search right now. Error: ${escapeHtml(error.message)}. Please try again.</div>`;
     }
 }
 
@@ -1401,7 +1401,7 @@ async function renderAccountPickerResults(query) {
             });
         });
     } catch (error) {
-        results.innerHTML = '<div class="picker-empty">Could not search accounts right now. Please try again.</div>';
+        results.innerHTML = `<div class="picker-empty">Could not search accounts right now. Error: ${escapeHtml(error.message)}. Please try again.</div>`;
     }
 }
 
