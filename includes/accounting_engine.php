@@ -194,6 +194,12 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `profit_share_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `funding_pct`");
             }
 
+            $this->addIndexIfMissing('accounts', 'idx_accounts_business_search', '`business_id`, `entity_type`, `is_active`, `code`, `name`');
+            $this->addIndexIfMissing('cars', 'idx_cars_business_search', '`business_id`, `status`, `registration_no`, `make`, `model`');
+            $this->addIndexIfMissing('employees', 'idx_employees_business_search', '`business_id`, `is_active`, `name`, `role`, `phone`');
+            $this->addIndexIfMissing('partners', 'idx_partners_business_search', '`business_id`, `is_active`, `name`, `phone`');
+            $this->addIndexIfMissing('debtors_creditors', 'idx_parties_business_search', '`business_id`, `is_active`, `type`, `name`, `phone`');
+
             self::$advancedSchemaEnsured = true;
         } catch (\Throwable $e) {
             // Keep existing flows working even if migration permissions are limited.
@@ -259,6 +265,25 @@ class AccountingEngine {
             [$table, $column]
         );
         return !empty($row);
+    }
+
+    private function addIndexIfMissing($table, $indexName, $columnsSql) {
+        try {
+            $row = $this->db->fetch(
+                "SELECT INDEX_NAME
+                 FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?
+                   AND INDEX_NAME = ?
+                 LIMIT 1",
+                [$table, $indexName]
+            );
+            if (!$row) {
+                $this->db->query("ALTER TABLE `$table` ADD INDEX `$indexName` ($columnsSql)");
+            }
+        } catch (\Throwable $e) {
+            error_log("AutoBooks index setup skipped for $table.$indexName: " . $e->getMessage());
+        }
     }
 
     // ========================================
@@ -1002,12 +1027,22 @@ class AccountingEngine {
     /**
      * GST PAYMENT
      */
-    public function gstPayment($amount, $date, $narration) {
+    public function gstPayment($amount, $date, $narration, $gstBankAccountId = null) {
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) throw new Exception("GST payment amount must be greater than zero.");
 
         $gstPayable = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$this->businessId]);
-        $gstBank = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'GST'", [$this->businessId]);
+        if ($gstBankAccountId) {
+            $gstBank = $this->db->fetch(
+                "SELECT id FROM accounts WHERE business_id = ? AND id = ? AND entity_type = 'GST' AND is_active = 1",
+                [$this->businessId, $gstBankAccountId]
+            );
+        } else {
+            $gstBank = $this->db->fetch(
+                "SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'GST' AND entity_id IS NULL AND is_active = 1 ORDER BY code, name LIMIT 1",
+                [$this->businessId]
+            );
+        }
         if (!$gstPayable || !$gstBank) throw new Exception("GST payable or GST bank account is missing.");
 
         $payableRow = $this->getAccountBalanceRow($gstPayable['id']);
@@ -2597,11 +2632,22 @@ class AccountingEngine {
     // ========================================
     private function checkAlerts() {
         // Check cash balance
-        $cashAccount = $this->db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL", [$this->businessId]);
+        $cashAccounts = $this->db->fetchAll(
+            "SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL AND is_active = 1",
+            [$this->businessId]
+        );
         $business = $this->db->fetch("SELECT * FROM businesses WHERE id = ?", [$this->businessId]);
+        $minCashBalance = floatval($business['min_cash_balance'] ?? 0);
 
-        if ($cashAccount && $cashAccount['current_balance'] < ($business['min_cash_balance'] ?? 0)) {
-            $this->createAlert('CASH_LOW', "Cash balance (₹" . number_format($cashAccount['current_balance'], 2) . ") is below minimum threshold", 'account', $cashAccount['id']);
+        foreach ($cashAccounts as $cashAccount) {
+            if (floatval($cashAccount['current_balance']) < $minCashBalance) {
+                $this->createAlert(
+                    'CASH_LOW',
+                    ($cashAccount['name'] ?? 'Cash account') . " balance (₹" . number_format($cashAccount['current_balance'], 2) . ") is below minimum threshold",
+                    'account',
+                    $cashAccount['id']
+                );
+            }
         }
     }
 

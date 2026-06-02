@@ -7,8 +7,12 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
 
 // Get payment accounts for dropdown
-$cashAccount = getSystemAccount($db, $businessId, 'CASH');
-$bankAccount = getSystemAccount($db, $businessId, 'BANK');
+$primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
+$paymentAccounts = array_merge($primaryAccountGroups['cash_book'] ?? [], $primaryAccountGroups['bank_book'] ?? []);
+$paymentAccountIds = array_values(array_filter(array_map(
+    static fn($account) => $account['id'] ?? null,
+    $paymentAccounts
+)));
 
 // Get partners for optional funding
 $partners = $db->fetchAll("SELECT id, name FROM partners WHERE business_id = ? AND is_active = 1", [$businessId]);
@@ -26,6 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gstAmount = parseDecimalInput(post('gst_amount', 0));
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
+        if (!in_array($paymentAccount, $paymentAccountIds, true)) {
+            throw new Exception('You do not have write access to that payment account.');
+        }
 
         // Create car account in Chart of Accounts
         $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $regNo));
@@ -135,8 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Pay From *</label>
                     <select name="payment_account" class="form-control" required>
-                        <?php if ($cashAccount): ?><option value="<?= $cashAccount['id'] ?>">💵 Cash Account (<?= formatAmount($cashAccount['current_balance']) ?>)</option><?php endif; ?>
-                        <?php if ($bankAccount): ?><option value="<?= $bankAccount['id'] ?>">🏦 Bank Account (<?= formatAmount($bankAccount['current_balance']) ?>)</option><?php endif; ?>
+                        <?php foreach ($paymentAccounts as $account): ?>
+                            <?php $icon = ($account['entity_type'] ?? '') === 'CASH' ? '💵' : '🏦'; ?>
+                            <option value="<?= clean($account['id']) ?>"><?= $icon ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>) - <?= formatAmount($account['current_balance']) ?> <?= clean($account['current_balance_type']) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
             </div>

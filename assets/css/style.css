@@ -617,6 +617,7 @@ body.sidebar-collapsed .main-content {
 
 table {
     width: 100%; border-collapse: collapse;
+    table-layout: fixed;
 }
 
 .table-container thead th,
@@ -644,11 +645,32 @@ tbody td {
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
     line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
 .table-container td,
 .table-container th {
-    word-break: break-word;
+    min-width: 0;
+}
+
+.table-container th,
+.table-container td {
+    box-sizing: border-box;
+}
+
+.table-container th.text-right,
+.table-container td.text-right,
+.table-container th.text-center,
+.table-container td.text-center,
+.table-container th:last-child,
+.table-container td:last-child {
+    white-space: nowrap;
+}
+
+.table-container .amount,
+.table-container .badge,
+.table-container .btn {
+    white-space: nowrap;
 }
 
 .table-container td:first-child,
@@ -957,6 +979,85 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .entry-helper-strip span {
     color: var(--text-secondary);
     font-size: 13px;
+}
+
+.simple-entry-switch {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.simple-entry-option {
+    min-height: 82px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: #ffffff;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition);
+}
+
+.simple-entry-option i {
+    grid-row: span 2;
+    font-size: 24px;
+}
+
+.simple-entry-option span {
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.simple-entry-option strong {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 600;
+}
+
+.simple-entry-option.money-in {
+    border-color: rgba(21, 128, 61, 0.24);
+    background: linear-gradient(180deg, #ffffff, #f0fdf4);
+}
+
+.simple-entry-option.money-in i,
+.simple-entry-option.money-in span {
+    color: var(--accent-green);
+}
+
+.simple-entry-option.money-out {
+    border-color: rgba(190, 18, 60, 0.24);
+    background: linear-gradient(180deg, #ffffff, #fff1f2);
+}
+
+.simple-entry-option.money-out i,
+.simple-entry-option.money-out span {
+    color: var(--accent-red);
+}
+
+.simple-entry-option.split {
+    border-color: rgba(37, 99, 235, 0.2);
+    background: linear-gradient(180deg, #ffffff, #eff6ff);
+}
+
+.simple-entry-option.split i,
+.simple-entry-option.split span {
+    color: var(--accent-blue);
+}
+
+.simple-entry-option:hover,
+.simple-entry-option.active {
+    border-color: var(--accent-blue);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
 }
 
 .searchable-select-wrap {
@@ -1698,6 +1799,7 @@ html.js .pagination.no-js-pagination { display: none; }
     .form-row, .form-row-3 { grid-template-columns: 1fr; }
     .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr !important; }
     .entry-helper-strip,
+    .simple-entry-switch,
     .split-entry-panel,
     .dashboard-book-grid,
     .dashboard-stat-grid,

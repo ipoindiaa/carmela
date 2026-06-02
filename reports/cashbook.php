@@ -6,7 +6,18 @@ Auth::requireBookAccess('cash_book', 'read');
 $businessId = Auth::user('business_id');
 $dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
-$cashAccount = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL", [$businessId]);
+$cashAccounts = $db->fetchAll(
+    "SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL AND is_active = 1 ORDER BY code, name",
+    [$businessId]
+);
+$selectedAccountId = get('account_id', $cashAccounts[0]['id'] ?? '');
+$cashAccount = null;
+foreach ($cashAccounts as $account) {
+    if ($account['id'] === $selectedAccountId) {
+        $cashAccount = $account;
+        break;
+    }
+}
 
 $cashBalanceAsOn = ['signed' => 0.0, 'type' => 'DR', 'amount' => 0.0];
 $openingBalanceSigned = 0.0;
@@ -43,11 +54,16 @@ if ($cashAccount) {
     ];
 }
 
-$entries = $db->fetchAll(
-    "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
-     FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date BETWEEN ? AND ?
-     ORDER BY je.entry_date, je.created_at", [$cashAccount['id'], $dateFrom, $dateTo]);
+$entries = [];
+if ($cashAccount) {
+    $entries = $db->fetchAll(
+        "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date BETWEEN ? AND ?
+         ORDER BY je.entry_date, je.created_at",
+        [$cashAccount['id'], $dateFrom, $dateTo]
+    );
+}
 ?>
 
 <div class="page-header">
@@ -57,11 +73,25 @@ $entries = $db->fetchAll(
 
 <div class="filter-bar">
     <form method="GET" style="display:flex;gap:12px;align-items:end;">
+        <?php if (count($cashAccounts) > 1): ?>
+            <div>
+                <label class="form-label">Cash Account</label>
+                <select name="account_id" class="form-control searchable-select">
+                    <?php foreach ($cashAccounts as $account): ?>
+                        <option value="<?= clean($account['id']) ?>" <?= ($cashAccount['id'] ?? '') === $account['id'] ? 'selected' : '' ?>><?= clean($account['name']) ?> (<?= clean($account['code']) ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        <?php endif; ?>
         <div><label class="form-label">From</label><input type="date" name="from" class="form-control" value="<?= $dateFrom ?>"></div>
         <div><label class="form-label">To</label><input type="date" name="to" class="form-control" value="<?= $dateTo ?>"></div>
         <button type="submit" class="btn btn-primary btn-sm"><i class="ri-filter-line"></i> Apply</button>
     </form>
 </div>
+
+<?php if (!$cashAccount): ?>
+    <div class="alert alert-info"><i class="ri-information-line"></i> No active cash account found. Add one from Account Settings.</div>
+<?php endif; ?>
 
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-body" style="display:flex;gap:40px;">

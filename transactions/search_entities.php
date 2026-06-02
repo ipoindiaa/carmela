@@ -12,6 +12,7 @@ $businessId = Auth::user('business_id');
 $kind = strtolower(get('kind', ''));
 $query = trim(get('q', ''));
 $needle = '%' . $query . '%';
+$prefix = $query . '%';
 $limit = 25;
 $results = [];
 
@@ -29,9 +30,15 @@ switch ($kind) {
                    OR sub_group LIKE ?
                    OR entity_type LIKE ?
                )
-             ORDER BY group_name, sub_group, code, name
+             ORDER BY
+               CASE
+                 WHEN code LIKE ? THEN 0
+                 WHEN name LIKE ? THEN 1
+                 ELSE 2
+               END,
+               group_name, sub_group, code, name
              LIMIT $limit",
-            [$businessId, $needle, $needle, $needle, $needle, $needle]
+            [$businessId, $needle, $needle, $needle, $needle, $needle, $prefix, $prefix]
         );
         foreach ($rows as $row) {
             $results[] = [
@@ -47,16 +54,22 @@ switch ($kind) {
             "SELECT id, registration_no, make, model, year, status
              FROM cars
              WHERE business_id = ?
-               AND status = 'IN_STOCK'
+               AND status <> 'CANCELLED'
                AND (
                    registration_no LIKE ?
                    OR make LIKE ?
                    OR model LIKE ?
                    OR CONCAT(COALESCE(make, ''), ' ', COALESCE(model, '')) LIKE ?
                )
-             ORDER BY registration_no
+             ORDER BY
+               CASE
+                 WHEN registration_no LIKE ? THEN 0
+                 WHEN make LIKE ? THEN 1
+                 ELSE 2
+               END,
+               registration_no
              LIMIT $limit",
-            [$businessId, $needle, $needle, $needle, $needle]
+            [$businessId, $needle, $needle, $needle, $needle, $prefix, $prefix]
         );
         foreach ($rows as $row) {
             $results[] = [
@@ -92,23 +105,24 @@ switch ($kind) {
 
     case 'employee':
         $rows = $db->fetchAll(
-            "SELECT id, name, role, monthly_salary
+            "SELECT id, name, role, phone, monthly_salary
              FROM employees
              WHERE business_id = ?
                AND is_active = 1
                AND (
                    name LIKE ?
                    OR role LIKE ?
+                   OR phone LIKE ?
                )
-             ORDER BY name
+             ORDER BY CASE WHEN name LIKE ? THEN 0 ELSE 1 END, name
              LIMIT $limit",
-            [$businessId, $needle, $needle]
+            [$businessId, $needle, $needle, $needle, $prefix]
         );
         foreach ($rows as $row) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
-                'meta' => trim(($row['role'] ?: 'Employee') . ' | Salary ' . formatAmount($row['monthly_salary'] ?? 0)),
+                'meta' => trim(($row['role'] ?: 'Employee') . (!empty($row['phone']) ? ' | ' . $row['phone'] : '') . ' | Salary ' . formatAmount($row['monthly_salary'] ?? 0)),
             ];
         }
         break;

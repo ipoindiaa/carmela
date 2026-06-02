@@ -85,13 +85,18 @@ document.addEventListener('DOMContentLoaded', function() {
             // Update payment account label
             const pLabel = document.getElementById('payment-account-label');
             const paymentAccountGroup = document.getElementById('payment-account-group');
-            const hiddenAccountTypes = ['GST_PAYMENT', 'GST_UTILIZATION'];
+            const hiddenAccountTypes = ['GST_UTILIZATION'];
             if (paymentAccountGroup) {
                 paymentAccountGroup.style.display = hiddenAccountTypes.includes(type) ? 'none' : '';
             }
+            if (typeof filterPrimaryPaymentAccounts === 'function') {
+                filterPrimaryPaymentAccounts(type);
+            }
             if (pLabel) {
                 const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED'];
-                if (type === 'JOURNAL_VOUCHER') {
+                if (type === 'GST_PAYMENT') {
+                    pLabel.textContent = 'GST Bank Account';
+                } else if (type === 'JOURNAL_VOUCHER') {
                     pLabel.textContent = 'Cash / Bank / GST account';
                 } else {
                     pLabel.textContent = inTypes.includes(type) ? 'Receiving Account' : 'Payment Account';

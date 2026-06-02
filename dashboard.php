@@ -7,21 +7,22 @@ $businessId = Auth::user('business_id');
 $todayDate = date('Y-m-d');
 $dashboardMinimumRows = 8;
 
-$primaryAccounts = Auth::getAccessiblePrimaryAccounts($businessId, 'read');
+$primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'read');
 $tabMeta = [
-    'cash_book' => ['tab' => 'cash', 'label' => 'Cash Account', 'icon' => '💵', 'class' => 'cash'],
-    'bank_book' => ['tab' => 'bank', 'label' => 'Bank Account', 'icon' => '🏦', 'class' => 'bank'],
-    'gst_book' => ['tab' => 'gst', 'label' => 'GST Account', 'icon' => '📋', 'class' => 'gst'],
+    'cash_book' => ['tab' => 'cash', 'fallback_label' => 'Cash Account', 'icon' => '💵', 'class' => 'cash'],
+    'bank_book' => ['tab' => 'bank', 'fallback_label' => 'Bank Account', 'icon' => '🏦', 'class' => 'bank'],
+    'gst_book' => ['tab' => 'gst', 'fallback_label' => 'GST Account', 'icon' => '📋', 'class' => 'gst'],
 ];
 $availableTabs = [];
 foreach ($tabMeta as $bookKey => $meta) {
-    if (!empty($primaryAccounts[$bookKey])) {
-        $availableTabs[$meta['tab']] = [
+    foreach (($primaryAccountGroups[$bookKey] ?? []) as $index => $account) {
+        $tabKey = $meta['tab'] . ($index ? '-' . ($index + 1) : '');
+        $availableTabs[$tabKey] = [
             'book_key' => $bookKey,
-            'label' => $meta['label'],
+            'label' => $account['name'] ?: $meta['fallback_label'],
             'icon' => $meta['icon'],
             'class' => $meta['class'],
-            'account' => $primaryAccounts[$bookKey],
+            'account' => $account,
         ];
     }
 }
@@ -81,10 +82,11 @@ $bookViewMoreUrl = match ($activeBookKey) {
         'to' => $accountLedgerToDate,
     ]),
     'bank_book' => 'reports/bankbook.php?' . http_build_query([
+        'account_id' => $activeAccountId,
         'from' => $accountLedgerFromDate,
         'to' => $accountLedgerToDate,
     ]),
-    'gst_book' => 'reports/ledger.php?' . http_build_query([
+    'gst_book' => 'reports/gst_book.php?' . http_build_query([
         'account_id' => $activeAccountId,
         'from' => $accountLedgerFromDate,
         'to' => $accountLedgerToDate,

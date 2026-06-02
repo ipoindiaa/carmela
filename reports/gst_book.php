@@ -8,7 +8,18 @@ $businessId = Auth::user('business_id');
 $dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 
-$gstBank = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'GST' AND entity_id IS NULL", [$businessId]);
+$gstBanks = $db->fetchAll(
+    "SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'GST' AND entity_id IS NULL AND is_active = 1 ORDER BY code, name",
+    [$businessId]
+);
+$selectedGstBankId = get('account_id', $gstBanks[0]['id'] ?? '');
+$gstBank = null;
+foreach ($gstBanks as $account) {
+    if ($account['id'] === $selectedGstBankId) {
+        $gstBank = $account;
+        break;
+    }
+}
 $gstPayable = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$businessId]);
 $gstInput = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND code = 'GST-RCV'", [$businessId]);
 
@@ -142,6 +153,16 @@ $netPositionAsOn = round(abs(min(0, $gstPayableAsOn['signed'])) - max(0, $gstInp
 
 <div class="filter-bar">
     <form method="GET" style="display:flex;gap:12px;align-items:end;">
+        <?php if (count($gstBanks) > 1): ?>
+            <div>
+                <label class="form-label">GST Bank</label>
+                <select name="account_id" class="form-control searchable-select">
+                    <?php foreach ($gstBanks as $account): ?>
+                        <option value="<?= clean($account['id']) ?>" <?= ($gstBank['id'] ?? '') === $account['id'] ? 'selected' : '' ?>><?= clean($account['name']) ?> (<?= clean($account['code']) ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        <?php endif; ?>
         <div><label class="form-label">From</label><input type="date" name="from" class="form-control" value="<?= clean($dateFrom) ?>"></div>
         <div><label class="form-label">To</label><input type="date" name="to" class="form-control" value="<?= clean($dateTo) ?>"></div>
         <button type="submit" class="btn btn-primary btn-sm"><i class="ri-filter-line"></i> Apply</button>
@@ -153,7 +174,7 @@ $netPositionAsOn = round(abs(min(0, $gstPayableAsOn['signed'])) - max(0, $gstInp
         <div class="stat-value <?= ($gstBankAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>">
             <?= formatAmount($gstBankAsOn['amount'] ?? 0) ?>
         </div>
-        <div class="stat-label">GST Bank Balance As On Date</div>
+        <div class="stat-label"><?= clean($gstBank['name'] ?? 'GST Bank') ?> Balance As On Date</div>
     </div>
     <div class="stat-card">
         <div class="stat-value <?= ($gstPayableAsOn['type'] ?? 'CR') === 'CR' ? 'credit-amount' : 'debit-amount' ?>">
@@ -172,6 +193,10 @@ $netPositionAsOn = round(abs(min(0, $gstPayableAsOn['signed'])) - max(0, $gstInp
         <div class="stat-label"><?= $netPositionAsOn >= 0 ? 'Net GST Payable As On Date' : 'Net GST Credit As On Date' ?></div>
     </div>
 </div>
+
+<?php if (!$gstBank): ?>
+    <div class="alert alert-info"><i class="ri-information-line"></i> No active GST bank account found. Add one from Account Settings.</div>
+<?php endif; ?>
 
 <div class="stats-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px;">
     <div class="stat-card">

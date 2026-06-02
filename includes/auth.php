@@ -216,6 +216,17 @@ class Auth {
     }
 
     public static function getAccessiblePrimaryAccounts($businessId, $access = 'read') {
+        $accountsByBook = self::getAccessiblePrimaryAccountList($businessId, $access);
+        $accounts = [];
+        foreach ($accountsByBook as $bookKey => $rows) {
+            if (!empty($rows[0])) {
+                $accounts[$bookKey] = $rows[0];
+            }
+        }
+        return $accounts;
+    }
+
+    public static function getAccessiblePrimaryAccountList($businessId, $access = 'read') {
         $types = self::getAccessiblePrimaryAccountTypes($access);
         if (empty($types)) {
             return [];
@@ -228,8 +239,9 @@ class Auth {
              FROM accounts
              WHERE business_id = ?
                AND entity_id IS NULL
+               AND is_active = 1
                AND entity_type IN ($placeholders)
-             ORDER BY FIELD(entity_type, 'CASH', 'BANK', 'GST')",
+             ORDER BY FIELD(entity_type, 'CASH', 'BANK', 'GST'), code, name",
             array_merge([$businessId], $types)
         );
 
@@ -237,17 +249,22 @@ class Auth {
         foreach ($rows as $row) {
             $bookKey = self::getBookKeyForAccountType($row['entity_type']);
             if ($bookKey) {
-                $accounts[$bookKey] = $row;
+                $accounts[$bookKey][] = $row;
             }
         }
         return $accounts;
     }
 
     public static function getAccessiblePrimaryAccountIds($businessId, $access = 'read') {
-        return array_values(array_filter(array_map(
-            static fn($account) => $account['id'] ?? null,
-            self::getAccessiblePrimaryAccounts($businessId, $access)
-        )));
+        $ids = [];
+        foreach (self::getAccessiblePrimaryAccountList($businessId, $access) as $rows) {
+            foreach ($rows as $account) {
+                if (!empty($account['id'])) {
+                    $ids[] = $account['id'];
+                }
+            }
+        }
+        return array_values(array_unique($ids));
     }
 
     public static function canAccessTransactionEntry($entryId, $businessId, $access = 'read') {

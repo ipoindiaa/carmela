@@ -9,20 +9,52 @@ $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 Auth::requireAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 
 // Get writable primary accounts for dropdowns
-$writableAccounts = Auth::getAccessiblePrimaryAccounts($businessId, 'write');
-$cashAccount = $writableAccounts['cash_book'] ?? null;
-$bankAccount = $writableAccounts['bank_book'] ?? null;
-$gstAccount = $writableAccounts['gst_book'] ?? null;
-$writableAccountIds = array_values(array_filter([
-    $cashAccount['id'] ?? null,
-    $bankAccount['id'] ?? null,
-    $gstAccount['id'] ?? null,
-]));
+$writableAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
+$cashAccounts = $writableAccountGroups['cash_book'] ?? [];
+$bankAccounts = $writableAccountGroups['bank_book'] ?? [];
+$gstAccounts = $writableAccountGroups['gst_book'] ?? [];
+$writablePrimaryAccounts = array_merge($cashAccounts, $bankAccounts, $gstAccounts);
+$writableAccountIds = array_values(array_filter(array_map(
+    static fn($account) => $account['id'] ?? null,
+    $writablePrimaryAccounts
+)));
+
+$primaryAccountIcon = static function ($entityType) {
+    return match ($entityType) {
+        'CASH' => '💵',
+        'BANK' => '🏦',
+        'GST' => '📋',
+        default => '💼',
+    };
+};
+$renderPrimaryAccountOptions = static function (array $accounts, $selectedAccountId = '') use ($primaryAccountIcon) {
+    foreach ($accounts as $account) {
+        $label = trim(($account['name'] ?? '') . ' (' . ($account['code'] ?? '') . ')');
+        $balance = formatAmount($account['current_balance'] ?? 0) . ' ' . ($account['current_balance_type'] ?? 'DR');
+        ?>
+        <option value="<?= clean($account['id']) ?>" data-account-type="<?= clean($account['entity_type']) ?>" <?= $selectedAccountId === ($account['id'] ?? '') ? 'selected' : '' ?>>
+            <?= $primaryAccountIcon($account['entity_type'] ?? '') ?> <?= clean($label) ?> - <?= clean($balance) ?>
+        </option>
+        <?php
+    }
+};
 
 $preselectedAccount = get('account', '');
-if ($preselectedAccount === 'cash' && !$cashAccount) $preselectedAccount = '';
-if ($preselectedAccount === 'bank' && !$bankAccount) $preselectedAccount = '';
-if ($preselectedAccount === 'gst' && !$gstAccount) $preselectedAccount = '';
+$preselectedAccountId = '';
+$preselectedAccountType = match ($preselectedAccount) {
+    'cash' => 'CASH',
+    'bank' => 'BANK',
+    'gst' => 'GST',
+    default => '',
+};
+if ($preselectedAccountType !== '') {
+    foreach ($writablePrimaryAccounts as $account) {
+        if (($account['entity_type'] ?? '') === $preselectedAccountType) {
+            $preselectedAccountId = $account['id'];
+            break;
+        }
+    }
+}
 $preselectedType = get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
 $preselectedCarId = get('car_id', '');
@@ -192,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!Auth::hasBookAccess('gst_book', 'write')) {
                     throw new Exception('You do not have write access to the GST book.');
                 }
-                $entryId = $engine->gstPayment($amount, $date, $narration);
+                $entryId = $engine->gstPayment($amount, $date, $narration, $paymentAccountId);
                 break;
 
             case 'GST_UTILIZATION':
@@ -265,15 +297,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-add-circle-line"></i> New Entry</h1>
-    <p class="text-muted">All entries from one screen: simple entry, car entry, salary, loan, and large split bills.</p>
+    <p class="text-muted">All entries from one screen: simple Jama, Udhar, car entry, salary, loan, and large split bills.</p>
 </div>
 
-<div class="entry-helper-strip">
-    <div>
-        <strong>Operator shortcut</strong>
-        <span>For a large bill, select “Large Bill / Split Entry” and complete the split details in the modal.</span>
-    </div>
-    <button type="button" class="btn btn-outline btn-sm" onclick="selectSplitEntryType()"><i class="ri-bill-line"></i> Add split bill</button>
+<div class="simple-entry-switch">
+    <button type="button" class="simple-entry-option money-in" data-money-flow="in">
+        <i class="ri-arrow-down-circle-line"></i>
+        <span>Green / Jama</span>
+        <strong>Business received money</strong>
+    </button>
+    <button type="button" class="simple-entry-option money-out" data-money-flow="out">
+        <i class="ri-arrow-up-circle-line"></i>
+        <span>Red / Udhar</span>
+        <strong>Business paid money</strong>
+    </button>
+    <button type="button" class="simple-entry-option split" onclick="selectSplitEntryType()">
+        <i class="ri-bill-line"></i>
+        <span>Split Bill</span>
+        <strong>One bill, many cars/accounts</strong>
+    </button>
 </div>
 
 <div class="card entry-card">
@@ -322,15 +364,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group" id="payment-account-group">
                     <label class="form-label" id="payment-account-label">Payment Account *</label>
                     <select name="payment_account" class="form-control searchable-select" id="payment_account">
-                        <?php if ($cashAccount): ?>
-                            <option value="<?= $cashAccount['id'] ?>" <?= $preselectedAccount === 'cash' ? 'selected' : '' ?>>💵 Cash Account (<?= formatAmount($cashAccount['current_balance'] ?? 0) ?>)</option>
-                        <?php endif; ?>
-                        <?php if ($bankAccount): ?>
-                            <option value="<?= $bankAccount['id'] ?>" <?= $preselectedAccount === 'bank' ? 'selected' : '' ?>>🏦 Bank Account (<?= formatAmount($bankAccount['current_balance'] ?? 0) ?>)</option>
-                        <?php endif; ?>
-                        <?php if ($gstAccount): ?>
-                            <option value="<?= $gstAccount['id'] ?>" <?= $preselectedAccount === 'gst' ? 'selected' : '' ?>>📋 GST Account (<?= formatAmount($gstAccount['current_balance'] ?? 0) ?>)</option>
-                        <?php endif; ?>
+                        <?php $renderPrimaryAccountOptions($writablePrimaryAccounts, $preselectedAccountId); ?>
                     </select>
                 </div>
             </div>
@@ -596,17 +630,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-group">
                         <label class="form-label">Transfer From *</label>
                         <select name="contra_from" class="form-control searchable-select">
-                            <?php if ($cashAccount): ?><option value="<?= $cashAccount['id'] ?>">💵 Cash Account</option><?php endif; ?>
-                            <?php if ($bankAccount): ?><option value="<?= $bankAccount['id'] ?>">🏦 Bank Account</option><?php endif; ?>
-                            <?php if ($gstAccount): ?><option value="<?= $gstAccount['id'] ?>">📋 GST Account</option><?php endif; ?>
+                            <?php $renderPrimaryAccountOptions($writablePrimaryAccounts); ?>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Transfer To *</label>
                         <select name="contra_to" class="form-control searchable-select">
-                            <?php if ($bankAccount): ?><option value="<?= $bankAccount['id'] ?>">🏦 Bank Account</option><?php endif; ?>
-                            <?php if ($cashAccount): ?><option value="<?= $cashAccount['id'] ?>">💵 Cash Account</option><?php endif; ?>
-                            <?php if ($gstAccount): ?><option value="<?= $gstAccount['id'] ?>">📋 GST Account</option><?php endif; ?>
+                            <?php $renderPrimaryAccountOptions($writablePrimaryAccounts); ?>
                         </select>
                     </div>
                 </div>
@@ -800,6 +830,10 @@ const entityPickerConfig = {
 
 const preselectedExpenseCarId = <?= json_encode($preselectedType === 'CAR_EXPENSE' ? $preselectedCarId : '') ?>;
 const preselectedExpenseCarLabel = <?= json_encode($preselectedCar['registration_no'] ?? '') ?>;
+const moneyFlowDefaults = {
+    in: 'PARTNER_INVEST',
+    out: 'GENERAL_EXPENSE',
+};
 
 function parseNumericString(value) {
     const normalized = String(value || '').replace(/[^0-9.\-]/g, '');
@@ -871,6 +905,38 @@ function selectSplitEntryType() {
     select.value = 'JOURNAL_VOUCHER';
     select.dispatchEvent(new Event('change'));
     openSplitEntryModal();
+}
+
+function selectMoneyFlow(flow) {
+    const select = document.getElementById('transaction_type');
+    if (!select || !moneyFlowDefaults[flow]) return;
+    select.value = moneyFlowDefaults[flow];
+    select.dispatchEvent(new Event('change'));
+    document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.moneyFlow === flow);
+    });
+    const amountInput = document.querySelector('.amount-input');
+    setTimeout(() => amountInput?.focus(), 40);
+}
+
+function filterPrimaryPaymentAccounts(type) {
+    const select = document.getElementById('payment_account');
+    if (!select) return;
+    const requiredAccountType = type === 'GST_PAYMENT' ? 'GST' : '';
+    let selectedVisible = false;
+
+    Array.from(select.options).forEach((option) => {
+        const accountType = option.dataset.accountType || '';
+        const isVisible = !requiredAccountType || accountType === requiredAccountType;
+        option.hidden = !isVisible;
+        option.disabled = !isVisible;
+        if (option.selected && isVisible) selectedVisible = true;
+    });
+
+    if (!selectedVisible) {
+        const firstVisible = Array.from(select.options).find((option) => !option.disabled);
+        if (firstVisible) select.value = firstVisible.value;
+    }
 }
 
 function openSplitEntryModal() {
@@ -1014,6 +1080,10 @@ function selectEntityPickerValue(kind, id, label) {
 
 document.addEventListener('DOMContentLoaded', function() {
     syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
+    document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
+        button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));
+    });
+    filterPrimaryPaymentAccounts(document.getElementById('transaction_type')?.value || '');
 });
 
 async function renderAccountPickerResults(query) {
