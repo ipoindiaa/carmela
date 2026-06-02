@@ -29,33 +29,29 @@ $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
     <div class="card">
         <div class="card-header"><h3 class="text-green"><i class="ri-arrow-down-circle-line"></i> Income</h3></div>
         <div class="card-body" style="padding:0;">
-            <div class="table-container table-container-inline">
-                <table>
-                    <tbody>
-                        <?php foreach ($pnl['income'] as $item): ?>
-                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount positive"><?= formatAmount($item['amount']) ?></td></tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($pnl['income'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No income recorded</td></tr><?php endif; ?>
-                        <tr class="table-summary-row"><td>Total Income</td><td class="text-right amount text-green"><?= formatAmount($pnl['total_income']) ?></td></tr>
-                    </tbody>
-                </table>
-            </div>
+            <table data-static-table="1">
+                <tbody>
+                    <?php foreach ($pnl['income'] as $item): ?>
+                    <tr><td><?= clean($item['name']) ?></td><td class="text-right amount positive"><?= formatAmount($item['amount']) ?></td></tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($pnl['income'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No income recorded</td></tr><?php endif; ?>
+                    <tr class="table-summary-row"><td>Total Income</td><td class="text-right amount text-green"><?= formatAmount($pnl['total_income']) ?></td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
     <div class="card">
         <div class="card-header"><h3 class="text-red"><i class="ri-arrow-up-circle-line"></i> Expenses</h3></div>
         <div class="card-body" style="padding:0;">
-            <div class="table-container table-container-inline">
-                <table>
-                    <tbody>
-                        <?php foreach ($pnl['expenses'] as $item): ?>
-                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount negative"><?= formatAmount($item['amount']) ?></td></tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($pnl['expenses'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No expenses recorded</td></tr><?php endif; ?>
-                        <tr class="table-summary-row"><td>Total Expenses</td><td class="text-right amount text-red"><?= formatAmount($pnl['total_expenses']) ?></td></tr>
-                    </tbody>
-                </table>
-            </div>
+            <table data-static-table="1">
+                <tbody>
+                    <?php foreach ($pnl['expenses'] as $item): ?>
+                    <tr><td><?= clean($item['name']) ?></td><td class="text-right amount negative"><?= formatAmount($item['amount']) ?></td></tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($pnl['expenses'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No expenses recorded</td></tr><?php endif; ?>
+                    <tr class="table-summary-row"><td>Total Expenses</td><td class="text-right amount text-red"><?= formatAmount($pnl['total_expenses']) ?></td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

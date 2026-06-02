@@ -18,9 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $carId = Database::uuid();
-        $regNo = post('registration_no');
-        $purchasePrice = floatval(post('purchase_price'));
-        $gstAmount = floatval(post('gst_amount', 0));
+        $regNo = normalizeRegistrationNo(post('registration_no'));
+        if (!isValidRegistrationNo($regNo)) {
+            throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
+        }
+        $purchasePrice = parseDecimalInput(post('purchase_price'));
+        $gstAmount = parseDecimalInput(post('gst_amount', 0));
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
 
@@ -47,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $partnerFunding = [];
         if (!empty($_POST['partner_ids'])) {
             foreach ($_POST['partner_ids'] as $idx => $pid) {
-                $pAmount = floatval($_POST['partner_amounts'][$idx] ?? 0);
+                $pAmount = parseDecimalInput($_POST['partner_amounts'][$idx] ?? 0);
                 if ($pid && $pAmount > 0) {
                     $partnerFunding[] = [
                         'partner_id' => $pid,
@@ -83,7 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Registration No. *</label>
-                    <input type="text" name="registration_no" class="form-control" placeholder="e.g., GJ05MX1840" required>
+                    <input type="text" name="registration_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" title="Use format like GJ05AA0001. Last 4 characters must be digits." required>
+                    <div class="form-hint">Last 4 digits must stay exactly 4 numbers, like <strong>0001</strong>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Purchase Date *</label>
@@ -114,13 +118,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Purchase Price (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="number" name="purchase_price" class="form-control" placeholder="0.00" step="0.01" required>
+                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" required>
                     </div>
                 </div>
             </div>
             <div class="form-group">
                 <label class="form-label">GST Input Included (₹)</label>
-                <input type="number" name="gst_amount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                <input type="text" name="gst_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                 <div class="form-hint">Optional. If entered, inventory cost will exclude this GST and GST Input Credit will be debited separately.</div>
             </div>
 
@@ -155,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-group">
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="number" name="partner_amounts[]" class="form-control" placeholder="0.00" step="0.01">
+                            <input type="text" name="partner_amounts[]" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                         </div>
                     </div>
                     <div class="form-group">
@@ -181,6 +185,9 @@ function addPartnerRow() {
     const row = container.querySelector('.partner-row').cloneNode(true);
     row.querySelectorAll('input').forEach(i => i.value = '');
     row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    if (typeof initCurrencyInputs === 'function') {
+        initCurrencyInputs(row);
+    }
     container.appendChild(row);
 }
 </script>

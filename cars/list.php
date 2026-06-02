@@ -13,12 +13,14 @@ if ($isLazyRequest) {
 
 $businessId = Auth::user('business_id');
 $filter = get('status', '');
+$search = trim((string) get('q', ''));
 $page = max(1, intval(get('page', 1)));
 $perPage = 24;
 
-function carsListUrl($page, $filter, $lazy = false) {
+function carsListUrl($page, $filter, $search, $lazy = false) {
     $query = ['page' => $page];
     if ($filter !== '') $query['status'] = $filter;
+    if ($search !== '') $query['q'] = $search;
     if ($lazy) $query['lazy'] = 1;
     return 'list.php?' . http_build_query($query);
 }
@@ -62,6 +64,10 @@ function renderCarRows($cars) {
 $where = "WHERE c.business_id = ?";
 $params = [$businessId];
 if ($filter) { $where .= " AND c.status = ?"; $params[] = $filter; }
+if ($search !== '') {
+    $where .= " AND UPPER(REPLACE(REPLACE(c.registration_no, '-', ''), ' ', '')) LIKE ?";
+    $params[] = '%' . strtoupper(preg_replace('/[^A-Z0-9]/i', '', $search)) . '%';
+}
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
@@ -79,12 +85,12 @@ if ($isLazyRequest) {
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
         'html' => renderCarRows($cars),
-        'next_url' => $nextPage ? carsListUrl($nextPage, $filter, true) : '',
+        'next_url' => $nextPage ? carsListUrl($nextPage, $filter, $search, true) : '',
     ]);
     exit;
 }
 
-$nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, true) : '';
+$nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, $search, true) : '';
 ?>
 
 <div class="page-header">
@@ -93,11 +99,23 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 </div>
 
 <div class="filter-bar">
-    <a href="list.php" class="btn btn-sm <?= !$filter ? 'btn-primary' : 'btn-outline' ?>">All</a>
-    <a href="list.php?status=IN_STOCK" class="btn btn-sm <?= $filter === 'IN_STOCK' ? 'btn-primary' : 'btn-outline' ?>">In Stock</a>
-    <a href="list.php?status=SOLD" class="btn btn-sm <?= $filter === 'SOLD' ? 'btn-primary' : 'btn-outline' ?>">Sold</a>
-    <a href="list.php?status=PENDING_PAYMENT" class="btn btn-sm <?= $filter === 'PENDING_PAYMENT' ? 'btn-primary' : 'btn-outline' ?>">Pending</a>
-    <a href="list.php?status=CANCELLED" class="btn btn-sm <?= $filter === 'CANCELLED' ? 'btn-primary' : 'btn-outline' ?>">Cancelled</a>
+    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+        <?php if ($filter !== ''): ?><input type="hidden" name="status" value="<?= clean($filter) ?>"><?php endif; ?>
+        <div style="min-width:240px;flex:1 1 260px;">
+            <label class="form-label">Search by car number</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type GJ05AA0001">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <a href="list.php<?= $filter !== '' ? '?status=' . urlencode($filter) : '' ?>" class="btn btn-outline btn-sm">Clear Search</a>
+    </form>
+</div>
+
+<div class="filter-bar">
+    <a href="list.php<?= $search !== '' ? '?q=' . urlencode($search) : '' ?>" class="btn btn-sm <?= !$filter ? 'btn-primary' : 'btn-outline' ?>">All</a>
+    <a href="list.php?<?= http_build_query(array_filter(['status' => 'IN_STOCK', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'IN_STOCK' ? 'btn-primary' : 'btn-outline' ?>">In Stock</a>
+    <a href="list.php?<?= http_build_query(array_filter(['status' => 'SOLD', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'SOLD' ? 'btn-primary' : 'btn-outline' ?>">Sold</a>
+    <a href="list.php?<?= http_build_query(array_filter(['status' => 'PENDING_PAYMENT', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'PENDING_PAYMENT' ? 'btn-primary' : 'btn-outline' ?>">Pending</a>
+    <a href="list.php?<?= http_build_query(array_filter(['status' => 'CANCELLED', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'CANCELLED' ? 'btn-primary' : 'btn-outline' ?>">Cancelled</a>
 </div>
 
 <div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
@@ -129,11 +147,11 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination no-js-pagination">
-    <?php if ($page > 1): ?><a href="<?= clean(carsListUrl($page - 1, $filter)) ?>">← Prev</a><?php endif; ?>
+    <?php if ($page > 1): ?><a href="<?= clean(carsListUrl($page - 1, $filter, $search)) ?>">← Prev</a><?php endif; ?>
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="<?= clean(carsListUrl($i, $filter)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(carsListUrl($i, $filter, $search)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
-    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(carsListUrl($page + 1, $filter)) ?>">Next →</a><?php endif; ?>
+    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(carsListUrl($page + 1, $filter, $search)) ?>">Next →</a><?php endif; ?>
 </div>
 <?php endif; ?>
 

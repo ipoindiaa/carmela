@@ -4,6 +4,8 @@ document.documentElement.classList.add('js');
 document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarState();
     initResponsiveSidebar();
+    initCurrencyInputs();
+    initRegistrationInputs();
     initTableShells();
     syncViewportTableHeights();
     initScrollMemory();
@@ -28,16 +30,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!confirm(el.dataset.confirm)) {
             e.preventDefault();
         }
-    });
-
-    // Amount input formatting
-    document.querySelectorAll('.amount-input').forEach(input => {
-        input.addEventListener('blur', function() {
-            let val = parseFloat(this.value.replace(/[^0-9.]/g, ''));
-            if (!isNaN(val)) {
-                this.value = val.toFixed(2);
-            }
-        });
     });
 
     // Dynamic form fields based on transaction type
@@ -74,6 +66,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'block';
             });
+            if (typeof syncPreselectedExpenseCarState === 'function') {
+                syncPreselectedExpenseCarState(type);
+            }
 
             const gstLabel = document.querySelector('#gst-section .form-label');
             const gstHint = document.querySelector('#gst-section .form-hint');
@@ -120,6 +115,11 @@ function restoreSidebarState() {
     const nav = document.querySelector('.sidebar-nav');
     if (!nav) return;
 
+    const collapsed = localStorage.getItem('autobooks.sidebar.collapsed') === '1';
+    if (window.innerWidth > 768) {
+        document.body.classList.toggle('sidebar-collapsed', collapsed);
+    }
+
     const key = 'autobooks.sidebar.scrollTop';
     const saved = sessionStorage.getItem(key);
     if (saved !== null) {
@@ -156,7 +156,12 @@ function initResponsiveSidebar() {
     };
 
     toggle.addEventListener('click', () => {
-        if (window.innerWidth > 768) return;
+        if (window.innerWidth > 768) {
+            const nextState = !document.body.classList.contains('sidebar-collapsed');
+            document.body.classList.toggle('sidebar-collapsed', nextState);
+            localStorage.setItem('autobooks.sidebar.collapsed', nextState ? '1' : '0');
+            return;
+        }
         if (sidebar.classList.contains('open')) {
             closeSidebar();
         } else {
@@ -177,8 +182,59 @@ function initResponsiveSidebar() {
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
             closeSidebar();
+            document.body.classList.toggle('sidebar-collapsed', localStorage.getItem('autobooks.sidebar.collapsed') === '1');
         }
     }, { passive: true });
+}
+
+function initCurrencyInputs(scope = document) {
+    const inputs = scope.querySelectorAll('input.currency-input:not([data-currency-ready])');
+    if (!inputs.length) return;
+
+    const normalize = (value) => String(value || '').replace(/[^0-9.\-]/g, '');
+    const format = (value) => {
+        const normalized = normalize(value);
+        if (!normalized) return '';
+        const parsed = parseFloat(normalized);
+        return Number.isFinite(parsed) ? formatINR(parsed).replace(/^₹/, '') : normalized;
+    };
+
+    inputs.forEach((input) => {
+        input.dataset.currencyReady = '1';
+        if (input.value) {
+            input.value = format(input.value);
+        }
+
+        input.addEventListener('focus', () => {
+            input.value = normalize(input.value);
+        });
+
+        input.addEventListener('blur', () => {
+            input.value = format(input.value);
+            if (input.classList.contains('amount-input') && typeof updateSplitTotals === 'function') {
+                updateSplitTotals();
+            }
+        });
+    });
+
+    document.querySelectorAll('form').forEach((form) => {
+        if (form.dataset.currencySubmitReady === '1') return;
+        form.dataset.currencySubmitReady = '1';
+        form.addEventListener('submit', () => {
+            form.querySelectorAll('input.currency-input').forEach((input) => {
+                input.value = normalize(input.value);
+            });
+        });
+    });
+}
+
+function initRegistrationInputs(scope = document) {
+    scope.querySelectorAll('input.registration-input:not([data-registration-ready])').forEach((input) => {
+        input.dataset.registrationReady = '1';
+        input.addEventListener('input', () => {
+            input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+    });
 }
 
 function initLazyTables() {

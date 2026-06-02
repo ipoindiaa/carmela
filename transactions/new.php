@@ -25,14 +25,27 @@ if ($preselectedAccount === 'bank' && !$bankAccount) $preselectedAccount = '';
 if ($preselectedAccount === 'gst' && !$gstAccount) $preselectedAccount = '';
 $preselectedType = get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
+$preselectedCarId = get('car_id', '');
+$preselectedCar = null;
+if ($preselectedCarId !== '') {
+    $preselectedCar = $db->fetch(
+        "SELECT id, registration_no, make, model
+         FROM cars
+         WHERE id = ? AND business_id = ?",
+        [$preselectedCarId, $businessId]
+    );
+    if (!$preselectedCar) {
+        $preselectedCarId = '';
+    }
+}
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     $type = post('transaction_type');
     $date = post('entry_date');
-    $amount = floatval(post('amount'));
-    $gstAmount = floatval(post('gst_amount', 0));
+    $amount = parseDecimalInput(post('amount'));
+    $gstAmount = parseDecimalInput(post('gst_amount', 0));
     $narration = post('narration');
     $paymentAccountId = post('payment_account');
 
@@ -49,7 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (empty($carId) || $carId === 'new') {
                     // Create new car first
                     $carId = Database::uuid();
-                    $carRegNo = post('car_reg_no');
+                    $carRegNo = normalizeRegistrationNo(post('car_reg_no'));
+                    if (!isValidRegistrationNo($carRegNo)) {
+                        throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
+                    }
                     $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $carRegNo));
                     $carAccountId = $engine->createAccount($carAccountCode, "Car A/c - $carRegNo", 'ASSET', 'Inventory', 'CAR', $carId);
                     
@@ -74,10 +90,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pfAmounts = $_POST['pf_amount'] ?? [];
                     $pfProfitShares = $_POST['pf_profit_share_pct'] ?? [];
                     foreach ($pfPartners as $i => $pid) {
-                        if (!empty($pid) && !empty($pfAmounts[$i])) {
+                        $pfAmount = parseDecimalInput($pfAmounts[$i] ?? 0);
+                        if (!empty($pid) && $pfAmount > 0) {
                             $partnerFunding[] = [
                                 'partner_id' => $pid,
-                                'amount' => floatval($pfAmounts[$i]),
+                                'amount' => $pfAmount,
                                 'profit_share_pct' => $pfProfitShares[$i] ?? null,
                             ];
                         }
@@ -92,8 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'CAR_SALE':
                 $carId = post('sale_car_id');
-                $salePrice = floatval(post('sale_price'));
-                $amountReceived = floatval(post('amount_received') ?: $salePrice);
+                $salePrice = parseDecimalInput(post('sale_price'));
+                $amountReceived = parseDecimalInput(post('amount_received') ?: $salePrice);
                 $buyerName = post('buyer_name');
                 $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount);
                 break;
@@ -127,8 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'SALARY_PAYMENT':
                 $employeeId = post('employee_id');
-                $grossSalary = floatval(post('gross_salary'));
-                $advanceDeduct = floatval(post('advance_deduction', 0));
+                $grossSalary = parseDecimalInput(post('gross_salary'));
+                $advanceDeduct = parseDecimalInput(post('advance_deduction', 0));
                 $salMonth = intval(post('salary_month'));
                 $salYear = intval(post('salary_year'));
                 $entryId = $engine->salaryPayment($employeeId, $grossSalary, $advanceDeduct, $date, $paymentAccountId, $salMonth, $salYear);
@@ -199,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $allocations = [];
 
                 foreach ($lineAccountIds as $i => $accountId) {
-                    $lineAmount = round(floatval($lineAmounts[$i] ?? 0), 2);
+                $lineAmount = round(parseDecimalInput($lineAmounts[$i] ?? 0), 2);
                     if (!$accountId || $lineAmount <= 0) {
                         continue;
                     }
@@ -323,7 +340,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Amount (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="number" name="amount" class="form-control amount-input" placeholder="0.00" step="0.01" min="0.01" required>
+                        <input type="text" name="amount" class="form-control amount-input currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -333,12 +350,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="txn-section" id="gst-section" style="display:none;">
-                <div class="form-row">
+                <div class="form-row" id="car-picker-row">
                     <div class="form-group">
                         <label class="form-label">GST Input Included (₹)</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="number" name="gst_amount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                            <input type="text" name="gst_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                         </div>
                         <div class="form-hint">Optional. If entered, this GST will go to Input Credit and the remaining amount will hit car cost or expense.</div>
                     </div>
@@ -353,7 +370,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">Registration No. *</label>
-                        <input type="text" name="car_reg_no" class="form-control" placeholder="e.g., GJ05MX1840">
+                        <input type="text" name="car_reg_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" title="Use format like GJ05AA0001. Last 4 characters must be digits.">
+                        <div class="form-hint">Last 4 digits must stay exactly 4 numbers, like <strong>0001</strong>.</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Make</label>
@@ -402,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
 	                            <div class="form-group">
 	                                <label class="form-label">Amount (₹)</label>
-	                                <input type="number" name="pf_amount[]" class="form-control" placeholder="0.00" step="0.01">
+	                                <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
 	                            </div>
 	                            <div class="form-group">
 	                                <label class="form-label">Profit Share %</label>
@@ -415,19 +433,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	            </div>
 
             <!-- CAR SELECT SECTION (for expenses / sale) -->
-            <div class="txn-section" id="car-select-section" style="display:none;">
+            <div class="txn-section" id="car-select-section" style="display:none;" data-preselected-expense-car="<?= clean($preselectedCarId) ?>">
                 <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-blue);">
                     <i class="ri-car-line"></i> Select Car
                 </h4>
+                <?php if ($preselectedCar): ?>
+                    <div class="alert alert-info" id="preselected-car-note" style="display:none; margin-bottom: 14px;">
+                        <i class="ri-car-line"></i>
+                        Expense will be added in <strong><?= clean($preselectedCar['registration_no']) ?></strong><?= !empty(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) ? ' - ' . clean(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) : '' ?>.
+                    </div>
+                <?php endif; ?>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Car *</label>
-                        <input type="hidden" name="expense_car_id" id="expense_car_select">
+                        <input type="hidden" name="expense_car_id" id="expense_car_select" value="<?= clean($preselectedType === 'CAR_EXPENSE' ? $preselectedCarId : '') ?>">
                         <button type="button" class="picker-trigger picker-trigger-wide" id="car-picker-trigger" onclick="openEntityPicker('car', this)">
-                            <span>Select car</span>
+                            <span><?= $preselectedCar && $preselectedType === 'CAR_EXPENSE' ? clean($preselectedCar['registration_no']) : 'Select car' ?></span>
                             <i class="ri-search-line"></i>
                         </button>
-                        <input type="hidden" name="sale_car_id" id="sale_car_id">
+                        <input type="hidden" name="sale_car_id" id="sale_car_id" value="<?= clean($preselectedType === 'CAR_SALE' ? $preselectedCarId : '') ?>">
                     </div>
                 </div>
             </div>
@@ -439,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">Sale Price (₹) *</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="number" name="sale_price" class="form-control" placeholder="0.00" step="0.01">
+                            <input type="text" name="sale_price" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                         </div>
                     </div>
                     <div class="form-group">
@@ -451,7 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Amount Received Now (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="number" name="amount_received" class="form-control" placeholder="Leave blank for full payment" step="0.01">
+                        <input type="text" name="amount_received" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
                     </div>
                     <div class="form-hint">Leave blank if receiving full payment now</div>
                 </div>
@@ -518,11 +542,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">Gross Salary (₹)</label>
-                        <input type="number" name="gross_salary" class="form-control" placeholder="0.00" step="0.01">
+                        <input type="text" name="gross_salary" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Advance Deduction (₹)</label>
-                        <input type="number" name="advance_deduction" class="form-control" value="0" step="0.01">
+                        <input type="text" name="advance_deduction" class="form-control currency-input" value="0" inputmode="decimal" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Salary Month / Year</label>
@@ -679,7 +703,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div>
                         <label class="form-label">Amount *</label>
-                        <input type="number" name="jv_amount[]" class="form-control split-line-amount" placeholder="0.00" step="0.01" min="0" form="transaction-form">
+                        <input type="text" name="jv_amount[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" form="transaction-form">
                     </div>
                     <div>
                         <label class="form-label">Note</label>
@@ -774,6 +798,38 @@ const entityPickerConfig = {
     },
 };
 
+const preselectedExpenseCarId = <?= json_encode($preselectedType === 'CAR_EXPENSE' ? $preselectedCarId : '') ?>;
+const preselectedExpenseCarLabel = <?= json_encode($preselectedCar['registration_no'] ?? '') ?>;
+
+function parseNumericString(value) {
+    const normalized = String(value || '').replace(/[^0-9.\-]/g, '');
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function syncPreselectedExpenseCarState(type) {
+    const carPickerTrigger = document.getElementById('car-picker-trigger');
+    const carPickerNote = document.getElementById('preselected-car-note');
+    const expenseCarInput = document.getElementById('expense_car_select');
+    const carPickerRow = document.getElementById('car-picker-row');
+    const isLockedExpenseCar = type === 'CAR_EXPENSE' && !!preselectedExpenseCarId;
+
+    if (expenseCarInput && isLockedExpenseCar) {
+        expenseCarInput.value = preselectedExpenseCarId;
+    }
+    if (carPickerTrigger) {
+        if (isLockedExpenseCar && carPickerTrigger.querySelector('span')) {
+            carPickerTrigger.querySelector('span').textContent = preselectedExpenseCarLabel || 'Selected car';
+        }
+    }
+    if (carPickerRow) {
+        carPickerRow.style.display = isLockedExpenseCar ? 'none' : '';
+    }
+    if (carPickerNote) {
+        carPickerNote.style.display = isLockedExpenseCar ? 'flex' : 'none';
+    }
+}
+
 function addPartnerFundingRow() {
     const container = document.getElementById('partner-funding-rows');
     const baseRow = container?.querySelector('.partner-funding-row');
@@ -783,6 +839,9 @@ function addPartnerFundingRow() {
     clone.querySelectorAll('.pf-partner-trigger span').forEach((label) => {
         label.textContent = 'Select partner';
     });
+    if (typeof initCurrencyInputs === 'function') {
+        initCurrencyInputs(clone);
+    }
     container.insertBefore(clone, container.lastElementChild);
 }
 
@@ -826,6 +885,9 @@ function addSplitLine() {
     const clone = baseRow.cloneNode(true);
     clone.querySelectorAll('input').forEach((input) => input.value = '');
     clone.querySelector('.picker-trigger span').textContent = 'Select account/car';
+    if (typeof initCurrencyInputs === 'function') {
+        initCurrencyInputs(clone);
+    }
     container.appendChild(clone);
     updateSplitTotals();
 }
@@ -844,10 +906,10 @@ function removeSplitLine(button) {
 }
 
 function updateSplitTotals() {
-    const total = parseFloat(document.querySelector('.amount-input')?.value || '0') || 0;
+    const total = parseNumericString(document.querySelector('.amount-input')?.value || '0');
     let allocated = 0;
     document.querySelectorAll('.split-line-amount').forEach((input) => {
-        allocated += parseFloat(input.value || '0') || 0;
+        allocated += parseNumericString(input.value || '0');
     });
     const remaining = total - allocated;
     const balanceCard = document.getElementById('split-balance-card');
@@ -949,6 +1011,10 @@ function selectEntityPickerValue(kind, id, label) {
     }
     closeModal('entity-picker-modal');
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
+});
 
 async function renderAccountPickerResults(query) {
     const results = document.getElementById('account-picker-results');

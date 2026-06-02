@@ -7,12 +7,31 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
-$partners = $db->fetchAll("SELECT * FROM partners WHERE business_id = ? ORDER BY is_active DESC, name", [$businessId]);
+$search = trim((string) get('q', ''));
+$partnerSql = "SELECT * FROM partners WHERE business_id = ?";
+$partnerParams = [$businessId];
+if ($search !== '') {
+    $partnerSql .= " AND name LIKE ?";
+    $partnerParams[] = '%' . $search . '%';
+}
+$partnerSql .= " ORDER BY is_active DESC, name";
+$partners = $db->fetchAll($partnerSql, $partnerParams);
 ?>
 
 <div class="page-header">
     <h1><i class="ri-group-2-line"></i> Partner Accounts</h1>
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+</div>
+
+<div class="filter-bar">
+    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+        <div style="min-width:240px;flex:1 1 280px;">
+            <label class="form-label">Search partner</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type partner name">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <a href="partner_accounts.php" class="btn btn-outline btn-sm">Clear</a>
+    </form>
 </div>
 
 <div class="table-container table-container-fill">

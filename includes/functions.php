@@ -105,6 +105,37 @@ function get($key, $default = '') {
 }
 
 /**
+ * Parse a decimal input that may include commas or currency symbols.
+ */
+function parseDecimalInput($value, $default = 0.0) {
+    if (is_numeric($value)) {
+        return floatval($value);
+    }
+
+    $normalized = preg_replace('/[^0-9.\-]/', '', (string) $value);
+    if ($normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === '-.') {
+        return floatval($default);
+    }
+
+    return floatval($normalized);
+}
+
+/**
+ * Normalize a vehicle registration number for validation/storage.
+ */
+function normalizeRegistrationNo($value) {
+    return strtoupper(preg_replace('/[^A-Z0-9]/i', '', trim((string) $value)));
+}
+
+/**
+ * Validate Gujarat/Indian style registration numbers with exactly four trailing digits.
+ */
+function isValidRegistrationNo($value) {
+    $normalized = normalizeRegistrationNo($value);
+    return (bool) preg_match('/^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$/', $normalized);
+}
+
+/**
  * Generate next reference number
  */
 function getNextRefNo($db, $businessId, $date = null, $prefix = 'JE') {

@@ -450,6 +450,7 @@ CREATE TABLE `user_book_permissions` (
     `book_key` VARCHAR(50) NOT NULL,
     `can_read` TINYINT(1) NOT NULL DEFAULT 0,
     `can_write` TINYINT(1) NOT NULL DEFAULT 0,
+    `can_delete` TINYINT(1) NOT NULL DEFAULT 0,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

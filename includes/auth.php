@@ -135,7 +135,7 @@ class Auth {
 
         $db = Database::getInstance();
         $rows = $db->fetchAll(
-            "SELECT book_key, can_read, can_write
+            "SELECT book_key, can_read, can_write, can_delete
              FROM user_book_permissions
              WHERE business_id = ? AND user_id = ?",
             [$businessId, $userId]
@@ -151,6 +151,7 @@ class Auth {
                 }
                 $permissions[$row['book_key']]['read'] = !empty($row['can_read']);
                 $permissions[$row['book_key']]['write'] = !empty($row['can_write']);
+                $permissions[$row['book_key']]['delete'] = !empty($row['can_delete']);
             }
         }
 
@@ -170,6 +171,10 @@ class Auth {
 
         if ($access === 'write') {
             return !empty($permissions[$bookKey]['write']);
+        }
+
+        if ($access === 'delete') {
+            return !empty($permissions[$bookKey]['delete']);
         }
 
         return !empty($permissions[$bookKey]['read']) || !empty($permissions[$bookKey]['write']);
@@ -328,6 +333,7 @@ class Auth {
             foreach (BOOK_PERMISSIONS as $bookKey => $definition) {
                 $read = !empty($rawPermissions[$bookKey]['read']) ? 1 : 0;
                 $write = !empty($rawPermissions[$bookKey]['write']) ? 1 : 0;
+                $delete = !empty($rawPermissions[$bookKey]['delete']) ? 1 : 0;
 
                 $db->insert('user_book_permissions', [
                     'id' => Database::uuid(),
@@ -336,6 +342,7 @@ class Auth {
                     'book_key' => $bookKey,
                     'can_read' => $read,
                     'can_write' => $write,
+                    'can_delete' => $delete,
                 ]);
             }
 
@@ -395,6 +402,7 @@ class Auth {
             $permissions[$bookKey] = [
                 'read' => $defaultRead,
                 'write' => $defaultWrite,
+                'delete' => $defaultWrite,
             ];
         }
         return $permissions;
@@ -423,6 +431,7 @@ class Auth {
                     `book_key` VARCHAR(50) NOT NULL,
                     `can_read` TINYINT(1) NOT NULL DEFAULT 0,
                     `can_write` TINYINT(1) NOT NULL DEFAULT 0,
+                    `can_delete` TINYINT(1) NOT NULL DEFAULT 0,
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -432,6 +441,17 @@ class Auth {
                     CONSTRAINT `fk_ubp_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
+
+            $column = $db->fetch(
+                "SELECT COLUMN_NAME
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'user_book_permissions'
+                   AND COLUMN_NAME = 'can_delete'"
+            );
+            if (!$column) {
+                $db->query("ALTER TABLE `user_book_permissions` ADD COLUMN `can_delete` TINYINT(1) NOT NULL DEFAULT 0 AFTER `can_write`");
+            }
         } catch (\Throwable $e) {
             // Keep auth working even if the permission schema cannot be created yet.
         }

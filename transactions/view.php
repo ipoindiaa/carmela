@@ -14,6 +14,7 @@ if (!Auth::canAccessTransactionEntry($id, $businessId, 'read')) {
     setFlash('error', 'You do not have access to that transaction.');
     redirect('list.php');
 }
+$canReverseEntry = Auth::canAccessTransactionEntry($id, $businessId, 'delete');
 
 $entry = $db->fetch(
     "SELECT je.*, u.full_name as created_by_name, c.registration_no as car_reg, p.name as partner_name, e.name as employee_name,
@@ -35,7 +36,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 <div class="page-header">
     <h1><i class="ri-file-list-3-line"></i> <?= $entry['reference_no'] ?></h1>
     <div style="display: flex; gap: 10px;">
-        <?php if ($entry['status'] === 'POSTED' && Auth::isAdmin()): ?>
+        <?php if ($entry['status'] === 'POSTED' && $canReverseEntry): ?>
             <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm" data-confirm="Reverse this entry?"><i class="ri-arrow-go-back-line"></i> Reverse</a>
         <?php endif; ?>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>

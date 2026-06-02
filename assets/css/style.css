@@ -41,6 +41,7 @@
     --radius-lg: 16px;
     --radius-xl: 20px;
     --sidebar-width: 260px;
+    --sidebar-collapsed-width: 88px;
     --header-height: 64px;
     --table-shell-height: min(62vh, 720px);
     --table-shell-inline-height: min(46vh, 430px);
@@ -90,10 +91,19 @@ a:hover { color: #1d4ed8; }
     transition: var(--transition);
 }
 
+body.sidebar-collapsed .sidebar {
+    width: var(--sidebar-collapsed-width);
+}
+
 .sidebar-brand {
     padding: 20px 24px;
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 12px;
+}
+
+body.sidebar-collapsed .sidebar-brand {
+    justify-content: center;
+    padding-inline: 12px;
 }
 
 .sidebar-brand .brand-icon {
@@ -116,12 +126,24 @@ a:hover { color: #1d4ed8; }
     border-radius: 4px; margin-left: auto;
 }
 
+body.sidebar-collapsed .sidebar-brand .brand-text,
+body.sidebar-collapsed .sidebar-brand .brand-version,
+body.sidebar-collapsed .sidebar-user .user-info,
+body.sidebar-collapsed .nav-section-title,
+body.sidebar-collapsed .sidebar-logout-btn {
+    display: none;
+}
+
 .sidebar-nav {
     flex: 1;
     padding: 16px 12px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scroll-behavior: auto;
+}
+
+body.sidebar-collapsed .sidebar-nav {
+    padding-inline: 10px;
 }
 
 .nav-section { margin-bottom: 24px; }
@@ -175,6 +197,28 @@ a:hover { color: #1d4ed8; }
     min-width: 18px; text-align: center;
 }
 
+body.sidebar-collapsed .nav-link {
+    justify-content: center;
+    font-size: 0;
+    padding-inline: 10px;
+}
+
+body.sidebar-collapsed .nav-link .nav-icon {
+    font-size: 18px;
+    margin: 0;
+}
+
+body.sidebar-collapsed .nav-link .nav-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 10px;
+}
+
+body.sidebar-collapsed .sidebar-user {
+    justify-content: center;
+}
+
 .sidebar-footer {
     padding: 16px; border-top: 1px solid var(--border);
     background: linear-gradient(180deg, rgba(238, 244, 250, 0), #eef4fa 36%);
@@ -226,6 +270,10 @@ a:hover { color: #1d4ed8; }
     margin-left: var(--sidebar-width);
     flex: 1;
     min-height: 100dvh;
+}
+
+body.sidebar-collapsed .main-content {
+    margin-left: var(--sidebar-collapsed-width);
 }
 
 /* Header */
@@ -1638,6 +1686,9 @@ html.js .pagination.no-js-pagination { display: none; }
         z-index: 160;
         width: min(88vw, 320px);
         box-shadow: 18px 0 42px rgba(15, 23, 42, 0.18);
+    }
+    body.sidebar-collapsed .sidebar {
+        width: min(88vw, 320px);
     }
     .sidebar.open { transform: translateX(0); }
     .main-content { margin-left: 0; }

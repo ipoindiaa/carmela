@@ -8,6 +8,7 @@ $businessId = Auth::user('business_id');
 function summarizeBookPermissions($permissions) {
     $readCount = 0;
     $writeCount = 0;
+    $deleteCount = 0;
 
     foreach ($permissions as $permission) {
         if (!empty($permission['read']) || !empty($permission['write'])) {
@@ -16,13 +17,16 @@ function summarizeBookPermissions($permissions) {
         if (!empty($permission['write'])) {
             $writeCount++;
         }
+        if (!empty($permission['delete'])) {
+            $deleteCount++;
+        }
     }
 
-    if ($readCount === 0 && $writeCount === 0) {
+    if ($readCount === 0 && $writeCount === 0 && $deleteCount === 0) {
         return 'No books assigned';
     }
 
-    return "Read: $readCount, Write: $writeCount";
+    return "Read: $readCount, Write: $writeCount, Delete: $deleteCount";
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -151,7 +155,7 @@ foreach ($users as $user) {
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-body">
         <div class="text-muted" style="font-size: 13px;">
-            Admins create each user with an email and password. Read access lets the user view a book, and write access lets them post entries through that book where applicable.
+            Admins create each user with an email and password. Read access lets the user view a book, write access lets them post entries, and delete access lets them reverse wrong entries in that book safely.
         </div>
     </div>
 </div>
@@ -254,6 +258,7 @@ foreach ($users as $user) {
                                     <th>Description</th>
                                     <th class="text-center">Read</th>
                                     <th class="text-center">Write</th>
+                                    <th class="text-center">Delete</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -266,6 +271,9 @@ foreach ($users as $user) {
                                         </td>
                                         <td class="text-center">
                                             <input type="checkbox" name="permissions[<?= $bookKey ?>][write]" value="1">
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" name="permissions[<?= $bookKey ?>][delete]" value="1">
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -300,6 +308,7 @@ foreach ($users as $user) {
                                 <th>Description</th>
                                 <th class="text-center">Read</th>
                                 <th class="text-center">Write</th>
+                                <th class="text-center">Delete</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -312,6 +321,9 @@ foreach ($users as $user) {
                                     </td>
                                     <td class="text-center">
                                         <input type="checkbox" data-book-key="<?= $bookKey ?>" data-access-type="write" name="permissions[<?= $bookKey ?>][write]" value="1">
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="checkbox" data-book-key="<?= $bookKey ?>" data-access-type="delete" name="permissions[<?= $bookKey ?>][delete]" value="1">
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

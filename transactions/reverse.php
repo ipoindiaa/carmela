@@ -4,10 +4,15 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 Auth::check();
-Auth::requireAdmin();
 
 $id = get('id');
 $businessId = Auth::user('business_id');
+
+Auth::requireAnyBookAccess(array_merge(Auth::getPrimaryBookKeys(), ['jv_register']), 'delete');
+if (!Auth::canAccessTransactionEntry($id, $businessId, 'delete')) {
+    setFlash('error', 'You do not have delete access for that entry.');
+    redirect('list.php');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
