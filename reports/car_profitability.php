@@ -29,6 +29,8 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             $totalCost = $carProfitability['total_cost'] ?? ($car['total_cost'] ?? $car['purchase_price']);
             $expenses = max(0, $carProfitability['total_expenses'] ?? ($totalCost - $car['purchase_price']));
             $profit = $car['status'] === 'SOLD' ? $carProfitability['profit'] : null;
+            $grossSalePrice = $carProfitability['sale_price'] ?? $car['sale_price'];
+            $saleGstAmount = $carProfitability['sale_gst_amount'] ?? ($car['sale_gst_amount'] ?? 0);
             $settlementSummary = [];
             foreach ($carProfitability['settlements'] as $settlement) {
                 $settlementSummary[] = $settlement['partner_name'] . ': ' . $settlement['status'];
@@ -38,13 +40,20 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
         <tr>
             <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean($car['registration_no']) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
-            <td><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow']; ?>
+            <td><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                 <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span></td>
             <td class="text-right"><?= intval($carProfitability['holding_days']) ?></td>
             <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
             <td class="text-right amount"><?= formatAmount($expenses) ?></td>
             <td class="text-right amount text-bold"><?= formatAmount($totalCost) ?></td>
-            <td class="text-right amount"><?= $car['sale_price'] ? formatAmount($car['sale_price']) : '-' ?></td>
+            <td class="text-right amount">
+                <?php if ($grossSalePrice): ?>
+                    <?= formatAmount($grossSalePrice) ?>
+                    <?php if ($saleGstAmount > 0): ?><div class="text-muted" style="font-size:11px;">GST <?= formatAmount($saleGstAmount) ?></div><?php endif; ?>
+                <?php else: ?>
+                    -
+                <?php endif; ?>
+            </td>
             <td class="text-right amount <?= $profit !== null ? ($profit >= 0 ? 'positive' : 'negative') : '' ?>">
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?></td>
             <td style="font-size:12px;"><?= !empty($settlementSummary) ? clean(implode(' | ', $settlementSummary)) : '<span class="text-muted">Business only</span>' ?></td>

@@ -12,6 +12,7 @@ if ($isLazyRequest) {
 }
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     verifyCsrf();
@@ -34,15 +35,24 @@ function partiesListUrl($page, $lazy = false) {
     return 'list.php?' . http_build_query($query);
 }
 
-function renderPartyRows($parties) {
+function renderPartyRows($parties, $snapshots) {
     ob_start();
     ?>
     <?php foreach ($parties as $p): ?>
+    <?php
+        $snapshot = $snapshots[$p['id']] ?? null;
+        $outstandingAmount = round(floatval($snapshot['amount'] ?? 0), 2);
+        $outstandingLabel = $snapshot['label'] ?? 'Clear';
+        $amountClass = $snapshot['class'] ?? 'text-muted';
+    ?>
     <tr>
         <td class="text-bold"><?= clean($p['name']) ?></td>
         <td><span class="badge <?= in_array($p['type'], ['DEBTOR','BUYER']) ? 'badge-blue' : 'badge-yellow' ?>"><?= $p['type'] ?></span></td>
         <td><?= clean($p['phone'] ?: '-') ?></td>
-        <td class="text-right amount <?= ($p['current_balance_type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($p['current_balance'] ?? 0) ?></td>
+        <td class="text-right">
+            <div class="amount <?= $amountClass ?>"><?= formatAmount($outstandingAmount) ?></div>
+            <div class="text-muted" style="font-size: 11px;"><?= clean($outstandingLabel) ?></div>
+        </td>
         <td><?= $p['is_bad_debt'] ? '<span class="badge badge-red">Bad Debt</span>' : '-' ?></td>
         <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
     </tr>
@@ -64,11 +74,36 @@ $parties = $db->fetchAll(
     [$businessId, $perPage, $pagination['offset']]
 );
 
+$partySnapshots = [];
+foreach ($parties as $party) {
+    $openItems = $engine->getPartyOpenItems($party['id']);
+    $openOutstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+    $signedBalance = signedBalanceValue($party['current_balance'] ?? 0, $party['current_balance_type'] ?? 'DR');
+
+    if (in_array($party['type'], ['DEBTOR', 'BUYER'], true)) {
+        if ($openOutstanding > 0.009) {
+            $partySnapshots[$party['id']] = ['amount' => $openOutstanding, 'label' => 'Receivable', 'class' => 'debit-amount'];
+        } elseif ($signedBalance < -0.009) {
+            $partySnapshots[$party['id']] = ['amount' => abs($signedBalance), 'label' => 'Advance / Overpaid', 'class' => 'credit-amount'];
+        } else {
+            $partySnapshots[$party['id']] = ['amount' => 0, 'label' => 'Clear', 'class' => 'text-muted'];
+        }
+    } else {
+        if ($openOutstanding > 0.009) {
+            $partySnapshots[$party['id']] = ['amount' => $openOutstanding, 'label' => 'Payable', 'class' => 'credit-amount'];
+        } elseif ($signedBalance > 0.009) {
+            $partySnapshots[$party['id']] = ['amount' => abs($signedBalance), 'label' => 'Advance Paid', 'class' => 'debit-amount'];
+        } else {
+            $partySnapshots[$party['id']] = ['amount' => 0, 'label' => 'Clear', 'class' => 'text-muted'];
+        }
+    }
+}
+
 if ($isLazyRequest) {
     header('Content-Type: application/json');
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
-        'html' => renderPartyRows($parties),
+        'html' => renderPartyRows($parties, $partySnapshots),
         'next_url' => $nextPage ? partiesListUrl($nextPage, true) : '',
     ]);
     exit;
@@ -86,7 +121,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true) 
     <table>
         <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th class="text-right">Balance</th><th>Bad Debt</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
-            <?= renderPartyRows($parties) ?>
+            <?= renderPartyRows($parties, $partySnapshots) ?>
         </tbody>
     </table>
     <?php if ($nextUrl): ?>

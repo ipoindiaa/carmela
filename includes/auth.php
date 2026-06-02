@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config/app.php';
 class Auth {
     private static $bookPermissionsCache = [];
     private static $permissionSchemaEnsured = false;
+    private static $auditSchemaEnsured = false;
 
     public static function init() {
         if (session_status() === PHP_SESSION_NONE) {
@@ -13,6 +14,7 @@ class Auth {
             session_start();
         }
         self::ensurePermissionSchema();
+        self::ensureAuditLogSchema();
     }
 
     public static function login($identifier, $password) {
@@ -140,7 +142,7 @@ class Auth {
         );
 
         if (empty($rows)) {
-            $permissions = self::buildPermissionMatrix(true, true);
+            $permissions = self::buildPermissionMatrix(false, false);
         } else {
             $permissions = self::buildPermissionMatrix(false, false);
             foreach ($rows as $row) {
@@ -248,21 +250,6 @@ class Auth {
             return true;
         }
 
-        if (self::hasBookAccess('jv_register', $access)) {
-            $db = Database::getInstance();
-            $voucherEntry = $db->fetch(
-                "SELECT id
-                 FROM journal_entries
-                 WHERE id = ?
-                   AND business_id = ?
-                   AND journal_voucher_id IS NOT NULL",
-                [$entryId, $businessId]
-            );
-            if ($voucherEntry) {
-                return true;
-            }
-        }
-
         $accountIds = self::getAccessiblePrimaryAccountIds($businessId, $access);
         if (empty($accountIds)) {
             return false;
@@ -366,6 +353,7 @@ class Auth {
 
     public static function auditLog($action, $entityType, $entityId = null, $description = null, $oldValue = null, $newValue = null) {
         $db = Database::getInstance();
+        self::ensureAuditLogSchema();
         try {
             $db->insert('audit_log', [
                 'id' => Database::uuid(),
@@ -381,7 +369,23 @@ class Auth {
                 'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
             ]);
         } catch (\Throwable $e) {
-            // Ignore audit log failures (e.g., if business_id from session no longer exists)
+            error_log('AutoBooks audit log failed: ' . $e->getMessage());
+            try {
+                $db->insert('audit_log', [
+                    'id' => Database::uuid(),
+                    'business_id' => $_SESSION['business_id'] ?? '',
+                    'user_id' => $_SESSION['user_id'] ?? null,
+                    'action' => $action,
+                    'entity_type' => $entityType,
+                    'entity_id' => $entityId,
+                    'description' => $description,
+                    'old_value' => $oldValue ? json_encode($oldValue) : null,
+                    'new_value' => $newValue ? json_encode($newValue) : null,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                ]);
+            } catch (\Throwable $fallbackError) {
+                error_log('AutoBooks audit log fallback failed: ' . $fallbackError->getMessage());
+            }
         }
     }
 
@@ -433,6 +437,31 @@ class Auth {
         }
 
         self::$permissionSchemaEnsured = true;
+    }
+
+    private static function ensureAuditLogSchema() {
+        if (self::$auditSchemaEnsured) {
+            return;
+        }
+
+        $db = Database::getInstance();
+        try {
+            $column = $db->fetch(
+                "SELECT COLUMN_NAME
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'audit_log'
+                   AND COLUMN_NAME = 'user_agent'"
+            );
+
+            if (!$column) {
+                $db->query("ALTER TABLE `audit_log` ADD COLUMN `user_agent` VARCHAR(255) DEFAULT NULL AFTER `ip_address`");
+            }
+        } catch (\Throwable $e) {
+            error_log('AutoBooks audit log schema check failed: ' . $e->getMessage());
+        }
+
+        self::$auditSchemaEnsured = true;
     }
 }
 

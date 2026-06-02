@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $carId = Database::uuid();
         $regNo = post('registration_no');
         $purchasePrice = floatval(post('purchase_price'));
+        $gstAmount = floatval(post('gst_amount', 0));
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
 
@@ -37,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'year' => intval(post('year')) ?: null,
             'color' => post('color'),
             'purchase_date' => $purchaseDate,
-            'purchase_price' => $purchasePrice,
+            'purchase_price' => max(0, $purchasePrice - $gstAmount),
             'account_id' => $carAccountId,
             'notes' => post('notes'),
         ]);
@@ -58,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
-        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding);
+        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount);
 
         Auth::auditLog('CREATE', 'car', $carId, "Car $regNo added with purchase entry");
         setFlash('success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!");
@@ -116,6 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="number" name="purchase_price" class="form-control" placeholder="0.00" step="0.01" required>
                     </div>
                 </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">GST Input Included (₹)</label>
+                <input type="number" name="gst_amount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                <div class="form-hint">Optional. If entered, inventory cost will exclude this GST and GST Input Credit will be debited separately.</div>
             </div>
 
             <hr style="border-color: var(--border); margin: 24px 0;">

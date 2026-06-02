@@ -19,20 +19,6 @@ $writableAccountIds = array_values(array_filter([
     $gstAccount['id'] ?? null,
 ]));
 
-$cars = $db->fetchAll("SELECT * FROM cars WHERE business_id = ? AND status = 'IN_STOCK' ORDER BY registration_no", [$businessId]);
-$partners = $db->fetchAll("SELECT * FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
-$employees = $db->fetchAll("SELECT * FROM employees WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
-$debtors = $db->fetchAll("SELECT * FROM debtors_creditors WHERE business_id = ? AND type IN ('DEBTOR','BUYER') AND is_active = 1 ORDER BY name", [$businessId]);
-$creditors = $db->fetchAll("SELECT * FROM debtors_creditors WHERE business_id = ? AND type IN ('CREDITOR','SELLER') AND is_active = 1 ORDER BY name", [$businessId]);
-$accounts = $db->fetchAll(
-    "SELECT id, code, name, group_name, sub_group, entity_type
-     FROM accounts
-     WHERE business_id = ? AND is_active = 1
-     ORDER BY group_name, sub_group, code, name",
-    [$businessId]
-);
-$accountIds = array_column($accounts, 'id');
-
 $preselectedAccount = get('account', '');
 if ($preselectedAccount === 'cash' && !$cashAccount) $preselectedAccount = '';
 if ($preselectedAccount === 'bank' && !$bankAccount) $preselectedAccount = '';
@@ -46,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = post('transaction_type');
     $date = post('entry_date');
     $amount = floatval(post('amount'));
+    $gstAmount = floatval(post('gst_amount', 0));
     $narration = post('narration');
     $paymentAccountId = post('payment_account');
 
@@ -97,7 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding);
+                if ($carId && $gstAmount > 0) {
+                    $db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [max(0, $amount - $gstAmount), $carId, $businessId]);
+                }
+                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount);
                 break;
 
             case 'CAR_SALE':
@@ -105,18 +95,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $salePrice = floatval(post('sale_price'));
                 $amountReceived = floatval(post('amount_received') ?: $salePrice);
                 $buyerName = post('buyer_name');
-                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived);
+                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount);
                 break;
 
             case 'CAR_EXPENSE':
                 $carId = post('expense_car_id');
                 $category = post('expense_category');
-                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $category, $narration);
+                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $category, $narration, $gstAmount);
                 break;
 
             case 'GENERAL_EXPENSE':
                 $category = post('expense_category');
-                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $category, $narration);
+                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $category, $narration, $gstAmount);
                 break;
 
             case 'PARTNER_INVEST':
@@ -188,6 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $entryId = $engine->gstPayment($amount, $date, $narration);
                 break;
 
+            case 'GST_UTILIZATION':
+                if (!Auth::hasBookAccess('gst_book', 'write')) {
+                    throw new Exception('You do not have write access to the GST book.');
+                }
+                $entryId = $engine->gstUtilization($amount, $date, $narration);
+                break;
+
             case 'JOURNAL_VOUCHER':
                 if (!$paymentAccountId) {
                     throw new Exception('Primary cash/bank/GST account is required.');
@@ -206,7 +203,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$accountId || $lineAmount <= 0) {
                         continue;
                     }
-                    if (!in_array($accountId, $accountIds, true)) {
+                    $accountExists = $db->fetch(
+                        "SELECT id FROM accounts WHERE business_id = ? AND id = ? AND is_active = 1",
+                        [$businessId, $accountId]
+                    );
+                    if (!$accountExists) {
                         throw new Exception('One selected split account is not valid for this business.');
                     }
                     $allocations[] = [
@@ -278,6 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="JOURNAL_VOUCHER">🧩 Large Bill / Split Entry</option>
                             <option value="CONTRA_TRANSFER">🔄 Cash ↔ Bank Transfer</option>
                             <option value="GST_PAYMENT">📋 GST Payment</option>
+                            <option value="GST_UTILIZATION">♻️ GST Input Utilization</option>
                         </optgroup>
                         <optgroup label="Partners">
                             <option value="PARTNER_INVEST">💼 Partner Added Money</option>
@@ -300,7 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Date *</label>
                     <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="payment-account-group">
                     <label class="form-label" id="payment-account-label">Payment Account *</label>
                     <select name="payment_account" class="form-control searchable-select" id="payment_account">
                         <?php if ($cashAccount): ?>
@@ -327,6 +329,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Narration / Description *</label>
                     <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" required>
+                </div>
+            </div>
+
+            <div class="txn-section" id="gst-section" style="display:none;">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">GST Input Included (₹)</label>
+                        <div class="input-group">
+                            <span class="input-prefix">₹</span>
+                            <input type="number" name="gst_amount" class="form-control" placeholder="0.00" step="0.01" min="0">
+                        </div>
+                        <div class="form-hint">Optional. If entered, this GST will go to Input Credit and the remaining amount will hit car cost or expense.</div>
+                    </div>
                 </div>
             </div>
 
@@ -379,12 +394,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	                        <div class="form-row partner-funding-row">
 	                            <div class="form-group">
 	                                <label class="form-label">Partner</label>
-	                                <select name="pf_partner_id[]" class="form-control searchable-select">
-                                    <option value="">Select Partner</option>
-                                    <?php foreach ($partners as $p): ?>
-                                        <option value="<?= $p['id'] ?>"><?= clean($p['name']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+                                    <input type="hidden" name="pf_partner_id[]" class="pf-partner-id">
+	                                <button type="button" class="picker-trigger picker-trigger-wide pf-partner-trigger" onclick="openEntityPicker('partner', this)">
+                                        <span>Select partner</span>
+                                        <i class="ri-search-line"></i>
+                                    </button>
                             </div>
 	                            <div class="form-group">
 	                                <label class="form-label">Amount (₹)</label>
@@ -408,12 +422,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Car *</label>
-                        <select name="expense_car_id" id="expense_car_select" class="form-control searchable-select">
-                            <option value="">— Select Car —</option>
-                            <?php foreach ($cars as $car): ?>
-                                <option value="<?= $car['id'] ?>"><?= clean($car['registration_no']) ?> — <?= clean($car['make'] . ' ' . $car['model']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        <input type="hidden" name="expense_car_id" id="expense_car_select">
+                        <button type="button" class="picker-trigger picker-trigger-wide" id="car-picker-trigger" onclick="openEntityPicker('car', this)">
+                            <span>Select car</span>
+                            <i class="ri-search-line"></i>
+                        </button>
                         <input type="hidden" name="sale_car_id" id="sale_car_id">
                     </div>
                 </div>
@@ -470,12 +483,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="partner-section" style="display:none;">
                 <div class="form-group">
                     <label class="form-label">Partner *</label>
-                    <select name="partner_id" class="form-control searchable-select">
-                        <option value="">— Select Partner —</option>
-                        <?php foreach ($partners as $p): ?>
-                            <option value="<?= $p['id'] ?>"><?= clean($p['name']) ?> (Share: <?= $p['profit_share_pct'] ?>%)</option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="hidden" name="partner_id" id="partner_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('partner', this)">
+                        <span>Select partner</span>
+                        <i class="ri-search-line"></i>
+                    </button>
                 </div>
             </div>
 
@@ -493,12 +505,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="employee-section" style="display:none;">
                 <div class="form-group">
                     <label class="form-label">Employee *</label>
-                    <select name="employee_id" class="form-control searchable-select">
-                        <option value="">— Select Employee —</option>
-                        <?php foreach ($employees as $emp): ?>
-                            <option value="<?= $emp['id'] ?>"><?= clean($emp['name']) ?> — <?= $emp['role'] ?> (₹<?= number_format($emp['monthly_salary']) ?>)</option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="hidden" name="employee_id" id="employee_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="employee-picker-trigger" onclick="openEntityPicker('employee', this)">
+                        <span>Select employee</span>
+                        <i class="ri-search-line"></i>
+                    </button>
                 </div>
             </div>
 
@@ -539,21 +550,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="party-select-section" style="display:none;">
                 <div class="form-group" id="debtor-select-wrapper">
                     <label class="form-label">Select Debtor *</label>
-                    <select name="debtor_id" class="form-control searchable-select">
-                        <option value="">— Select —</option>
-                        <?php foreach ($debtors as $d): ?>
-                            <option value="<?= $d['id'] ?>"><?= clean($d['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="hidden" name="debtor_id" id="debtor_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="debtor-picker-trigger" onclick="openEntityPicker('debtor', this)">
+                        <span>Select debtor / buyer</span>
+                        <i class="ri-search-line"></i>
+                    </button>
                 </div>
                 <div class="form-group" id="creditor-select-wrapper">
                     <label class="form-label">Select Creditor *</label>
-                    <select name="creditor_id" class="form-control searchable-select">
-                        <option value="">— Select —</option>
-                        <?php foreach ($creditors as $c): ?>
-                            <option value="<?= $c['id'] ?>"><?= clean($c['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="hidden" name="creditor_id" id="creditor_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="creditor-picker-trigger" onclick="openEntityPicker('creditor', this)">
+                        <span>Select creditor / seller</span>
+                        <i class="ri-search-line"></i>
+                    </button>
                 </div>
             </div>
 
@@ -707,45 +716,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 </div>
 
-<script>
-const accountPickerData = <?= json_encode(array_map(static function ($account) {
-    $labelParts = array_filter([$account['code'] ?? '', $account['name'] ?? '']);
-    return [
-        'id' => $account['id'],
-        'label' => implode(' — ', $labelParts),
-        'group' => trim(($account['group_name'] ?? '') . ' / ' . ($account['sub_group'] ?? ''), ' /'),
-        'entity' => $account['entity_type'] ?: 'GENERAL',
-        'search' => strtolower(implode(' ', [
-            $account['code'] ?? '',
-            $account['name'] ?? '',
-            $account['group_name'] ?? '',
-            $account['sub_group'] ?? '',
-            $account['entity_type'] ?? '',
-        ])),
-    ];
-}, $accounts), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-let activeSplitRow = null;
+<div class="modal-overlay" id="entity-picker-modal">
+    <div class="modal modal-picker">
+        <div class="modal-header">
+            <div>
+                <h3><i class="ri-search-eye-line"></i> Search Records</h3>
+                <p class="modal-subtitle" id="entity-picker-subtitle">Search by name, number, phone, or role.</p>
+            </div>
+            <button type="button" class="modal-close" onclick="closeModal('entity-picker-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="search" class="form-control picker-search" id="entity-picker-search" placeholder="Type to search..." autocomplete="off">
+            <div class="picker-results" id="entity-picker-results"></div>
+        </div>
+    </div>
+</div>
 
-// Sync car select for sale
-document.getElementById('expense_car_select')?.addEventListener('change', function() {
-    document.getElementById('sale_car_id').value = this.value;
-});
+<script>
+let activeSplitRow = null;
+let activeEntityPicker = null;
+const entityPickerConfig = {
+    car: {
+        title: 'Search Cars',
+        subtitle: 'Search by registration number, make, or model.',
+        inputId: 'expense_car_select',
+        mirrorInputId: 'sale_car_id',
+        triggerId: 'car-picker-trigger',
+        emptyLabel: 'Select car',
+    },
+    partner: {
+        title: 'Search Partners',
+        subtitle: 'Search by partner name or phone number.',
+        inputId: 'partner_id',
+        triggerId: 'partner-picker-trigger',
+        emptyLabel: 'Select partner',
+    },
+    employee: {
+        title: 'Search Employees',
+        subtitle: 'Search by employee name or role.',
+        inputId: 'employee_id',
+        triggerId: 'employee-picker-trigger',
+        emptyLabel: 'Select employee',
+    },
+    debtor: {
+        title: 'Search Debtors / Buyers',
+        subtitle: 'Search by debtor, buyer, or phone number.',
+        inputId: 'debtor_id',
+        triggerId: 'debtor-picker-trigger',
+        emptyLabel: 'Select debtor / buyer',
+    },
+    creditor: {
+        title: 'Search Creditors / Sellers',
+        subtitle: 'Search by creditor, seller, or phone number.',
+        inputId: 'creditor_id',
+        triggerId: 'creditor-picker-trigger',
+        emptyLabel: 'Select creditor / seller',
+    },
+};
 
 function addPartnerFundingRow() {
     const container = document.getElementById('partner-funding-rows');
     const baseRow = container?.querySelector('.partner-funding-row');
     if (!container || !baseRow) return;
     const clone = baseRow.cloneNode(true);
-    clone.querySelectorAll('.searchable-select-wrap').forEach((wrapper) => {
-        const select = wrapper.querySelector('select');
-        if (!select) return;
-        delete select.dataset.searchEnhanced;
-        wrapper.replaceWith(select);
-    });
     clone.querySelectorAll('input').forEach((input) => input.value = '');
-    clone.querySelectorAll('select').forEach((select) => select.selectedIndex = 0);
+    clone.querySelectorAll('.pf-partner-trigger span').forEach((label) => {
+        label.textContent = 'Select partner';
+    });
     container.insertBefore(clone, container.lastElementChild);
-    window.enhanceSearchableSelects?.(clone);
 }
 
 // Show/hide debtor vs creditor select
@@ -763,6 +801,9 @@ document.getElementById('split-lines')?.addEventListener('input', function(event
 });
 document.getElementById('account-picker-search')?.addEventListener('input', function() {
     renderAccountPickerResults(this.value);
+});
+document.getElementById('entity-picker-search')?.addEventListener('input', function() {
+    renderEntityPickerResults(this.value);
 });
 
 function selectSplitEntryType() {
@@ -828,38 +869,125 @@ function openAccountPicker(button) {
     setTimeout(() => search?.focus(), 60);
 }
 
-function renderAccountPickerResults(query) {
-    const results = document.getElementById('account-picker-results');
-    if (!results) return;
-    const needle = (query || '').trim().toLowerCase();
-    const matches = accountPickerData
-        .filter((account) => !needle || account.search.includes(needle))
-        .slice(0, 80);
+function openEntityPicker(kind, button) {
+    activeEntityPicker = { kind, button };
+    const config = entityPickerConfig[kind];
+    if (!config) return;
+    const title = document.querySelector('#entity-picker-modal h3');
+    const subtitle = document.getElementById('entity-picker-subtitle');
+    const search = document.getElementById('entity-picker-search');
+    if (title) title.innerHTML = `<i class="ri-search-eye-line"></i> ${config.title}`;
+    if (subtitle) subtitle.textContent = config.subtitle;
+    if (search) search.value = '';
+    renderEntityPickerResults('');
+    openModal('entity-picker-modal');
+    setTimeout(() => search?.focus(), 60);
+}
 
-    if (!matches.length) {
-        results.innerHTML = '<div class="picker-empty">No match. Check spelling or car number.</div>';
+async function renderEntityPickerResults(query) {
+    const results = document.getElementById('entity-picker-results');
+    if (!results || !activeEntityPicker?.kind) return;
+    const kind = activeEntityPicker.kind;
+    const searchQuery = (query || '').trim();
+    results.innerHTML = '<div class="picker-empty">Searching...</div>';
+
+    try {
+        const response = await fetch(`search_entities.php?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(searchQuery)}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!response.ok) throw new Error('Search failed');
+        const payload = await response.json();
+        const matches = payload.results || [];
+        if (!matches.length) {
+            results.innerHTML = '<div class="picker-empty">No match found.</div>';
+            return;
+        }
+
+        results.innerHTML = matches.map((item) => `
+            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}">
+                <span>
+                    <strong>${escapeHtml(item.label)}</strong>
+                    <small>${escapeHtml(item.meta || '')}</small>
+                </span>
+            </button>
+        `).join('');
+
+        results.querySelectorAll('.picker-result').forEach((button) => {
+            button.addEventListener('click', function() {
+                selectEntityPickerValue(kind, this.dataset.entityId, decodeURIComponent(this.dataset.entityLabel || ''));
+            });
+        });
+    } catch (error) {
+        results.innerHTML = '<div class="picker-empty">Could not search right now. Please try again.</div>';
+    }
+}
+
+function selectEntityPickerValue(kind, id, label) {
+    const triggerButton = activeEntityPicker?.button || null;
+    if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
+        const row = triggerButton.closest('.partner-funding-row');
+        const input = row?.querySelector('.pf-partner-id');
+        const span = triggerButton.querySelector('span');
+        if (input) input.value = id || '';
+        if (span) span.textContent = label || 'Select partner';
+        closeModal('entity-picker-modal');
         return;
     }
 
-    results.innerHTML = matches.map((account) => `
-        <button type="button" class="picker-result" data-account-id="${account.id}">
-            <span>
-                <strong>${escapeHtml(account.label)}</strong>
-                <small>${escapeHtml(account.group || 'General')}</small>
-            </span>
-            <em>${escapeHtml(account.entity)}</em>
-        </button>
-    `).join('');
+    const config = entityPickerConfig[kind];
+    if (!config) return;
+    const input = document.getElementById(config.inputId);
+    const trigger = document.getElementById(config.triggerId);
+    if (input) input.value = id || '';
+    if (config.mirrorInputId) {
+        const mirror = document.getElementById(config.mirrorInputId);
+        if (mirror) mirror.value = id || '';
+    }
+    if (trigger) {
+        const span = trigger.querySelector('span');
+        if (span) span.textContent = label || config.emptyLabel;
+    }
+    closeModal('entity-picker-modal');
+}
 
-    results.querySelectorAll('.picker-result').forEach((button) => {
-        button.addEventListener('click', function() {
-            const selected = accountPickerData.find((account) => account.id === this.dataset.accountId);
-            if (!selected || !activeSplitRow) return;
-            activeSplitRow.querySelector('.split-account-id').value = selected.id;
-            activeSplitRow.querySelector('.picker-trigger span').textContent = selected.label;
-            closeModal('account-picker-modal');
+async function renderAccountPickerResults(query) {
+    const results = document.getElementById('account-picker-results');
+    if (!results) return;
+    results.innerHTML = '<div class="picker-empty">Searching...</div>';
+
+    try {
+        const response = await fetch(`search_entities.php?kind=account&q=${encodeURIComponent((query || '').trim())}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-    });
+        if (!response.ok) throw new Error('Search failed');
+        const payload = await response.json();
+        const matches = payload.results || [];
+
+        if (!matches.length) {
+            results.innerHTML = '<div class="picker-empty">No match. Check spelling, code, or car number.</div>';
+            return;
+        }
+
+        results.innerHTML = matches.map((account) => `
+            <button type="button" class="picker-result" data-account-id="${account.id}" data-account-label="${encodeURIComponent(account.label || '')}">
+                <span>
+                    <strong>${escapeHtml(account.label)}</strong>
+                    <small>${escapeHtml(account.meta || 'General')}</small>
+                </span>
+            </button>
+        `).join('');
+
+        results.querySelectorAll('.picker-result').forEach((button) => {
+            button.addEventListener('click', function() {
+                if (!activeSplitRow) return;
+                activeSplitRow.querySelector('.split-account-id').value = this.dataset.accountId || '';
+                activeSplitRow.querySelector('.picker-trigger span').textContent = decodeURIComponent(this.dataset.accountLabel || '') || 'Select account/car';
+                closeModal('account-picker-modal');
+            });
+        });
+    } catch (error) {
+        results.innerHTML = '<div class="picker-empty">Could not search accounts right now. Please try again.</div>';
+    }
 }
 
 function escapeHtml(value) {

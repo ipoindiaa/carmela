@@ -75,18 +75,7 @@ function renderTransactionRows($entries) {
 $where = "WHERE je.business_id = ?";
 $params = [$businessId];
 
-if (!empty($accessibleAccountIds) && $canReadJV) {
-    $where .= " AND (
-        EXISTS (
-            SELECT 1
-            FROM journal_lines jl_filter
-            WHERE jl_filter.journal_entry_id = je.id
-              AND jl_filter.account_id IN ($accountPlaceholders)
-        )
-        OR je.journal_voucher_id IS NOT NULL
-    )";
-    $params = array_merge($params, $accessibleAccountIds);
-} elseif (!empty($accessibleAccountIds)) {
+if (!empty($accessibleAccountIds)) {
     $where .= " AND EXISTS (
         SELECT 1
         FROM journal_lines jl_filter
@@ -95,7 +84,7 @@ if (!empty($accessibleAccountIds) && $canReadJV) {
     )";
     $params = array_merge($params, $accessibleAccountIds);
 } else {
-    $where .= " AND je.journal_voucher_id IS NOT NULL";
+    $where .= " AND 1 = 0";
 }
 
 if ($filterType) { $where .= " AND je.transaction_type = ?"; $params[] = $filterType; }

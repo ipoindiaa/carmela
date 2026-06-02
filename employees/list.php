@@ -25,7 +25,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
 }
 
 $employees = $db->fetchAll(
-    "SELECT e.*, a.current_balance as advance_balance FROM employees e LEFT JOIN accounts a ON a.id = e.advance_account_id WHERE e.business_id = ? ORDER BY e.name", [$businessId]);
+    "SELECT e.*, a.current_balance as advance_balance, a.current_balance_type as advance_balance_type
+     FROM employees e
+     LEFT JOIN accounts a ON a.id = e.advance_account_id
+     WHERE e.business_id = ?
+     ORDER BY e.name",
+    [$businessId]
+);
 ?>
 
 <div class="page-header">
@@ -41,12 +47,13 @@ $employees = $db->fetchAll(
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No employees yet</td></tr>
             <?php else: ?>
                 <?php foreach ($employees as $e): ?>
+                <?php $advanceOutstanding = (($e['advance_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($e['advance_balance'] ?? 0)) : 0; ?>
                 <tr>
                     <td class="text-bold"><?= clean($e['name']) ?></td>
                     <td><?= clean($e['role'] ?: '-') ?></td>
                     <td><?= clean($e['phone'] ?: '-') ?></td>
                     <td class="text-right amount"><?= formatAmount($e['monthly_salary']) ?></td>
-                    <td class="text-right amount <?= ($e['advance_balance'] ?? 0) > 0 ? 'text-yellow' : '' ?>"><?= formatAmount($e['advance_balance'] ?? 0) ?></td>
+                    <td class="text-right amount <?= $advanceOutstanding > 0 ? 'text-yellow' : '' ?>"><?= formatAmount($advanceOutstanding) ?></td>
                     <td><?= formatDate($e['join_date']) ?></td>
                     <td><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>

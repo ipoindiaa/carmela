@@ -8,13 +8,42 @@ $accountId = get('account_id', '');
 $dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 
-$accounts = $db->fetchAll("SELECT id, code, name, group_name FROM accounts WHERE business_id = ? ORDER BY group_name, code", [$businessId]);
-
 $entries = [];
 $selectedAccount = null;
+$balanceAsOn = ['signed' => 0.0, 'type' => 'DR', 'amount' => 0.0];
+$openingBalanceSigned = 0.0;
 if ($accountId) {
     $selectedAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
     if ($selectedAccount) {
+        $priorMovement = $db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS dr_total,
+                    COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cr_total
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ?
+               AND je.status = 'POSTED'
+               AND je.entry_date < ?",
+            [$accountId, $dateFrom]
+        );
+        $asOnMovement = $db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS dr_total,
+                    COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cr_total
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ?
+               AND je.status = 'POSTED'
+               AND je.entry_date <= ?",
+            [$accountId, $dateTo]
+        );
+        $signedOpening = signedBalanceValue($selectedAccount['opening_balance'] ?? 0, $selectedAccount['opening_balance_type'] ?? 'DR');
+        $openingBalanceSigned = round($signedOpening + floatval($priorMovement['dr_total'] ?? 0) - floatval($priorMovement['cr_total'] ?? 0), 2);
+        $asOnSigned = round($signedOpening + floatval($asOnMovement['dr_total'] ?? 0) - floatval($asOnMovement['cr_total'] ?? 0), 2);
+        $balanceAsOn = [
+            'signed' => $asOnSigned,
+            'type' => $asOnSigned >= 0 ? 'DR' : 'CR',
+            'amount' => abs($asOnSigned),
+        ];
+
         $entries = $db->fetchAll(
             "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
              FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
@@ -33,14 +62,11 @@ if ($accountId) {
     <form method="GET" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;">
         <div style="min-width:250px;">
             <label class="form-label">Account</label>
-            <select name="account_id" class="form-control" required>
-                <option value="">— Select Account —</option>
-                <?php $lastGrp = ''; foreach ($accounts as $a): 
-                    if ($a['group_name'] !== $lastGrp) { if ($lastGrp) echo '</optgroup>'; $lastGrp = $a['group_name']; echo '<optgroup label="' . (ACCOUNT_GROUPS[$a['group_name']] ?? $a['group_name']) . '">'; }
-                ?>
-                    <option value="<?= $a['id'] ?>" <?= $accountId === $a['id'] ? 'selected' : '' ?>><?= $a['code'] ?> — <?= clean($a['name']) ?></option>
-                <?php endforeach; if ($lastGrp) echo '</optgroup>'; ?>
-            </select>
+            <input type="hidden" name="account_id" id="ledger_account_id" value="<?= clean($accountId) ?>" required>
+            <button type="button" class="picker-trigger picker-trigger-wide" id="ledger-account-trigger">
+                <span><?= $selectedAccount ? clean(trim(($selectedAccount['code'] ?? '') . ' — ' . ($selectedAccount['name'] ?? ''), ' —')) : 'Select account' ?></span>
+                <i class="ri-search-line"></i>
+            </button>
         </div>
         <div><label class="form-label">From</label><input type="date" name="from" class="form-control" value="<?= $dateFrom ?>"></div>
         <div><label class="form-label">To</label><input type="date" name="to" class="form-control" value="<?= $dateTo ?>"></div>
@@ -52,7 +78,7 @@ if ($accountId) {
 <div class="card" style="margin-bottom:16px;">
     <div class="card-body" style="display:flex;gap:40px;">
         <div><span class="text-muted">Account:</span> <strong><?= clean($selectedAccount['name']) ?></strong></div>
-        <div><span class="text-muted">Balance:</span> <strong class="amount <?= $selectedAccount['current_balance_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($selectedAccount['current_balance']) ?> <?= $selectedAccount['current_balance_type'] ?></strong></div>
+        <div><span class="text-muted">Balance As On <?= formatDate($dateTo) ?>:</span> <strong class="amount <?= ($balanceAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($balanceAsOn['amount']) ?> <?= $balanceAsOn['type'] ?></strong></div>
     </div>
 </div>
 
@@ -60,7 +86,7 @@ if ($accountId) {
     <table>
         <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
-        <?php $bal = 0; foreach ($entries as $e):
+        <?php $bal = $openingBalanceSigned; foreach ($entries as $e):
             if ($e['entry_type'] === 'DR') $bal += $e['amount']; else $bal -= $e['amount'];
         ?>
         <tr>
@@ -77,5 +103,85 @@ if ($accountId) {
     </table>
 </div>
 <?php endif; ?>
+
+<div class="modal-overlay" id="ledger-account-modal">
+    <div class="modal modal-picker">
+        <div class="modal-header">
+            <div>
+                <h3><i class="ri-search-eye-line"></i> Search Account</h3>
+                <p class="modal-subtitle">Search by account code, name, group, or car number.</p>
+            </div>
+            <button type="button" class="modal-close" onclick="closeModal('ledger-account-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="search" class="form-control picker-search" id="ledger-account-search" placeholder="Type account code or name..." autocomplete="off">
+            <div class="picker-results" id="ledger-account-results"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const ledgerAccountTrigger = document.getElementById('ledger-account-trigger');
+const ledgerAccountSearch = document.getElementById('ledger-account-search');
+const ledgerAccountResults = document.getElementById('ledger-account-results');
+const ledgerAccountInput = document.getElementById('ledger_account_id');
+
+ledgerAccountTrigger?.addEventListener('click', function() {
+    if (ledgerAccountSearch) ledgerAccountSearch.value = '';
+    renderLedgerAccountResults('');
+    openModal('ledger-account-modal');
+    setTimeout(() => ledgerAccountSearch?.focus(), 60);
+});
+
+ledgerAccountSearch?.addEventListener('input', function() {
+    renderLedgerAccountResults(this.value);
+});
+
+async function renderLedgerAccountResults(query) {
+    if (!ledgerAccountResults) return;
+    ledgerAccountResults.innerHTML = '<div class="picker-empty">Searching...</div>';
+
+    try {
+        const response = await fetch(`../transactions/search_entities.php?kind=account&q=${encodeURIComponent((query || '').trim())}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!response.ok) throw new Error('Search failed');
+        const payload = await response.json();
+        const matches = payload.results || [];
+
+        if (!matches.length) {
+            ledgerAccountResults.innerHTML = '<div class="picker-empty">No account found.</div>';
+            return;
+        }
+
+        ledgerAccountResults.innerHTML = matches.map((item) => `
+            <button type="button" class="picker-result" data-account-id="${item.id}" data-account-label="${encodeURIComponent(item.label || '')}">
+                <span>
+                    <strong>${escapeHtml(item.label || '')}</strong>
+                    <small>${escapeHtml(item.meta || '')}</small>
+                </span>
+            </button>
+        `).join('');
+
+        ledgerAccountResults.querySelectorAll('.picker-result').forEach((button) => {
+            button.addEventListener('click', function() {
+                if (ledgerAccountInput) ledgerAccountInput.value = this.dataset.accountId || '';
+                const label = decodeURIComponent(this.dataset.accountLabel || '') || 'Select account';
+                const span = ledgerAccountTrigger?.querySelector('span');
+                if (span) span.textContent = label;
+                closeModal('ledger-account-modal');
+            });
+        });
+    } catch (error) {
+        ledgerAccountResults.innerHTML = '<div class="picker-empty">Could not search accounts right now.</div>';
+    }
+}
+
+function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value || '';
+    return div.innerHTML;
+}
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -90,6 +90,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     Bank Book
                 </a>
                 <?php endif; ?>
+                <?php if (Auth::hasBookAccess('gst_book', 'read')): ?>
+                <a href="<?= APP_URL ?>reports/gst_book.php" class="nav-link <?= $currentPage === 'gst_book' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-file-list-2-line"></i></span>
+                    GST Book
+                </a>
+                <?php endif; ?>
                 <?php if (Auth::hasBookAccess('trial_balance', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/trial_balance.php" class="nav-link <?= $currentPage === 'trial_balance' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-scales-3-line"></i></span>

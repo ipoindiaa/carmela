@@ -7,9 +7,10 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$accessibleAccountIds = Auth::getAccessiblePrimaryAccountIds($businessId, 'read');
 $dateFrom = get('from', date('Y-m-01'));
 $dateTo = get('to', date('Y-m-d'));
-$vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo);
+$vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAccountIds);
 ?>
 
 <div class="page-header">

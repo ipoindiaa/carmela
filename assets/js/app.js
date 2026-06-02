@@ -50,10 +50,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Show relevant sections
             const sectionMap = {
-                'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
-                'CAR_SALE': ['car-select-section', 'buyer-section'],
-                'CAR_EXPENSE': ['car-select-section', 'category-section'],
-                'GENERAL_EXPENSE': ['category-section'],
+                'CAR_PURCHASE': ['gst-section', 'car-section', 'partner-funding-section'],
+                'CAR_SALE': ['gst-section', 'car-select-section', 'buyer-section'],
+                'CAR_EXPENSE': ['gst-section', 'car-select-section', 'category-section'],
+                'GENERAL_EXPENSE': ['gst-section', 'category-section'],
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
                 'PARTNER_WITHDRAW': ['partner-section'],
@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'LOAN_REPAID': ['party-select-section'],
                 'CONTRA_TRANSFER': ['contra-section'],
                 'GST_PAYMENT': [],
+                'GST_UTILIZATION': [],
             };
 
             const sections = sectionMap[type] || [];
@@ -74,8 +75,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (el) el.style.display = 'block';
             });
 
+            const gstLabel = document.querySelector('#gst-section .form-label');
+            const gstHint = document.querySelector('#gst-section .form-hint');
+            if (gstLabel && gstHint) {
+                if (type === 'CAR_SALE') {
+                    gstLabel.textContent = 'GST Output Included (₹)';
+                    gstHint.textContent = 'Optional. If entered, this GST will go to GST Payable and only the remaining amount will be treated as sale revenue.';
+                } else {
+                    gstLabel.textContent = 'GST Input Included (₹)';
+                    gstHint.textContent = 'Optional. If entered, this GST will go to Input Credit and the remaining amount will hit car cost or expense.';
+                }
+            }
+
             // Update payment account label
             const pLabel = document.getElementById('payment-account-label');
+            const paymentAccountGroup = document.getElementById('payment-account-group');
+            const hiddenAccountTypes = ['GST_PAYMENT', 'GST_UTILIZATION'];
+            if (paymentAccountGroup) {
+                paymentAccountGroup.style.display = hiddenAccountTypes.includes(type) ? 'none' : '';
+            }
             if (pLabel) {
                 const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED'];
                 if (type === 'JOURNAL_VOUCHER') {

@@ -36,6 +36,7 @@ class AccountingEngine {
             ['GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities', 'GENERAL'],
             ['GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets', 'GENERAL'],
             ['BAD-DEBT', 'Bad Debt Expense', 'EXPENSE', 'Direct Expenses', 'GENERAL'],
+            ['ADV-WOFF', 'Employee Advance Write-Off Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
         ];
 
         foreach ($defaults as $acc) {
@@ -80,6 +81,7 @@ class AccountingEngine {
 
         try {
             $this->ensureJournalEntryTypeEnum();
+            $this->ensureCarStatusEnum();
 
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_vouchers` (
@@ -162,8 +164,28 @@ class AccountingEngine {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
 
+            $this->db->query(
+                "CREATE TABLE IF NOT EXISTS `partner_settlement_applications` (
+                    `id` CHAR(36) NOT NULL,
+                    `business_id` CHAR(36) NOT NULL,
+                    `partner_profit_settlement_id` CHAR(36) NOT NULL,
+                    `journal_entry_id` CHAR(36) NOT NULL,
+                    `applied_date` DATE NOT NULL,
+                    `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `direction` ENUM('PAYABLE','RECEIVABLE') NOT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    KEY `idx_psa_business` (`business_id`),
+                    KEY `idx_psa_entry` (`journal_entry_id`),
+                    KEY `idx_psa_settlement` (`partner_profit_settlement_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
             if (!$this->columnExists('journal_entries', 'journal_voucher_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `journal_voucher_id` CHAR(36) DEFAULT NULL AFTER `party_id`");
+            }
+            if (!$this->columnExists('cars', 'sale_gst_amount')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
             }
             if (!$this->columnExists('car_partner_contributions', 'funding_pct')) {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `funding_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `amount`");
@@ -187,7 +209,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT'];
+        $required = ['JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -201,8 +223,28 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
+                 ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
                  NOT NULL"
+            );
+        }
+    }
+
+    private function ensureCarStatusEnum() {
+        $column = $this->db->fetch(
+            "SELECT COLUMN_TYPE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cars'
+               AND COLUMN_NAME = 'status'"
+        );
+
+        $currentType = $column['COLUMN_TYPE'] ?? '';
+        if (strpos($currentType, "'CANCELLED'") === false) {
+            $this->db->query(
+                "ALTER TABLE `cars`
+                 MODIFY COLUMN `status`
+                 ENUM('IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED')
+                 NOT NULL DEFAULT 'IN_STOCK'"
             );
         }
     }
@@ -229,6 +271,13 @@ class AccountingEngine {
         $totalDr = 0;
         $totalCr = 0;
         foreach ($lines as $line) {
+            $amount = round(floatval($line['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                throw new Exception("Journal entry lines must be greater than zero.");
+            }
+            if (empty($line['account_id'])) {
+                throw new Exception("Journal entry line account is missing.");
+            }
             if ($line['type'] === 'DR') $totalDr += $line['amount'];
             else $totalCr += $line['amount'];
         }
@@ -331,16 +380,18 @@ class AccountingEngine {
     /**
      * CAR PURCHASE — Business funds
      */
-    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = []) {
+    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
 
         $carAccountId = $car['account_id'];
         $lines = [];
-        $partnerFunding = $this->normalizePartnerFunding($amount, $partnerFunding);
+        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $partnerFunding = $this->normalizePartnerFunding($grossAmount, $partnerFunding);
+        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         // Business funding
-        $businessAmount = $amount;
+        $businessAmount = $grossAmount;
         foreach ($partnerFunding as $pf) {
             $businessAmount -= $pf['amount'];
         }
@@ -352,8 +403,15 @@ class AccountingEngine {
         if ($businessAmount > 0) {
             // Validate: check payment account balance
             $this->validateCashAvailable($paymentAccount, $businessAmount);
-            
-            $lines[] = ['account_id' => $carAccountId, 'amount' => $businessAmount, 'type' => 'DR', 'narration' => 'Car purchase - business funds'];
+
+            $businessGst = $grossAmount > 0 ? round(($gstAmount * $businessAmount) / $grossAmount, 2) : 0.0;
+            $businessBase = round($businessAmount - $businessGst, 2);
+            if ($businessBase > 0) {
+                $lines[] = ['account_id' => $carAccountId, 'amount' => $businessBase, 'type' => 'DR', 'narration' => 'Car purchase - business funds'];
+            }
+            if ($businessGst > 0 && !empty($gstInputAccount['id'])) {
+                $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $businessGst, 'type' => 'DR', 'narration' => 'GST input on car purchase'];
+            }
             $lines[] = ['account_id' => $paymentAccount, 'amount' => $businessAmount, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
         }
 
@@ -363,14 +421,27 @@ class AccountingEngine {
         }
 
         // Partner funding entries
+        $partnerGstAllocated = 0.0;
+        $partnerRowsRemaining = count($partnerFunding);
         foreach ($partnerFunding as $pf) {
             $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ?", [$pf['partner_id']]);
             if (!$partner) continue;
 
-            $partnerLines = [
-                ['account_id' => $carAccountId, 'amount' => $pf['amount'], 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"],
-                ['account_id' => $partner['capital_account_id'], 'amount' => $pf['amount'], 'type' => 'CR', 'narration' => "Investment in car {$car['registration_no']}"],
-            ];
+            $partnerRowsRemaining--;
+            $partnerGst = $partnerRowsRemaining === 0
+                ? round($gstAmount - $partnerGstAllocated, 2)
+                : ($grossAmount > 0 ? round(($gstAmount * $pf['amount']) / $grossAmount, 2) : 0.0);
+            $partnerGstAllocated += $partnerGst;
+            $partnerBase = round($pf['amount'] - $partnerGst, 2);
+
+            $partnerLines = [];
+            if ($partnerBase > 0) {
+                $partnerLines[] = ['account_id' => $carAccountId, 'amount' => $partnerBase, 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"];
+            }
+            if ($partnerGst > 0 && !empty($gstInputAccount['id'])) {
+                $partnerLines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $partnerGst, 'type' => 'DR', 'narration' => "GST input on {$car['registration_no']}"];
+            }
+            $partnerLines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $pf['amount'], 'type' => 'CR', 'narration' => "Investment in car {$car['registration_no']}"];
             $partnerEntryId = $this->postJournalEntry('PARTNER_INVEST', $date, "Partner {$partner['name']} invested in {$car['registration_no']}", $partnerLines, ['car_id' => $carId, 'partner_id' => $pf['partner_id']]);
 
             // Record contribution
@@ -416,16 +487,23 @@ class AccountingEngine {
     /**
      * CAR SALE — Full or partial payment
      */
-    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null) {
+    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
         if ($car['status'] === 'SOLD') throw new Exception("Car is already sold");
+        if ($salePrice <= 0) throw new Exception("Sale price must be greater than zero.");
 
         $carAccountId = $car['account_id'];
         $totalCost = $this->getCarTotalCost($carId);
-        $received = $amountReceived ?? $salePrice;
-        $outstanding = $salePrice - $received;
-        $profit = $salePrice - $totalCost;
+        [$grossSalePrice, $gstAmount, $netSalePrice] = $this->normalizeGstComponent($salePrice, $gstAmount);
+        $received = $amountReceived === null ? $grossSalePrice : round(floatval($amountReceived), 2);
+        if ($received < 0) throw new Exception("Amount received cannot be negative.");
+        if ($received - $grossSalePrice > 0.01) throw new Exception("Amount received cannot be more than the sale price.");
+        $outstanding = $grossSalePrice - $received;
+        if ($outstanding > 0.009 && trim((string) $buyerName) === '') {
+            throw new Exception("Buyer name is required when sale payment is pending.");
+        }
+        $profit = $netSalePrice - $totalCost;
 
         $lines = [];
         $lines[] = ['account_id' => $receivingAccount, 'amount' => $received, 'type' => 'DR', 'narration' => 'Sale amount received'];
@@ -439,7 +517,11 @@ class AccountingEngine {
 
         // Revenue entry
         $revenueAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'CAR-REV'", [$this->businessId]);
-        $lines[] = ['account_id' => $revenueAccount['id'], 'amount' => $salePrice, 'type' => 'CR', 'narration' => "Car sale revenue - {$car['registration_no']}"];
+        $lines[] = ['account_id' => $revenueAccount['id'], 'amount' => $netSalePrice, 'type' => 'CR', 'narration' => "Car sale revenue - {$car['registration_no']}"];
+        if ($gstAmount > 0) {
+            $gstPayable = $this->getOrCreateSystemAccount('GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities');
+            $lines[] = ['account_id' => $gstPayable['id'], 'amount' => $gstAmount, 'type' => 'CR', 'narration' => "GST output on {$car['registration_no']}"];
+        }
 
         $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration, $lines, ['car_id' => $carId, 'party_id' => $partyId ?? null]);
 
@@ -455,8 +537,8 @@ class AccountingEngine {
 
         // Update car status
         $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
-        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, buyer_name = ? WHERE id = ?",
-            [$status, $date, $salePrice, $buyerName, $carId]);
+        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_gst_amount = ?, buyer_name = ? WHERE id = ?",
+            [$status, $date, $grossSalePrice, $gstAmount, $buyerName, $carId]);
 
         $this->recordPartnerProfitDistribution($carId, $profit, $date);
 
@@ -466,7 +548,7 @@ class AccountingEngine {
     /**
      * CAR EXPENSE
      */
-    public function carExpense($carId, $amount, $date, $paymentAccount, $categoryName, $narration) {
+    public function carExpense($carId, $amount, $date, $paymentAccount, $categoryName, $narration, $gstAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -476,37 +558,51 @@ class AccountingEngine {
         }
 
         $this->validateCashAvailable($paymentAccount, $amount);
+        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
 
         $expenseAccountId = $this->getOrCreateExpenseAccount($categoryName . ' - ' . $car['registration_no'], 'CAR_SPECIFIC');
+        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
-        $lines = [
-            ['account_id' => $expenseAccountId, 'amount' => $amount, 'type' => 'DR', 'narration' => $narration],
-            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid for {$categoryName}"],
-        ];
+        $lines = [];
+        if ($baseAmount > 0) {
+            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
+        }
+        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
+            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$categoryName}"];
+        }
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$categoryName}"];
 
         // Also debit the car asset account to track total cost
         // We create a separate entry for the car account
         $carLines = [
-            ['account_id' => $car['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "$categoryName for {$car['registration_no']}"],
-            ['account_id' => $expenseAccountId, 'amount' => $amount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
+            ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$categoryName for {$car['registration_no']}"],
+            ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
         ];
 
         $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
-        $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, ['car_id' => $carId]);
+        if ($baseAmount > 0) {
+            $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, ['car_id' => $carId]);
+        }
         return $entryId;
     }
 
     /**
      * GENERAL EXPENSE
      */
-    public function generalExpense($amount, $date, $paymentAccount, $categoryName, $narration) {
+    public function generalExpense($amount, $date, $paymentAccount, $categoryName, $narration, $gstAmount = 0) {
         $this->validateCashAvailable($paymentAccount, $amount);
+        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
         $expenseAccountId = $this->getOrCreateExpenseAccount($categoryName);
+        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
-        $lines = [
-            ['account_id' => $expenseAccountId, 'amount' => $amount, 'type' => 'DR', 'narration' => $narration],
-            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid for $categoryName"],
-        ];
+        $lines = [];
+        if ($baseAmount > 0) {
+            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
+        }
+        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
+            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for $categoryName"];
+        }
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for $categoryName"];
 
         return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
     }
@@ -569,6 +665,13 @@ class AccountingEngine {
         }
 
         if ($direction === 'PAY') {
+            $pendingPayable = $this->getPendingSettlementAmount($partnerId, 'PAYABLE');
+            if ($pendingPayable <= 0.009) {
+                throw new Exception("This partner has no pending payable balance to settle.");
+            }
+            if ($amount - $pendingPayable > 0.01) {
+                throw new Exception("Settlement amount cannot exceed pending payable balance of ₹" . number_format($pendingPayable, 2) . '.');
+            }
             $this->validateCashAvailable($accountId, $amount);
             $lines = [
                 ['account_id' => $partner['current_account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Settlement paid to {$partner['name']}"],
@@ -579,6 +682,13 @@ class AccountingEngine {
             return $entryId;
         }
 
+        $pendingReceivable = $this->getPendingSettlementAmount($partnerId, 'RECEIVABLE');
+        if ($pendingReceivable <= 0.009) {
+            throw new Exception("This partner has no pending receivable balance to settle.");
+        }
+        if ($amount - $pendingReceivable > 0.01) {
+            throw new Exception("Settlement amount cannot exceed pending receivable balance of ₹" . number_format($pendingReceivable, 2) . '.');
+        }
         $lines = [
             ['account_id' => $accountId, 'amount' => $amount, 'type' => 'DR', 'narration' => "Settlement received from {$partner['name']}"],
             ['account_id' => $partner['current_account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Settlement received from {$partner['name']}"],
@@ -595,12 +705,35 @@ class AccountingEngine {
         $employee = $this->db->fetch("SELECT * FROM employees WHERE id = ?", [$employeeId]);
         if (!$employee) throw new Exception("Employee not found");
 
+        $grossSalary = round(floatval($grossSalary), 2);
+        $advanceDeduction = round(floatval($advanceDeduction), 2);
+        if ($grossSalary <= 0) {
+            throw new Exception("Gross salary must be greater than zero.");
+        }
+        if ($advanceDeduction < 0) {
+            throw new Exception("Advance deduction cannot be negative.");
+        }
+        if ($advanceDeduction - $grossSalary > 0.01) {
+            throw new Exception("Advance deduction cannot exceed gross salary.");
+        }
+
         // RULE 6: Check duplicate salary
         $existing = $this->db->fetch(
             "SELECT id FROM salary_records WHERE employee_id = ? AND month = ? AND year = ?",
             [$employeeId, $month, $year]
         );
         if ($existing) throw new Exception("Salary already processed for {$employee['name']} for $month/$year");
+
+        if ($advanceDeduction > 0 && !empty($employee['advance_account_id'])) {
+            [$advanceAmount, $advanceType] = $this->getAccountBalanceRow($employee['advance_account_id']);
+            $advanceOutstanding = $this->naturalOutstandingValue($advanceAmount, $advanceType, 'DR');
+            if ($advanceOutstanding <= 0.009) {
+                throw new Exception("This employee has no advance outstanding to deduct.");
+            }
+            if ($advanceDeduction - $advanceOutstanding > 0.01) {
+                throw new Exception("Advance deduction cannot exceed current advance outstanding of ₹" . number_format($advanceOutstanding, 2) . '.');
+            }
+        }
 
         $netPaid = $grossSalary - $advanceDeduction;
         $this->validateCashAvailable($paymentAccount, $netPaid);
@@ -645,6 +778,11 @@ class AccountingEngine {
         $employee = $this->db->fetch("SELECT * FROM employees WHERE id = ?", [$employeeId]);
         if (!$employee) throw new Exception("Employee not found");
 
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Advance amount must be greater than zero.");
+        }
+
         $this->validateCashAvailable($paymentAccount, $amount);
 
         // Check advance limit
@@ -661,6 +799,45 @@ class AccountingEngine {
         ];
 
         return $this->postJournalEntry('EMPLOYEE_ADVANCE', $date, $narration, $lines, ['employee_id' => $employeeId]);
+    }
+
+    /**
+     * EMPLOYEE ADVANCE WRITE-OFF
+     */
+    public function employeeAdvanceWriteOff($employeeId, $amount, $date, $narration) {
+        $employee = $this->db->fetch(
+            "SELECT e.*, a.current_balance, a.current_balance_type
+             FROM employees e
+             LEFT JOIN accounts a ON a.id = e.advance_account_id
+             WHERE e.id = ? AND e.business_id = ?",
+            [$employeeId, $this->businessId]
+        );
+        if (!$employee) throw new Exception("Employee not found");
+
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Write-off amount must be greater than zero.");
+        }
+
+        $outstanding = $this->naturalOutstandingValue($employee['current_balance'], $employee['current_balance_type'], 'DR');
+        if ($outstanding <= 0.009) {
+            throw new Exception("This employee has no advance balance available for write-off.");
+        }
+        if ($amount - $outstanding > 0.01) {
+            throw new Exception("Write-off amount cannot exceed current advance outstanding of ₹" . number_format($outstanding, 2) . '.');
+        }
+
+        $expenseAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'ADV-WOFF'", [$this->businessId]);
+        if (!$expenseAccount) {
+            $expenseAccount = ['id' => $this->createAccount('ADV-WOFF', 'Employee Advance Write-Off Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL')];
+        }
+
+        $lines = [
+            ['account_id' => $expenseAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Advance written off for {$employee['name']}"],
+            ['account_id' => $employee['advance_account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Advance write-off for {$employee['name']}"],
+        ];
+
+        return $this->postJournalEntry('EMPLOYEE_ADVANCE_WRITEOFF', $date, $narration, $lines, ['employee_id' => $employeeId]);
     }
 
     /**
@@ -685,6 +862,23 @@ class AccountingEngine {
     public function loanReceived($partyId, $amount, $date, $receivingAccount, $narration) {
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$partyId]);
         if (!$party) throw new Exception("Party not found");
+        if (!in_array($party['type'], ['DEBTOR', 'BUYER'], true)) {
+            throw new Exception("Money can be received back only from a debtor or buyer account.");
+        }
+
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Received amount must be greater than zero.");
+        }
+
+        $openItems = $this->buildOutstandingItemsFromLedger($party['account_id'], 'DR');
+        $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+        if ($outstanding <= 0.009) {
+            throw new Exception("This party has no debtor balance pending for recovery.");
+        }
+        if ($amount - $outstanding > 0.01) {
+            throw new Exception("Received amount cannot exceed current debtor outstanding of ₹" . number_format($outstanding, 2) . '.');
+        }
 
         $lines = [
             ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => "Received from {$party['name']}"],
@@ -698,6 +892,10 @@ class AccountingEngine {
      * LOAN TAKEN (borrowed money)
      */
     public function loanTaken($partyName, $amount, $date, $receivingAccount, $narration) {
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Borrowed amount must be greater than zero.");
+        }
         $partyId = $this->getOrCreateParty($partyName, 'CREDITOR');
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$partyId]);
 
@@ -715,6 +913,23 @@ class AccountingEngine {
     public function loanRepaid($partyId, $amount, $date, $paymentAccount, $narration) {
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$partyId]);
         if (!$party) throw new Exception("Party not found");
+        if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
+            throw new Exception("Loan repayment is allowed only against creditor or seller balances.");
+        }
+
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Repayment amount must be greater than zero.");
+        }
+
+        $openItems = $this->buildOutstandingItemsFromLedger($party['account_id'], 'CR');
+        $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+        if ($outstanding <= 0.009) {
+            throw new Exception("This party has no creditor balance pending for repayment.");
+        }
+        if ($amount - $outstanding > 0.01) {
+            throw new Exception("Repayment amount cannot exceed current creditor outstanding of ₹" . number_format($outstanding, 2) . '.');
+        }
 
         $this->validateCashAvailable($paymentAccount, $amount);
 
@@ -724,6 +939,50 @@ class AccountingEngine {
         ];
 
         return $this->postJournalEntry('LOAN_REPAID', $date, $narration, $lines, ['party_id' => $partyId]);
+    }
+
+    /**
+     * BAD DEBT WRITE-OFF
+     */
+    public function badDebtWriteOff($partyId, $amount, $date, $narration) {
+        $party = $this->db->fetch(
+            "SELECT dc.*, a.current_balance, a.current_balance_type
+             FROM debtors_creditors dc
+             LEFT JOIN accounts a ON a.id = dc.account_id
+             WHERE dc.id = ? AND dc.business_id = ?",
+            [$partyId, $this->businessId]
+        );
+        if (!$party) throw new Exception("Party not found");
+        if (!in_array($party['type'], ['DEBTOR', 'BUYER'], true)) {
+            throw new Exception("Bad debt write-off is allowed only for debtors or buyers.");
+        }
+
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Write-off amount must be greater than zero.");
+        }
+
+        $outstanding = $this->naturalOutstandingValue($party['current_balance'], $party['current_balance_type'], 'DR');
+        if ($outstanding <= 0.009) {
+            throw new Exception("This party has no debtor balance available for write-off.");
+        }
+        if ($amount - $outstanding > 0.01) {
+            throw new Exception("Write-off amount cannot exceed current outstanding balance of ₹" . number_format($outstanding, 2) . '.');
+        }
+
+        $badDebtAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'BAD-DEBT'", [$this->businessId]);
+        if (!$badDebtAccount) {
+            throw new Exception("Bad debt expense account is missing.");
+        }
+
+        $lines = [
+            ['account_id' => $badDebtAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Bad debt expense for {$party['name']}"],
+            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Bad debt written off for {$party['name']}"],
+        ];
+
+        $entryId = $this->postJournalEntry('BAD_DEBT', $date, $narration, $lines, ['party_id' => $partyId]);
+        $this->db->query("UPDATE debtors_creditors SET is_bad_debt = 1 WHERE id = ? AND business_id = ?", [$partyId, $this->businessId]);
+        return $entryId;
     }
 
     /**
@@ -744,8 +1003,23 @@ class AccountingEngine {
      * GST PAYMENT
      */
     public function gstPayment($amount, $date, $narration) {
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) throw new Exception("GST payment amount must be greater than zero.");
+
         $gstPayable = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$this->businessId]);
         $gstBank = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'GST'", [$this->businessId]);
+        if (!$gstPayable || !$gstBank) throw new Exception("GST payable or GST bank account is missing.");
+
+        $payableRow = $this->getAccountBalanceRow($gstPayable['id']);
+        $payableOutstanding = $this->naturalOutstandingValue($payableRow[0], $payableRow[1], 'CR');
+        if ($payableOutstanding <= 0.009) {
+            throw new Exception("There is no GST payable balance available for payment.");
+        }
+        if ($amount - $payableOutstanding > 0.01) {
+            throw new Exception("GST payment cannot exceed current GST payable balance of ₹" . number_format($payableOutstanding, 2) . '.');
+        }
+
+        $this->validateCashAvailable($gstBank['id'], $amount);
 
         $lines = [
             ['account_id' => $gstPayable['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'GST liability paid'],
@@ -753,6 +1027,35 @@ class AccountingEngine {
         ];
 
         return $this->postJournalEntry('GST_PAYMENT', $date, $narration, $lines);
+    }
+
+    public function gstUtilization($amount, $date, $narration) {
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) throw new Exception("GST utilization amount must be greater than zero.");
+
+        $gstPayable = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$this->businessId]);
+        $gstInput = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-RCV'", [$this->businessId]);
+        if (!$gstPayable || !$gstInput) throw new Exception("GST payable or GST input account is missing.");
+
+        $payableRow = $this->getAccountBalanceRow($gstPayable['id']);
+        $inputRow = $this->getAccountBalanceRow($gstInput['id']);
+        $availablePayable = $this->naturalOutstandingValue($payableRow[0], $payableRow[1], 'CR');
+        $availableInput = $this->naturalOutstandingValue($inputRow[0], $inputRow[1], 'DR');
+        $maxUtilization = min($availablePayable, $availableInput);
+
+        if ($maxUtilization <= 0.009) {
+            throw new Exception("There is no matching GST payable and GST input credit available to utilize.");
+        }
+        if ($amount - $maxUtilization > 0.01) {
+            throw new Exception("GST utilization cannot exceed ₹" . number_format($maxUtilization, 2) . " based on current payable and input credit balances.");
+        }
+
+        $lines = [
+            ['account_id' => $gstPayable['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'GST payable adjusted against input credit'],
+            ['account_id' => $gstInput['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'GST input credit utilized'],
+        ];
+
+        return $this->postJournalEntry('GST_UTILIZATION', $date, $narration, $lines);
     }
 
     // ========================================
@@ -767,51 +1070,20 @@ class AccountingEngine {
         $this->validateDateNotLocked($entry['entry_date']);
 
         $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$entryId]);
-
-        $reversalLines = [];
-        foreach ($lines as $line) {
-            $reversalLines[] = [
-                'account_id' => $line['account_id'],
-                'amount' => $line['amount'],
-                'type' => $line['entry_type'] === 'DR' ? 'CR' : 'DR',
-                'narration' => 'Reversal: ' . ($line['narration'] ?? ''),
-            ];
-        }
+        $this->assertEntryCanBeReversed($entry, $lines);
 
         $this->db->beginTransaction();
         try {
-            $reversalId = Database::uuid();
-            $refNo = getNextRefNo($this->db, $this->businessId, date('Y-m-d'), 'REV');
-            $fy = getCurrentFY();
+            $reversalId = $this->createReversalEntry($entry, $lines, $reason);
+            $this->applyReversalBusinessEffects($entry, $lines, $reversalId);
 
-            $this->db->insert('journal_entries', [
-                'id' => $reversalId,
-                'business_id' => $this->businessId,
-                'entry_date' => date('Y-m-d'),
-                'reference_no' => $refNo,
-                'narration' => "REVERSAL: $reason (Original: {$entry['reference_no']})",
-                'transaction_type' => 'REVERSAL',
-                'is_reversal' => 1,
-                'original_entry_id' => $entryId,
-                'status' => 'POSTED',
-                'created_by' => $this->userId,
-                'financial_year' => $fy,
-            ]);
-
-            foreach ($reversalLines as $line) {
-                $this->db->insert('journal_lines', [
-                    'id' => Database::uuid(),
-                    'journal_entry_id' => $reversalId,
-                    'account_id' => $line['account_id'],
-                    'amount' => $line['amount'],
-                    'entry_type' => $line['type'],
-                    'narration' => $line['narration'],
-                ]);
-                $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
+            foreach ($this->getDependentEntriesForReversal($entry, $lines) as $dependentEntry) {
+                $dependentLines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$dependentEntry['id']]);
+                $this->assertEntryCanBeReversed($dependentEntry, $dependentLines, false);
+                $linkedReason = "Linked reversal for {$entry['reference_no']}: {$reason}";
+                $linkedReversalId = $this->createReversalEntry($dependentEntry, $dependentLines, $linkedReason);
+                $this->applyReversalBusinessEffects($dependentEntry, $dependentLines, $linkedReversalId);
             }
-
-            // Mark original as reversed
-            $this->db->query("UPDATE journal_entries SET status = 'REVERSED', reversed_by = ? WHERE id = ?", [$reversalId, $entryId]);
 
             Auth::auditLog('REVERSE', 'journal_entry', $entryId, "Reversed entry: $reason");
             $this->db->commit();
@@ -822,6 +1094,406 @@ class AccountingEngine {
         }
     }
 
+    private function createReversalEntry($entry, $lines, $reason) {
+        $reversalLines = [];
+        foreach ($lines as $line) {
+            $reversalLines[] = [
+                'account_id' => $line['account_id'],
+                'amount' => $line['amount'],
+                'type' => $line['entry_type'] === 'DR' ? 'CR' : 'DR',
+                'narration' => 'Reversal: ' . ($line['narration'] ?? ''),
+            ];
+        }
+
+        $reversalId = Database::uuid();
+        $refNo = getNextRefNo($this->db, $this->businessId, date('Y-m-d'), 'REV');
+        $fy = getCurrentFY();
+
+        $this->db->insert('journal_entries', [
+            'id' => $reversalId,
+            'business_id' => $this->businessId,
+            'entry_date' => date('Y-m-d'),
+            'reference_no' => $refNo,
+            'narration' => "REVERSAL: $reason (Original: {$entry['reference_no']})",
+            'transaction_type' => 'REVERSAL',
+            'is_reversal' => 1,
+            'original_entry_id' => $entry['id'],
+            'status' => 'POSTED',
+            'car_id' => $entry['car_id'] ?: null,
+            'partner_id' => $entry['partner_id'] ?: null,
+            'employee_id' => $entry['employee_id'] ?: null,
+            'party_id' => $entry['party_id'] ?: null,
+            'journal_voucher_id' => $entry['journal_voucher_id'] ?: null,
+            'created_by' => $this->userId,
+            'financial_year' => $fy,
+        ]);
+
+        foreach ($reversalLines as $line) {
+            $this->db->insert('journal_lines', [
+                'id' => Database::uuid(),
+                'journal_entry_id' => $reversalId,
+                'account_id' => $line['account_id'],
+                'amount' => $line['amount'],
+                'entry_type' => $line['type'],
+                'narration' => $line['narration'],
+            ]);
+            $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
+        }
+
+        $this->db->query("UPDATE journal_entries SET status = 'REVERSED', reversed_by = ? WHERE id = ?", [$reversalId, $entry['id']]);
+        return $reversalId;
+    }
+
+    private function assertEntryCanBeReversed($entry, $lines, $allowLinkedGuard = true) {
+        if ($entry['transaction_type'] === 'CAR_PURCHASE') {
+            if (!$this->canArchiveCarPurchase($entry)) {
+                throw new Exception("This car purchase already has downstream activity. Use a dedicated admin correction workflow instead of direct reversal.");
+            }
+        }
+
+        if ($entry['transaction_type'] === 'PARTNER_SETTLEMENT') {
+            $this->ensurePartnerSettlementApplicationTrail($entry['partner_id']);
+            $applicationCount = $this->db->fetch(
+                "SELECT COUNT(*) AS cnt
+                 FROM partner_settlement_applications
+                 WHERE business_id = ?
+                   AND journal_entry_id = ?",
+                [$this->businessId, $entry['id']]
+            );
+            if (($applicationCount['cnt'] ?? 0) <= 0 && !$this->canReverseLegacyPartnerSettlement($entry, $lines)) {
+                throw new Exception("This legacy partner settlement cannot be auto-reversed safely because newer settlement activity exists. Use a controlled admin correction flow.");
+            }
+        }
+
+        if ($entry['transaction_type'] === 'PROFIT_DISTRIBUTION') {
+            $settled = $this->db->fetch(
+                "SELECT COUNT(*) AS cnt
+                 FROM partner_profit_settlements
+                 WHERE business_id = ?
+                   AND journal_entry_id = ?
+                   AND status IN ('PARTIAL', 'SETTLED')
+                   AND settled_amount > 0.009",
+                [$this->businessId, $entry['id']]
+            );
+            if (($settled['cnt'] ?? 0) > 0) {
+                throw new Exception("This partner profit entry already has settlement activity. Reverse those settlements before reversing the profit allocation.");
+            }
+        }
+
+        if ($allowLinkedGuard && $entry['transaction_type'] === 'CAR_SALE' && $this->isPrimaryCarSaleEntry($entry, $lines)) {
+            $settled = $this->db->fetch(
+                "SELECT COUNT(*) AS cnt
+                 FROM partner_profit_settlements
+                 WHERE business_id = ?
+                   AND car_id = ?
+                   AND status IN ('PARTIAL', 'SETTLED')
+                   AND settled_amount > 0.009",
+                [$this->businessId, $entry['car_id']]
+            );
+            if (($settled['cnt'] ?? 0) > 0) {
+                throw new Exception("This car sale already has partner settlement activity. Reverse the partner settlements first, then reverse the sale.");
+            }
+        }
+    }
+
+    private function getDependentEntriesForReversal($entry, $lines) {
+        if (empty($entry['car_id'])) {
+            return [];
+        }
+
+        if ($entry['transaction_type'] === 'CAR_PURCHASE') {
+            return $this->db->fetchAll(
+                "SELECT *
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND car_id = ?
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                   AND id <> ?
+                   AND transaction_type = 'PARTNER_INVEST'
+                 ORDER BY created_at DESC, id DESC",
+                [$this->businessId, $entry['car_id'], $entry['id']]
+            );
+        }
+
+        if ($entry['transaction_type'] === 'CAR_SALE' && $this->isPrimaryCarSaleEntry($entry, $lines)) {
+            return $this->db->fetchAll(
+                "SELECT *
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND car_id = ?
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                   AND id <> ?
+                   AND (
+                       transaction_type = 'PROFIT_DISTRIBUTION'
+                       OR (transaction_type = 'CAR_SALE' AND narration LIKE 'Close car account %')
+                   )
+                 ORDER BY FIELD(transaction_type, 'PROFIT_DISTRIBUTION', 'CAR_SALE'), created_at, id",
+                [$this->businessId, $entry['car_id'], $entry['id']]
+            );
+        }
+
+        if ($entry['transaction_type'] === 'CAR_EXPENSE' && $this->isPrimaryCarExpenseEntry($entry, $lines)) {
+            $car = $this->db->fetch("SELECT account_id FROM cars WHERE id = ?", [$entry['car_id']]);
+            if (!$car || empty($car['account_id'])) {
+                return [];
+            }
+
+            $primaryTotal = $this->getEntryDebitTotal($lines);
+            $candidates = $this->db->fetchAll(
+                "SELECT *
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND car_id = ?
+                   AND transaction_type = 'CAR_EXPENSE'
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                   AND id <> ?
+                   AND entry_date = ?
+                 ORDER BY created_at DESC, id DESC",
+                [$this->businessId, $entry['car_id'], $entry['id'], $entry['entry_date']]
+            );
+
+            foreach ($candidates as $candidate) {
+                $candidateLines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$candidate['id']]);
+                if (!$this->isCarExpenseAllocationEntry($candidateLines, $car['account_id'])) {
+                    continue;
+                }
+                if (abs($this->getEntryDebitTotal($candidateLines) - $primaryTotal) > 0.01) {
+                    continue;
+                }
+                return [$candidate];
+            }
+        }
+
+        return [];
+    }
+
+    private function applyReversalBusinessEffects($entry, $lines, $reversalId) {
+        switch ($entry['transaction_type']) {
+            case 'SALARY_PAYMENT':
+                $this->db->query(
+                    "DELETE FROM salary_records WHERE business_id = ? AND journal_entry_id = ?",
+                    [$this->businessId, $entry['id']]
+                );
+                break;
+
+            case 'PARTNER_INVEST':
+                $this->reversePartnerContributionState($entry);
+                break;
+
+            case 'PARTNER_SETTLEMENT':
+                $this->reversePartnerSettlementApplications($entry, $lines);
+                break;
+
+            case 'CAR_PURCHASE':
+                $this->archiveCancelledCar($entry['car_id']);
+                break;
+
+            case 'PROFIT_DISTRIBUTION':
+                $this->db->query(
+                    "UPDATE partner_profit_settlements
+                     SET status = 'REVERSED',
+                         settled_amount = 0,
+                         outstanding_amount = 0,
+                         last_settlement_entry_id = ?,
+                         narration = CONCAT(COALESCE(narration, ''), ' | Reversed by ', ?)
+                     WHERE business_id = ?
+                       AND journal_entry_id = ?",
+                    [$reversalId, $reversalId, $this->businessId, $entry['id']]
+                );
+                break;
+
+            case 'CAR_SALE':
+                if ($this->isPrimaryCarSaleEntry($entry, $lines)) {
+                    $this->db->query(
+                        "UPDATE cars
+                         SET status = 'IN_STOCK',
+                             sold_date = NULL,
+                             sale_price = NULL,
+                             sale_gst_amount = 0,
+                             buyer_name = NULL
+                         WHERE id = ? AND business_id = ?",
+                        [$entry['car_id'], $this->businessId]
+                    );
+                }
+                break;
+
+            case 'BAD_DEBT':
+                $this->refreshPartyBadDebtFlag($entry['party_id']);
+                break;
+        }
+    }
+
+    private function reversePartnerContributionState($entry) {
+        if (empty($entry['car_id']) || empty($entry['partner_id'])) {
+            return;
+        }
+
+        $contribution = $this->db->fetch(
+            "SELECT id
+             FROM car_partner_contributions
+             WHERE journal_entry_id = ?
+             LIMIT 1",
+            [$entry['id']]
+        );
+
+        if ($contribution) {
+            $this->db->query("DELETE FROM car_partner_contributions WHERE id = ?", [$contribution['id']]);
+        }
+
+        $remaining = $this->db->fetchAll(
+            "SELECT amount, funding_pct, profit_share_pct
+             FROM car_partner_contributions
+             WHERE car_id = ? AND partner_id = ?
+             ORDER BY contribution_date, created_at",
+            [$entry['car_id'], $entry['partner_id']]
+        );
+
+        if (empty($remaining)) {
+            $this->db->query("DELETE FROM car_partnerships WHERE car_id = ? AND partner_id = ?", [$entry['car_id'], $entry['partner_id']]);
+            return;
+        }
+
+        $fundingAmount = 0.0;
+        $fundingPct = 0.0;
+        $profitShareWeighted = 0.0;
+        foreach ($remaining as $row) {
+            $amount = floatval($row['amount']);
+            $fundingAmount += $amount;
+            $fundingPct += floatval($row['funding_pct']);
+            $profitShareWeighted += $amount * floatval($row['profit_share_pct']);
+        }
+
+        $profitSharePct = $fundingAmount > 0 ? round($profitShareWeighted / $fundingAmount, 4) : 0.0;
+        $this->db->update('car_partnerships', [
+            'funding_amount' => round($fundingAmount, 2),
+            'funding_pct' => round($fundingPct, 4),
+            'profit_share_pct' => $profitSharePct,
+            'status' => 'ACTIVE',
+        ], 'car_id = ? AND partner_id = ?', [$entry['car_id'], $entry['partner_id']]);
+    }
+
+    private function canArchiveCarPurchase($entry) {
+        if (empty($entry['car_id'])) {
+            return false;
+        }
+
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$entry['car_id'], $this->businessId]);
+        if (!$car) {
+            return false;
+        }
+        if (!in_array($car['status'], ['IN_STOCK', 'CANCELLED'], true)) {
+            return false;
+        }
+
+        $disallowed = $this->db->fetch(
+            "SELECT COUNT(*) AS cnt
+             FROM journal_entries
+             WHERE business_id = ?
+               AND car_id = ?
+               AND status = 'POSTED'
+               AND is_reversal = 0
+               AND id <> ?
+               AND transaction_type NOT IN ('PARTNER_INVEST')",
+            [$this->businessId, $entry['car_id'], $entry['id']]
+        );
+
+        return (($disallowed['cnt'] ?? 0) <= 0);
+    }
+
+    private function archiveCancelledCar($carId) {
+        if (!$carId) {
+            return;
+        }
+
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) {
+            return;
+        }
+
+        $account = !empty($car['account_id'])
+            ? $this->db->fetch("SELECT * FROM accounts WHERE id = ?", [$car['account_id']])
+            : null;
+
+        $originalReg = trim((string) ($car['registration_no'] ?? ''));
+        $archivedReg = substr('VOID-' . preg_replace('/[^A-Z0-9]/', '', strtoupper($originalReg)) . '-' . strtoupper(substr(str_replace('-', '', $carId), 0, 4)), 0, 20);
+        $notePrefix = "Purchase cancelled for original registration {$originalReg}.";
+        $notes = trim($notePrefix . ' ' . trim((string) ($car['notes'] ?? '')));
+
+        $this->db->query(
+            "UPDATE cars
+             SET status = 'CANCELLED',
+                 registration_no = ?,
+                 sold_date = NULL,
+                 sale_price = NULL,
+                 buyer_name = NULL,
+                 notes = ?
+             WHERE id = ? AND business_id = ?",
+            [$archivedReg, $notes, $carId, $this->businessId]
+        );
+
+        if ($account) {
+            $archivedCode = substr('VOID-' . preg_replace('/[^A-Z0-9]/', '', strtoupper($originalReg)) . '-' . strtoupper(substr(str_replace('-', '', $carId), 0, 4)), 0, 20);
+            $archivedName = substr('Cancelled Car A/c - ' . $originalReg, 0, 200);
+            $this->db->update('accounts', [
+                'code' => $archivedCode,
+                'name' => $archivedName,
+                'entity_id' => null,
+                'is_active' => 0,
+            ], 'id = ?', [$account['id']]);
+        }
+    }
+
+    private function isPrimaryCarSaleEntry($entry, $lines) {
+        if ($entry['transaction_type'] !== 'CAR_SALE') {
+            return false;
+        }
+
+        $narration = trim((string) ($entry['narration'] ?? ''));
+        if (stripos($narration, 'Close car account ') === 0) {
+            return false;
+        }
+
+        foreach ($lines as $line) {
+            $lineNarration = trim((string) ($line['narration'] ?? ''));
+            if ($line['entry_type'] === 'CR' && stripos($lineNarration, 'Car sale revenue') === 0) {
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    private function isPrimaryCarExpenseEntry($entry, $lines) {
+        if ($entry['transaction_type'] !== 'CAR_EXPENSE') {
+            return false;
+        }
+
+        $narration = trim((string) ($entry['narration'] ?? ''));
+        return stripos($narration, 'Allocate ') !== 0;
+    }
+
+    private function isCarExpenseAllocationEntry($lines, $carAccountId) {
+        foreach ($lines as $line) {
+            if ($line['account_id'] === $carAccountId && $line['entry_type'] === 'DR') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function getEntryDebitTotal($lines) {
+        $total = 0.0;
+        foreach ($lines as $line) {
+            if (($line['entry_type'] ?? '') === 'DR') {
+                $total += floatval($line['amount'] ?? 0);
+            }
+        }
+        return round($total, 2);
+    }
+
     // ========================================
     // VALIDATION HELPERS
     // ========================================
@@ -829,14 +1501,26 @@ class AccountingEngine {
         $account = $this->db->fetch("SELECT * FROM accounts WHERE id = ?", [$accountId]);
         if (!$account) throw new Exception("Payment account not found");
 
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            return;
+        }
+
+        $availableBalance = $this->storedBalanceValue($account['current_balance'], $account['current_balance_type'], false);
+
         if ($account['entity_type'] === 'CASH') {
             $business = $this->db->fetch("SELECT min_cash_balance FROM businesses WHERE id = ?", [$this->businessId]);
-            $minBalance = $business['min_cash_balance'] ?? 0;
-            $currentBalance = $account['current_balance'];
+            $minBalance = floatval($business['min_cash_balance'] ?? 0);
 
-            if (($currentBalance - $amount) < $minBalance) {
-                throw new Exception("Insufficient cash balance. Current: ₹" . number_format($currentBalance, 2) . ", Required: ₹" . number_format($amount, 2) . ", Minimum: ₹" . number_format($minBalance, 2));
+            if (($availableBalance - $amount) < $minBalance) {
+                throw new Exception("Insufficient cash balance. Current: ₹" . number_format(max(0, $availableBalance), 2) . ", Required: ₹" . number_format($amount, 2) . ", Minimum: ₹" . number_format($minBalance, 2));
             }
+            return;
+        }
+
+        if (in_array($account['entity_type'], ['BANK', 'GST'], true) && ($availableBalance - $amount) < -0.009) {
+            $bookLabel = $account['entity_type'] === 'GST' ? 'GST bank' : 'bank';
+            throw new Exception("Insufficient {$bookLabel} balance. Current: ₹" . number_format(max(0, $availableBalance), 2) . ", Required: ₹" . number_format($amount, 2) . '.');
         }
     }
 
@@ -893,7 +1577,9 @@ class AccountingEngine {
 
         $totalCost = $this->getCarTotalCost($carId);
         $salePrice = $car['sale_price'] ?? 0;
-        $profit = $salePrice - $totalCost;
+        $saleGstAmount = floatval($car['sale_gst_amount'] ?? 0);
+        $netSalePrice = max(0, $salePrice - $saleGstAmount);
+        $profit = $netSalePrice - $totalCost;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
             "SELECT pps.*, p.name as partner_name
@@ -910,6 +1596,8 @@ class AccountingEngine {
             'total_expenses' => $totalCost - $car['purchase_price'],
             'total_cost' => $totalCost,
             'sale_price' => $salePrice,
+            'sale_gst_amount' => $saleGstAmount,
+            'net_sale_price' => $netSalePrice,
             'profit' => $profit,
             'status' => $car['status'],
             'holding_days' => $car['sold_date'] ? max(0, (int) floor((strtotime($car['sold_date']) - strtotime($car['purchase_date'])) / 86400)) : max(0, (int) floor((time() - strtotime($car['purchase_date'])) / 86400)),
@@ -1185,20 +1873,162 @@ class AccountingEngine {
         return $result;
     }
 
-    public function getJournalVoucherRegister($fromDate = null, $toDate = null) {
+    public function getDebtorAgeingReport() {
+        $rows = $this->db->fetchAll(
+            "SELECT dc.*, a.current_balance, a.current_balance_type
+             FROM debtors_creditors dc
+             JOIN accounts a ON a.id = dc.account_id
+             WHERE dc.business_id = ?
+               AND dc.type IN ('DEBTOR', 'BUYER')
+               AND dc.is_active = 1
+             ORDER BY dc.name",
+            [$this->businessId]
+        );
+
+        $report = [];
+        foreach ($rows as $row) {
+            $openItems = $this->buildOutstandingItemsFromLedger($row['account_id'], 'DR');
+            $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+            if ($outstanding <= 0.009) {
+                continue;
+            }
+
+            $oldestDate = !empty($openItems) ? min(array_column($openItems, 'entry_date')) : null;
+            $daysPending = $oldestDate ? max(0, (int) floor((time() - strtotime($oldestDate)) / 86400)) : 0;
+            $report[] = [
+                'id' => $row['id'],
+                'name' => $row['name'],
+                'type' => $row['type'],
+                'phone' => $row['phone'],
+                'email' => $row['email'],
+                'account_id' => $row['account_id'],
+                'is_bad_debt' => !empty($row['is_bad_debt']),
+                'outstanding' => round($outstanding, 2),
+                'oldest_open_date' => $oldestDate,
+                'days_pending' => $daysPending,
+                'open_item_count' => count($openItems),
+                'open_items' => $openItems,
+            ];
+        }
+
+        usort($report, static function ($a, $b) {
+            return $b['outstanding'] <=> $a['outstanding'];
+        });
+
+        return $report;
+    }
+
+    public function getCreditorOutstandingReport() {
+        $rows = $this->db->fetchAll(
+            "SELECT dc.*, a.current_balance, a.current_balance_type
+             FROM debtors_creditors dc
+             JOIN accounts a ON a.id = dc.account_id
+             WHERE dc.business_id = ?
+               AND dc.type IN ('CREDITOR', 'SELLER')
+               AND dc.is_active = 1
+             ORDER BY dc.name",
+            [$this->businessId]
+        );
+
+        $report = [];
+        foreach ($rows as $row) {
+            $openItems = $this->buildOutstandingItemsFromLedger($row['account_id'], 'CR');
+            $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+            if ($outstanding <= 0.009) {
+                continue;
+            }
+
+            $report[] = [
+                'id' => $row['id'],
+                'name' => $row['name'],
+                'type' => $row['type'],
+                'phone' => $row['phone'],
+                'email' => $row['email'],
+                'outstanding' => round($outstanding, 2),
+                'oldest_open_date' => !empty($openItems) ? min(array_column($openItems, 'entry_date')) : null,
+                'open_item_count' => count($openItems),
+                'open_items' => $openItems,
+            ];
+        }
+
+        usort($report, static function ($a, $b) {
+            return $b['outstanding'] <=> $a['outstanding'];
+        });
+
+        return $report;
+    }
+
+    public function getOutstandingSummary() {
+        $debtors = $this->getDebtorAgeingReport();
+        $creditors = $this->getCreditorOutstandingReport();
+
+        $employeeRows = $this->db->fetchAll(
+            "SELECT a.current_balance, a.current_balance_type
+             FROM employees e
+             JOIN accounts a ON a.id = e.advance_account_id
+             WHERE e.business_id = ?",
+            [$this->businessId]
+        );
+
+        $employeeAdvances = 0.0;
+        foreach ($employeeRows as $row) {
+            $employeeAdvances += $this->naturalOutstandingValue($row['current_balance'], $row['current_balance_type'], 'DR');
+        }
+
+        return [
+            'debtors_total' => round(array_sum(array_column($debtors, 'outstanding')), 2),
+            'creditors_total' => round(array_sum(array_column($creditors, 'outstanding')), 2),
+            'employee_advances_total' => round($employeeAdvances, 2),
+        ];
+    }
+
+    public function getPartyOpenItems($partyId) {
+        $party = $this->db->fetch(
+            "SELECT dc.*, a.current_balance, a.current_balance_type
+             FROM debtors_creditors dc
+             JOIN accounts a ON a.id = dc.account_id
+             WHERE dc.id = ? AND dc.business_id = ?",
+            [$partyId, $this->businessId]
+        );
+        if (!$party) {
+            return [];
+        }
+
+        $naturalType = in_array($party['type'], ['DEBTOR', 'BUYER'], true) ? 'DR' : 'CR';
+        return $this->buildOutstandingItemsFromLedger($party['account_id'], $naturalType);
+    }
+
+    public function getJournalVoucherRegister($fromDate = null, $toDate = null, $accessibleAccountIds = []) {
         $fromDate = $fromDate ?: date('Y-m-01');
         $toDate = $toDate ?: date('Y-m-d');
-        return $this->db->fetchAll(
-            "SELECT jv.*, pa.name as primary_account_name, u.full_name as created_by_name, je.reference_no as posted_reference_no
-             FROM journal_vouchers jv
-             JOIN accounts pa ON pa.id = jv.primary_account_id
-             JOIN users u ON u.id = jv.created_by
-             LEFT JOIN journal_entries je ON je.id = jv.posted_entry_id
-             WHERE jv.business_id = ?
-               AND jv.voucher_date BETWEEN ? AND ?
-             ORDER BY jv.voucher_date DESC, jv.created_at DESC",
-            [$this->businessId, $fromDate, $toDate]
-        );
+        $sql = "SELECT jv.*, pa.name as primary_account_name, u.full_name as created_by_name, je.reference_no as posted_reference_no
+                FROM journal_vouchers jv
+                JOIN accounts pa ON pa.id = jv.primary_account_id
+                JOIN users u ON u.id = jv.created_by
+                LEFT JOIN journal_entries je ON je.id = jv.posted_entry_id
+                WHERE jv.business_id = ?
+                  AND jv.voucher_date BETWEEN ? AND ?";
+        $params = [$this->businessId, $fromDate, $toDate];
+
+        if (!Auth::isAdmin()) {
+            if (empty($accessibleAccountIds)) {
+                return [];
+            }
+            $placeholders = implode(',', array_fill(0, count($accessibleAccountIds), '?'));
+            $sql .= " AND (
+                        jv.primary_account_id IN ($placeholders)
+                        OR EXISTS (
+                            SELECT 1
+                            FROM journal_voucher_lines jvl
+                            WHERE jvl.journal_voucher_id = jv.id
+                              AND jvl.account_id IN ($placeholders)
+                        )
+                     )";
+            $params = array_merge($params, $accessibleAccountIds, $accessibleAccountIds);
+        }
+
+        $sql .= " ORDER BY jv.voucher_date DESC, jv.created_at DESC";
+        return $this->db->fetchAll($sql, $params);
     }
 
     private function normalizePartnerFunding($purchaseAmount, $partnerFunding) {
@@ -1432,6 +2262,10 @@ class AccountingEngine {
     }
 
     private function applyPartnerSettlement($partnerId, $amount, $direction, $entryId, $date) {
+        $this->applyPartnerSettlementAllocation($partnerId, $amount, $direction, $entryId, $date, true);
+    }
+
+    private function applyPartnerSettlementAllocation($partnerId, $amount, $direction, $entryId, $date, $recordApplications = true) {
         $rows = $this->db->fetchAll(
             "SELECT *
              FROM partner_profit_settlements
@@ -1467,8 +2301,295 @@ class AccountingEngine {
                 'settlement_date' => $date,
             ], 'id = ?', [$row['id']]);
 
+            if ($recordApplications) {
+                $this->db->insert('partner_settlement_applications', [
+                    'id' => Database::uuid(),
+                    'business_id' => $this->businessId,
+                    'partner_profit_settlement_id' => $row['id'],
+                    'journal_entry_id' => $entryId,
+                    'applied_date' => $date,
+                    'applied_amount' => $applied,
+                    'direction' => $direction,
+                ]);
+            }
+
             $remaining = round($remaining - $applied, 2);
         }
+
+        if ($remaining > 0.009) {
+            throw new Exception("Settlement amount could not be fully matched against pending partner balances.");
+        }
+    }
+
+    private function reversePartnerSettlementApplications($entry, $lines) {
+        $entryId = $entry['id'];
+        $applications = $this->db->fetchAll(
+            "SELECT *
+             FROM partner_settlement_applications
+             WHERE business_id = ?
+               AND journal_entry_id = ?
+             ORDER BY created_at DESC, id DESC",
+            [$this->businessId, $entryId]
+        );
+
+        if (empty($applications)) {
+            $this->reverseLegacyPartnerSettlement($entry, $lines);
+            return;
+        }
+
+        foreach ($applications as $application) {
+            $row = $this->db->fetch(
+                "SELECT *
+                 FROM partner_profit_settlements
+                 WHERE id = ?
+                   AND business_id = ?",
+                [$application['partner_profit_settlement_id'], $this->businessId]
+            );
+            if (!$row) {
+                continue;
+            }
+
+            $applied = round(floatval($application['applied_amount']), 2);
+            $newSettled = max(0, round(floatval($row['settled_amount']) - $applied, 2));
+            $newOutstanding = round(floatval($row['outstanding_amount']) + $applied, 2);
+            $newStatus = $newSettled <= 0.009 ? 'PENDING' : 'PARTIAL';
+
+            $previousApplication = $this->db->fetch(
+                "SELECT journal_entry_id, applied_date
+                 FROM partner_settlement_applications
+                 WHERE business_id = ?
+                   AND partner_profit_settlement_id = ?
+                   AND journal_entry_id <> ?
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1",
+                [$this->businessId, $row['id'], $entryId]
+            );
+
+            $updateData = [
+                'settled_amount' => $newSettled,
+                'outstanding_amount' => $newOutstanding,
+                'status' => $newStatus,
+                'last_settlement_entry_id' => $previousApplication['journal_entry_id'] ?? null,
+            ];
+            if (!empty($previousApplication['applied_date'])) {
+                $updateData['settlement_date'] = $previousApplication['applied_date'];
+            }
+
+            $this->db->update('partner_profit_settlements', $updateData, 'id = ?', [$row['id']]);
+        }
+
+        $this->db->query(
+            "DELETE FROM partner_settlement_applications
+             WHERE business_id = ?
+               AND journal_entry_id = ?",
+            [$this->businessId, $entryId]
+        );
+    }
+
+    private function canReverseLegacyPartnerSettlement($entry, $lines) {
+        if (empty($entry['partner_id'])) {
+            return false;
+        }
+
+        $this->ensurePartnerSettlementApplicationTrail($entry['partner_id']);
+        $direction = $this->getPartnerSettlementDirection($entry, $lines);
+        if (!$direction) {
+            return false;
+        }
+
+        $newerSettlements = $this->db->fetch(
+            "SELECT COUNT(*) AS cnt
+             FROM journal_entries
+             WHERE business_id = ?
+               AND partner_id = ?
+               AND transaction_type = 'PARTNER_SETTLEMENT'
+               AND status = 'POSTED'
+               AND is_reversal = 0
+               AND created_at > ?
+               AND id <> ?",
+            [$this->businessId, $entry['partner_id'], $entry['created_at'], $entry['id']]
+        );
+        if (($newerSettlements['cnt'] ?? 0) > 0) {
+            return false;
+        }
+
+        $amount = $this->getEntryDebitTotal($lines);
+        $rows = $this->getLegacySettlementRowsForReversal($entry, $direction);
+        return $this->canUnapplyLegacySettlementAmount($rows, $amount);
+    }
+
+    private function reverseLegacyPartnerSettlement($entry, $lines) {
+        $direction = $this->getPartnerSettlementDirection($entry, $lines);
+        if (!$direction) {
+            throw new Exception("Unable to determine legacy settlement direction for reversal.");
+        }
+
+        $amount = $this->getEntryDebitTotal($lines);
+        $rows = $this->getLegacySettlementRowsForReversal($entry, $direction);
+        if (!$this->canUnapplyLegacySettlementAmount($rows, $amount)) {
+            throw new Exception("This legacy partner settlement no longer matches the latest settlement state. Use a controlled admin correction flow.");
+        }
+
+        $remaining = round($amount, 2);
+        foreach ($rows as $row) {
+            if ($remaining <= 0.009) {
+                break;
+            }
+
+            $available = round(floatval($row['settled_amount']), 2);
+            if ($available <= 0.009) {
+                continue;
+            }
+
+            $applied = min($remaining, $available);
+            $newSettled = max(0, round($available - $applied, 2));
+            $newOutstanding = round(floatval($row['outstanding_amount']) + $applied, 2);
+            $newStatus = $newSettled <= 0.009 ? 'PENDING' : 'PARTIAL';
+
+            $this->db->update('partner_profit_settlements', [
+                'settled_amount' => $newSettled,
+                'outstanding_amount' => $newOutstanding,
+                'status' => $newStatus,
+                'last_settlement_entry_id' => null,
+            ], 'id = ?', [$row['id']]);
+
+            $remaining = round($remaining - $applied, 2);
+        }
+    }
+
+    private function getLegacySettlementRowsForReversal($entry, $direction) {
+        return $this->db->fetchAll(
+            "SELECT *
+             FROM partner_profit_settlements
+             WHERE business_id = ?
+               AND partner_id = ?
+               AND direction = ?
+               AND last_settlement_entry_id = ?
+             ORDER BY settlement_date DESC, created_at DESC, id DESC",
+            [$this->businessId, $entry['partner_id'], $direction, $entry['id']]
+        );
+    }
+
+    private function canUnapplyLegacySettlementAmount($rows, $amount) {
+        $available = 0.0;
+        foreach ($rows as $row) {
+            $available += round(floatval($row['settled_amount']), 2);
+        }
+        return round($available, 2) + 0.009 >= round($amount, 2);
+    }
+
+    private function ensurePartnerSettlementApplicationTrail($partnerId) {
+        if (!$partnerId) {
+            return;
+        }
+
+        $legacyCount = $this->db->fetch(
+            "SELECT COUNT(*) AS cnt
+             FROM journal_entries je
+             WHERE je.business_id = ?
+               AND je.partner_id = ?
+               AND je.transaction_type = 'PARTNER_SETTLEMENT'
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM partner_settlement_applications psa
+                   WHERE psa.business_id = je.business_id
+                     AND psa.journal_entry_id = je.id
+               )",
+            [$this->businessId, $partnerId]
+        );
+
+        if (($legacyCount['cnt'] ?? 0) <= 0) {
+            return;
+        }
+
+        $this->rebuildPartnerSettlementTrail($partnerId);
+    }
+
+    private function rebuildPartnerSettlementTrail($partnerId) {
+        $this->db->beginTransaction();
+        try {
+            $rows = $this->db->fetchAll(
+                "SELECT pps.id, pps.profit_amount, pps.journal_entry_id, je.entry_date
+                 FROM partner_profit_settlements pps
+                 JOIN journal_entries je ON je.id = pps.journal_entry_id
+                 WHERE pps.business_id = ?
+                   AND pps.partner_id = ?
+                   AND pps.status <> 'REVERSED'",
+                [$this->businessId, $partnerId]
+            );
+
+            foreach ($rows as $row) {
+                $this->db->update('partner_profit_settlements', [
+                    'settled_amount' => 0,
+                    'outstanding_amount' => round(floatval($row['profit_amount']), 2),
+                    'status' => 'PENDING',
+                    'last_settlement_entry_id' => null,
+                    'settlement_date' => $row['entry_date'],
+                ], 'id = ?', [$row['id']]);
+            }
+
+            $this->db->query(
+                "DELETE FROM partner_settlement_applications
+                 WHERE business_id = ?
+                   AND journal_entry_id IN (
+                       SELECT id
+                       FROM journal_entries
+                       WHERE business_id = ?
+                         AND partner_id = ?
+                         AND transaction_type = 'PARTNER_SETTLEMENT'
+                   )",
+                [$this->businessId, $this->businessId, $partnerId]
+            );
+
+            $settlementEntries = $this->db->fetchAll(
+                "SELECT *
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND partner_id = ?
+                   AND transaction_type = 'PARTNER_SETTLEMENT'
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                 ORDER BY entry_date, created_at, id",
+                [$this->businessId, $partnerId]
+            );
+
+            foreach ($settlementEntries as $entry) {
+                $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$entry['id']]);
+                $direction = $this->getPartnerSettlementDirection($entry, $lines);
+                if (!$direction) {
+                    throw new Exception("Could not rebuild partner settlement trail because a settlement direction was unclear.");
+                }
+                $amount = $this->getEntryDebitTotal($lines);
+                $this->applyPartnerSettlementAllocation($partnerId, $amount, $direction, $entry['id'], $entry['entry_date'], true);
+            }
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    private function getPartnerSettlementDirection($entry, $lines) {
+        if (empty($entry['partner_id'])) {
+            return null;
+        }
+
+        $partner = $this->db->fetch("SELECT current_account_id FROM partners WHERE id = ?", [$entry['partner_id']]);
+        if (!$partner || empty($partner['current_account_id'])) {
+            return null;
+        }
+
+        foreach ($lines as $line) {
+            if (($line['account_id'] ?? null) !== $partner['current_account_id']) {
+                continue;
+            }
+            return strtoupper((string) ($line['entry_type'] ?? '')) === 'DR' ? 'PAYABLE' : 'RECEIVABLE';
+        }
+
+        return null;
     }
 
     // ========================================
@@ -1509,6 +2630,193 @@ class AccountingEngine {
     private function getPaymentMode($accountId) {
         $account = $this->db->fetch("SELECT entity_type FROM accounts WHERE id = ?", [$accountId]);
         return ($account && $account['entity_type'] === 'BANK') ? 'BANK' : 'CASH';
+    }
+
+    private function getOrCreateSystemAccount($code, $name, $group, $subGroup) {
+        $account = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ?", [$this->businessId, $code]);
+        if ($account) {
+            return $account;
+        }
+
+        return ['id' => $this->createAccount($code, $name, $group, $subGroup, 'GENERAL')];
+    }
+
+    private function normalizeGstComponent($grossAmount, $gstAmount = 0) {
+        $grossAmount = round(floatval($grossAmount), 2);
+        $gstAmount = round(floatval($gstAmount), 2);
+
+        if ($grossAmount <= 0) {
+            throw new Exception("Amount must be greater than zero.");
+        }
+        if ($gstAmount < 0) {
+            throw new Exception("GST amount cannot be negative.");
+        }
+        if ($gstAmount - $grossAmount > 0.01) {
+            throw new Exception("GST amount cannot exceed the total amount.");
+        }
+
+        $baseAmount = round($grossAmount - $gstAmount, 2);
+        if ($baseAmount <= 0 && $gstAmount > 0) {
+            throw new Exception("GST amount cannot be equal to or more than the total amount.");
+        }
+
+        return [$grossAmount, $gstAmount, $baseAmount];
+    }
+
+    private function naturalOutstandingValue($amount, $type, $naturalType) {
+        $amount = abs(floatval($amount));
+        $type = strtoupper((string) $type);
+        $naturalType = strtoupper((string) $naturalType);
+        return $type === $naturalType ? $amount : 0.0;
+    }
+
+    private function getOutstandingOriginDate($accountId, $naturalType) {
+        $items = $this->buildOutstandingItemsFromLedger($accountId, $naturalType);
+        if (empty($items)) {
+            return null;
+        }
+
+        return min(array_column($items, 'entry_date'));
+    }
+
+    private function buildOutstandingItemsFromLedger($accountId, $naturalType) {
+        $rows = $this->db->fetchAll(
+            "SELECT je.id AS journal_entry_id,
+                    je.original_entry_id,
+                    je.reference_no,
+                    je.transaction_type,
+                    je.narration AS entry_narration,
+                    je.entry_date,
+                    je.is_reversal,
+                    je.created_at,
+                    jl.id AS journal_line_id,
+                    jl.entry_type,
+                    jl.amount,
+                    jl.narration AS line_narration
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ?
+               AND je.status = 'POSTED'
+             ORDER BY je.entry_date, je.created_at, jl.id",
+            [$accountId]
+        );
+
+        $naturalType = strtoupper((string) $naturalType);
+        $items = [];
+        $allocationsByEntry = [];
+        $sequence = 0;
+
+        foreach ($rows as $row) {
+            $entryType = strtoupper((string) ($row['entry_type'] ?? ''));
+            $amount = round(floatval($row['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            if ($entryType === $naturalType) {
+                $reopened = false;
+                $originalEntryId = $row['original_entry_id'] ?? null;
+
+                if (!empty($row['is_reversal']) && $originalEntryId && !empty($allocationsByEntry[$originalEntryId])) {
+                    foreach ($allocationsByEntry[$originalEntryId] as $allocation) {
+                        $itemIndex = $allocation['item_index'];
+                        if (!isset($items[$itemIndex])) {
+                            continue;
+                        }
+                        $items[$itemIndex]['outstanding_amount'] = round(
+                            min(
+                                $items[$itemIndex]['original_amount'],
+                                $items[$itemIndex]['outstanding_amount'] + $allocation['amount']
+                            ),
+                            2
+                        );
+                        $reopened = true;
+                    }
+                }
+
+                if (!$reopened) {
+                    $items[] = [
+                        'sequence' => $sequence++,
+                        'journal_entry_id' => $row['journal_entry_id'],
+                        'reference_no' => $row['reference_no'],
+                        'transaction_type' => $row['transaction_type'],
+                        'entry_date' => $row['entry_date'],
+                        'narration' => trim((string) ($row['line_narration'] ?: $row['entry_narration'] ?: '')),
+                        'original_amount' => $amount,
+                        'outstanding_amount' => $amount,
+                    ];
+                }
+                continue;
+            }
+
+            $remaining = $amount;
+            $allocations = [];
+
+            while ($remaining > 0.009) {
+                $oldestOpenIndex = null;
+                $oldestSequence = PHP_INT_MAX;
+
+                foreach ($items as $index => $item) {
+                    if (($item['outstanding_amount'] ?? 0) <= 0.009) {
+                        continue;
+                    }
+                    if (($item['sequence'] ?? PHP_INT_MAX) < $oldestSequence) {
+                        $oldestSequence = $item['sequence'];
+                        $oldestOpenIndex = $index;
+                    }
+                }
+
+                if ($oldestOpenIndex === null) {
+                    break;
+                }
+
+                $available = round(floatval($items[$oldestOpenIndex]['outstanding_amount'] ?? 0), 2);
+                $applied = min($remaining, $available);
+                $items[$oldestOpenIndex]['outstanding_amount'] = round($available - $applied, 2);
+                $allocations[] = [
+                    'item_index' => $oldestOpenIndex,
+                    'amount' => $applied,
+                ];
+                $remaining = round($remaining - $applied, 2);
+            }
+
+            if (!empty($allocations)) {
+                $allocationsByEntry[$row['journal_entry_id']] = $allocations;
+            }
+        }
+
+        return array_values(array_filter(array_map(static function ($item) {
+            if (($item['outstanding_amount'] ?? 0) <= 0.009) {
+                return null;
+            }
+            unset($item['sequence']);
+            $item['outstanding_amount'] = round(floatval($item['outstanding_amount']), 2);
+            return $item;
+        }, $items)));
+    }
+
+    private function refreshPartyBadDebtFlag($partyId) {
+        if (!$partyId) {
+            return;
+        }
+
+        $row = $this->db->fetch(
+            "SELECT COUNT(*) AS cnt
+             FROM journal_entries
+             WHERE business_id = ?
+               AND party_id = ?
+               AND transaction_type = 'BAD_DEBT'
+               AND status = 'POSTED'
+               AND is_reversal = 0",
+            [$this->businessId, $partyId]
+        );
+
+        $this->db->query(
+            "UPDATE debtors_creditors
+             SET is_bad_debt = ?
+             WHERE id = ? AND business_id = ?",
+            [(($row['cnt'] ?? 0) > 0) ? 1 : 0, $partyId, $this->businessId]
+        );
     }
 
     private function getBusinessSetting($key) {

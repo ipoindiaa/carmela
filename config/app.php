@@ -98,12 +98,15 @@ define('TXN_TYPES', [
     'PARTNER_SETTLEMENT' => 'Partner Settlement',
     'SALARY_PAYMENT' => 'Paid Salary',
     'EMPLOYEE_ADVANCE' => 'Employee Took Advance',
+    'EMPLOYEE_ADVANCE_WRITEOFF' => 'Employee Advance Write-Off',
     'LOAN_GIVEN' => 'Lent Money to Someone',
     'LOAN_RECEIVED' => 'Received Money Back',
     'LOAN_TAKEN' => 'Borrowed Money',
     'LOAN_REPAID' => 'Repaid a Loan',
     'CONTRA_TRANSFER' => 'Cash to Bank / Bank to Cash',
     'GST_PAYMENT' => 'GST Payment',
+    'GST_UTILIZATION' => 'GST Input Utilized',
+    'BAD_DEBT' => 'Bad Debt Write-Off',
 ]);
 
 // Account Groups
@@ -121,6 +124,7 @@ define('CAR_STATUS', [
     'IN_STOCK' => 'In Stock',
     'SOLD' => 'Sold',
     'PENDING_PAYMENT' => 'Pending Payment',
+    'CANCELLED' => 'Cancelled',
 ]);
 
 // Alert Types

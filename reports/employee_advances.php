@@ -28,11 +28,12 @@ $employees = $db->fetchAll(
                 <tr><td colspan="6" class="text-center text-muted" style="padding: 32px;">No employees found.</td></tr>
             <?php else: ?>
                 <?php foreach ($employees as $employee): ?>
+                    <?php $advanceOutstanding = (($employee['current_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($employee['current_balance'] ?? 0)) : 0; ?>
                     <tr>
                         <td class="text-bold"><?= clean($employee['name']) ?></td>
                         <td><?= clean($employee['role'] ?: '-') ?></td>
                         <td class="text-right amount"><?= formatAmount($employee['monthly_salary']) ?></td>
-                        <td class="text-right amount"><?= formatAmount(abs((float) ($employee['current_balance'] ?? 0))) ?></td>
+                        <td class="text-right amount"><?= formatAmount($advanceOutstanding) ?></td>
                         <td><span class="badge <?= $employee['is_active'] ? 'badge-green' : 'badge-gray' ?>"><?= $employee['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                         <td class="text-center"><a href="../employees/view.php?id=<?= $employee['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                     </tr>

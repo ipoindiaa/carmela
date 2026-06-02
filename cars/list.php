@@ -28,10 +28,11 @@ function renderCarRows($cars) {
     ?>
     <?php if (empty($cars)): ?>
         <tr><td colspan="10" class="text-center text-muted" style="padding: 40px;">No cars found. <a href="add.php">Add your first car</a></td></tr>
-    <?php else: ?>
+        <?php else: ?>
         <?php foreach ($cars as $car):
             $totalCost = $car['total_cost'] ?? $car['purchase_price'];
-            $profit = $car['status'] === 'SOLD' ? ($car['sale_price'] - $totalCost) : null;
+            $netSalePrice = max(0, (float) ($car['sale_price'] ?? 0) - (float) ($car['sale_gst_amount'] ?? 0));
+            $profit = $car['status'] === 'SOLD' ? ($netSalePrice - $totalCost) : null;
         ?>
         <tr>
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean($car['registration_no']) ?></a></td>
@@ -45,7 +46,7 @@ function renderCarRows($cars) {
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?>
             </td>
             <td>
-                <?php $statusBadges = ['IN_STOCK' => 'badge-blue', 'SOLD' => 'badge-green', 'PENDING_PAYMENT' => 'badge-yellow']; ?>
+                <?php $statusBadges = ['IN_STOCK' => 'badge-blue', 'SOLD' => 'badge-green', 'PENDING_PAYMENT' => 'badge-yellow', 'CANCELLED' => 'badge-gray']; ?>
                 <span class="badge <?= $statusBadges[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
             </td>
             <td class="text-center">
@@ -96,6 +97,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
     <a href="list.php?status=IN_STOCK" class="btn btn-sm <?= $filter === 'IN_STOCK' ? 'btn-primary' : 'btn-outline' ?>">In Stock</a>
     <a href="list.php?status=SOLD" class="btn btn-sm <?= $filter === 'SOLD' ? 'btn-primary' : 'btn-outline' ?>">Sold</a>
     <a href="list.php?status=PENDING_PAYMENT" class="btn btn-sm <?= $filter === 'PENDING_PAYMENT' ? 'btn-primary' : 'btn-outline' ?>">Pending</a>
+    <a href="list.php?status=CANCELLED" class="btn btn-sm <?= $filter === 'CANCELLED' ? 'btn-primary' : 'btn-outline' ?>">Cancelled</a>
 </div>
 
 <div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">

@@ -84,7 +84,7 @@ CREATE TABLE `journal_entries` (
     `entry_date` DATE NOT NULL,
     `reference_no` VARCHAR(50) NOT NULL,
     `narration` TEXT DEFAULT NULL,
-    `transaction_type` ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
+    `transaction_type` ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
     `is_reversal` TINYINT(1) NOT NULL DEFAULT 0,
     `reversed_by` CHAR(36) DEFAULT NULL,
     `original_entry_id` CHAR(36) DEFAULT NULL,
@@ -135,10 +135,11 @@ CREATE TABLE `cars` (
     `color` VARCHAR(50) DEFAULT NULL,
     `purchase_date` DATE NOT NULL,
     `purchase_price` DECIMAL(15,2) NOT NULL,
-    `status` ENUM('IN_STOCK','SOLD','PENDING_PAYMENT') NOT NULL DEFAULT 'IN_STOCK',
+    `status` ENUM('IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED') NOT NULL DEFAULT 'IN_STOCK',
     `account_id` CHAR(36) DEFAULT NULL,
     `sold_date` DATE DEFAULT NULL,
     `sale_price` DECIMAL(15,2) DEFAULT NULL,
+    `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `buyer_name` VARCHAR(200) DEFAULT NULL,
     `buyer_contact` VARCHAR(20) DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
@@ -243,6 +244,27 @@ CREATE TABLE `partner_profit_settlements` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- TABLE: partner_settlement_applications
+-- ============================================================
+CREATE TABLE `partner_settlement_applications` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `partner_profit_settlement_id` CHAR(36) NOT NULL,
+    `journal_entry_id` CHAR(36) NOT NULL,
+    `applied_date` DATE NOT NULL,
+    `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `direction` ENUM('PAYABLE','RECEIVABLE') NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_psa_business` (`business_id`),
+    KEY `idx_psa_entry` (`journal_entry_id`),
+    KEY `idx_psa_settlement` (`partner_profit_settlement_id`),
+    CONSTRAINT `fk_psa_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
+    CONSTRAINT `fk_psa_settlement` FOREIGN KEY (`partner_profit_settlement_id`) REFERENCES `partner_profit_settlements`(`id`),
+    CONSTRAINT `fk_psa_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- TABLE: employees
 -- ============================================================
 CREATE TABLE `employees` (
@@ -332,6 +354,7 @@ CREATE TABLE `audit_log` (
     `old_value` JSON DEFAULT NULL,
     `new_value` JSON DEFAULT NULL,
     `ip_address` VARCHAR(45) DEFAULT NULL,
+    `user_agent` VARCHAR(255) DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_audit_business` (`business_id`),

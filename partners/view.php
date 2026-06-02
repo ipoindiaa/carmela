@@ -31,6 +31,10 @@ $settlements = $db->fetchAll(
 );
 $totalInvested = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'CR' AND je.status='POSTED'", [$partner['capital_account_id']]);
 $totalWithdrawn = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'DR' AND je.status='POSTED'", [$partner['capital_account_id']]);
+$capitalBalance = floatval($position['capital_balance'] ?? 0);
+$currentBalance = floatval($position['current_balance'] ?? 0);
+$capitalLabel = $capitalBalance >= 0 ? 'Partner Capital Credit' : 'Capital Overdrawn';
+$currentLabel = $currentBalance >= 0 ? 'Business Owes Partner' : 'Partner Owes Business';
 ?>
 
 <div class="page-header">
@@ -41,8 +45,8 @@ $totalWithdrawn = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM jo
 <div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
     <div class="stat-card"><div class="stat-value text-green"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Total Invested</div></div>
     <div class="stat-card"><div class="stat-value text-red"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Total Withdrawn</div></div>
-    <div class="stat-card"><div class="stat-value text-blue"><?= formatAmount($partner['capital_balance']) ?></div><div class="stat-label">Current Capital</div></div>
-    <div class="stat-card"><div class="stat-value text-purple"><?= formatAmount($position['current_balance'] ?? 0) ?></div><div class="stat-label">Current A/c Balance</div></div>
+    <div class="stat-card"><div class="stat-value <?= $capitalBalance >= 0 ? 'text-blue' : 'text-red' ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
+    <div class="stat-card"><div class="stat-value <?= $currentBalance >= 0 ? 'text-purple' : 'text-red' ?>"><?= formatAmount($currentBalance, true) ?></div><div class="stat-label"><?= clean($currentLabel) ?></div></div>
     <div class="stat-card"><div class="stat-value text-yellow"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
     <div class="stat-card"><div class="stat-value text-red"><?= formatAmount(($position['pending_payable'] ?? 0) + ($position['pending_receivable'] ?? 0)) ?></div><div class="stat-label">Pending Settlements</div></div>
 </div>

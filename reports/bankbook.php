@@ -8,6 +8,41 @@ $dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 $bankAccount = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'BANK' AND entity_id IS NULL", [$businessId]);
 
+$bankBalanceAsOn = ['signed' => 0.0, 'type' => 'DR', 'amount' => 0.0];
+$openingBalanceSigned = 0.0;
+if ($bankAccount) {
+    $priorMovement = $db->fetch(
+        "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS dr_total,
+                COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cr_total
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE jl.account_id = ?
+           AND je.status = 'POSTED'
+           AND je.entry_date < ?",
+        [$bankAccount['id'], $dateFrom]
+    );
+
+    $asOnMovement = $db->fetch(
+        "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS dr_total,
+                COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cr_total
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE jl.account_id = ?
+           AND je.status = 'POSTED'
+           AND je.entry_date <= ?",
+        [$bankAccount['id'], $dateTo]
+    );
+
+    $signedOpening = signedBalanceValue($bankAccount['opening_balance'] ?? 0, $bankAccount['opening_balance_type'] ?? 'DR');
+    $openingBalanceSigned = round($signedOpening + floatval($priorMovement['dr_total'] ?? 0) - floatval($priorMovement['cr_total'] ?? 0), 2);
+    $asOnSigned = round($signedOpening + floatval($asOnMovement['dr_total'] ?? 0) - floatval($asOnMovement['cr_total'] ?? 0), 2);
+    $bankBalanceAsOn = [
+        'signed' => $asOnSigned,
+        'type' => $asOnSigned >= 0 ? 'DR' : 'CR',
+        'amount' => abs($asOnSigned),
+    ];
+}
+
 $entries = $db->fetchAll(
     "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
@@ -29,14 +64,14 @@ $entries = $db->fetchAll(
 </div>
 
 <div class="card" style="margin-bottom: 16px;">
-    <div class="card-body"><span class="text-muted">Current Balance:</span> <strong class="amount <?= ($bankAccount['current_balance_type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bankAccount['current_balance'] ?? 0) ?></strong></div>
+    <div class="card-body"><span class="text-muted">Balance As On <?= formatDate($dateTo) ?>:</span> <strong class="amount <?= ($bankBalanceAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bankBalanceAsOn['amount'] ?? 0) ?> <?= $bankBalanceAsOn['type'] ?? 'DR' ?></strong></div>
 </div>
 
 <div class="table-container table-container-fill">
     <table>
         <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Deposit (Dr)</th><th class="text-right credit-amount">Withdrawal (Cr)</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
-        <?php $bal = $bankAccount['opening_balance'] ?? 0; $totalDr = 0; $totalCr = 0; ?>
+        <?php $bal = $openingBalanceSigned; $totalDr = 0; $totalCr = 0; ?>
         <?php foreach ($entries as $e): 
             if ($e['entry_type'] === 'DR') { $bal += $e['amount']; $totalDr += $e['amount']; } else { $bal -= $e['amount']; $totalCr += $e['amount']; }
         ?>
