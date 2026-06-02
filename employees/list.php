@@ -41,7 +41,7 @@ $employees = $db->fetchAll(
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Joined</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Joined</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($employees)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No employees yet</td></tr>
@@ -55,7 +55,7 @@ $employees = $db->fetchAll(
                     <td class="text-right amount"><?= formatAmount($e['monthly_salary']) ?></td>
                     <td class="text-right amount <?= $advanceOutstanding > 0 ? 'text-yellow' : '' ?>"><?= formatAmount($advanceOutstanding) ?></td>
                     <td><?= formatDate($e['join_date']) ?></td>
-                    <td><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
+                    <td class="text-center"><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                 </tr>
                 <?php endforeach; ?>

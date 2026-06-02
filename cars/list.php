@@ -47,7 +47,7 @@ function renderCarRows($cars) {
             <td class="text-right amount <?= $profit !== null ? ($profit >= 0 ? 'positive' : 'negative') : '' ?>">
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?>
             </td>
-            <td>
+            <td class="text-center">
                 <?php $statusBadges = ['IN_STOCK' => 'badge-blue', 'SOLD' => 'badge-green', 'PENDING_PAYMENT' => 'badge-yellow', 'CANCELLED' => 'badge-gray']; ?>
                 <span class="badge <?= $statusBadges[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
             </td>
@@ -130,7 +130,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th class="text-right">Total Cost</th>
                 <th class="text-right">Sale Price</th>
                 <th class="text-right">Profit/Loss</th>
-                <th>Status</th>
+                <th class="text-center">Status</th>
                 <th class="text-center">Actions</th>
             </tr>
         </thead>

@@ -240,7 +240,7 @@ $categories = $db->fetchAll(
                                 </select>
                             </td>
                             <td class="text-center">
-                                <form method="POST" id="<?= clean($formId) ?>">
+                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="update">
                                     <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">

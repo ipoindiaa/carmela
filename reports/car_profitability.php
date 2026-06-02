@@ -22,7 +22,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Status</th><th class="text-right">Holding Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale Price</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Holding Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale Price</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -40,7 +40,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
         <tr>
             <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean($car['registration_no']) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
-            <td><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
+            <td class="text-center"><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                 <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span></td>
             <td class="text-right"><?= intval($carProfitability['holding_days']) ?></td>
             <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>

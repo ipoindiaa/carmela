@@ -36,14 +36,14 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Year</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Closed</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Year</th><th>Start Date</th><th>End Date</th><th class="text-center">Status</th><th>Closed</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
         <?php foreach ($fyList as $fy): ?>
         <tr>
             <td class="text-bold"><?= clean($fy['year_label']) ?></td>
             <td><?= formatDate($fy['start_date']) ?></td>
             <td><?= formatDate($fy['end_date']) ?></td>
-            <td><span class="badge <?= $fy['is_active'] ? 'badge-green' : 'badge-gray' ?>"><?= $fy['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+            <td class="text-center"><span class="badge <?= $fy['is_active'] ? 'badge-green' : 'badge-gray' ?>"><?= $fy['is_active'] ? 'Active' : 'Inactive' ?></span></td>
             <td><span class="badge <?= $fy['is_closed'] ? 'badge-red' : 'badge-blue' ?>"><?= $fy['is_closed'] ? 'Closed' : 'Open' ?></span></td>
             <td class="text-center">
                 <?php if (!$fy['is_active']): ?>

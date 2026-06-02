@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     enhanceSearchableSelects();
     initLazyTables();
     initSmartBackLinks();
+    initBreadcrumbs();
 
     // Auto-dismiss alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(alert => {
@@ -545,3 +546,87 @@ function formatINR(num) {
 function printPage() {
     window.print();
 }
+
+// Dynamically initialize breadcrumb trails
+function initBreadcrumbs() {
+    const pageHeader = document.querySelector('.page-header');
+    if (!pageHeader) return;
+
+    if (pageHeader.querySelector('.breadcrumb-trail')) return;
+
+    const h1 = pageHeader.querySelector('h1');
+    if (!h1) return;
+
+    const path = window.location.pathname;
+    const parts = path.split('/');
+    const filename = parts.pop();
+    const folder = parts.pop();
+
+    let parentName = '';
+    let parentUrl = '#';
+
+    const folderMap = {
+        'cars': 'Cars',
+        'partners': 'Partners',
+        'employees': 'Employees',
+        'parties': 'Debtors & Creditors',
+        'reports': 'Reports',
+        'settings': 'Settings',
+        'transactions': 'Transactions'
+    };
+
+    const isMainList = filename === 'list.php' || filename === 'index.php' || filename === '';
+
+    if (folderMap[folder] && !isMainList) {
+        parentName = folderMap[folder];
+        parentUrl = 'list.php';
+        if (folder === 'settings' || folder === 'reports') {
+            parentUrl = '#';
+        }
+    }
+
+    const currentTitle = h1.textContent.trim();
+    const currentIconClass = h1.querySelector('i')?.className || '';
+
+    const breadcrumb = document.createElement('div');
+    breadcrumb.className = 'breadcrumb-trail';
+
+    const homeLink = document.createElement('a');
+    homeLink.href = '../dashboard.php';
+    homeLink.innerHTML = '<i class="ri-home-4-line"></i> Home';
+    breadcrumb.appendChild(homeLink);
+
+    if (parentName) {
+        const sep1 = document.createElement('span');
+        sep1.className = 'breadcrumb-separator';
+        sep1.textContent = '/';
+        breadcrumb.appendChild(sep1);
+
+        const parentLink = document.createElement('a');
+        parentLink.href = parentUrl;
+        parentLink.textContent = parentName;
+        if (parentUrl === '#') {
+            parentLink.style.pointerEvents = 'none';
+            parentLink.style.color = 'var(--text-muted)';
+        }
+        breadcrumb.appendChild(parentLink);
+    }
+
+    const sep2 = document.createElement('span');
+    sep2.className = 'breadcrumb-separator';
+    sep2.textContent = '/';
+    breadcrumb.appendChild(sep2);
+
+    const currentSpan = document.createElement('span');
+    currentSpan.className = 'breadcrumb-current';
+    if (currentIconClass) {
+        currentSpan.innerHTML = `<i class="${currentIconClass}"></i> ${currentTitle}`;
+    } else {
+        currentSpan.textContent = currentTitle;
+    }
+    breadcrumb.appendChild(currentSpan);
+
+    pageHeader.insertBefore(breadcrumb, pageHeader.firstChild);
+}
+
+window.initBreadcrumbs = initBreadcrumbs;

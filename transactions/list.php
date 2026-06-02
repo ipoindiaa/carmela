@@ -54,7 +54,7 @@ function renderTransactionRows($entries) {
                 <?php if ($entry['partner_name']): ?><i class="ri-user-line"></i> <?= clean($entry['partner_name']) ?><?php endif; ?>
                 <?php if ($entry['employee_name']): ?><i class="ri-user-star-line"></i> <?= clean($entry['employee_name']) ?><?php endif; ?>
             </td>
-            <td>
+            <td class="text-center">
                 <?php $statusBadge = ['POSTED' => 'badge-green', 'REVERSED' => 'badge-red', 'DRAFT' => 'badge-gray']; ?>
                 <span class="badge <?= $statusBadge[$entry['status']] ?? 'badge-gray' ?>"><?= $entry['status'] ?></span>
             </td>
@@ -163,7 +163,7 @@ $nextUrl = $page < $pagination['total_pages']
                 <th>Type</th>
                 <th>Narration</th>
                 <th>Related</th>
-                <th>Status</th>
+                <th class="text-center">Status</th>
                 <th>By</th>
                 <th class="text-center">Actions</th>
             </tr>

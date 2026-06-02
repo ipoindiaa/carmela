@@ -169,7 +169,7 @@ foreach ($users as $user) {
                 <th>Username</th>
                 <th>Role</th>
                 <th>Books Access</th>
-                <th>Status</th>
+                <th class="text-center">Status</th>
                 <th>Last Login</th>
                 <th class="text-center">Actions</th>
             </tr>
@@ -183,7 +183,7 @@ foreach ($users as $user) {
                 <td class="text-muted"><?= clean($u['username']) ?></td>
                 <td><span class="badge <?= $u['role'] === ROLE_ADMIN ? 'badge-purple' : 'badge-blue' ?>"><?= $u['role'] ?></span></td>
                 <td><?= clean($permissionSummary) ?></td>
-                <td><span class="badge <?= $u['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $u['is_active'] ? 'Active' : 'Disabled' ?></span></td>
+                <td class="text-center"><span class="badge <?= $u['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $u['is_active'] ? 'Active' : 'Disabled' ?></span></td>
                 <td><?= $u['last_login'] ? formatDate($u['last_login'], 'd M, H:i') : 'Never' ?></td>
                 <td class="text-center" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
                     <?php if ($u['role'] !== ROLE_ADMIN): ?>

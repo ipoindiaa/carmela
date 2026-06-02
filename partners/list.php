@@ -40,7 +40,7 @@ $partners = $db->fetchAll(
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Profit Share</th><th class="text-right">Capital Balance</th><th>Joined</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Profit Share</th><th class="text-right">Capital Balance</th><th>Joined</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($partners)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No partners yet</td></tr>
@@ -53,7 +53,7 @@ $partners = $db->fetchAll(
                     <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
                     <td class="text-right amount"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= formatDate($p['joined_date']) ?></td>
-                    <td><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+                    <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                 </tr>
                 <?php endforeach; ?>

@@ -363,6 +363,52 @@ body.sidebar-collapsed .main-content {
     flex: 1;
 }
 
+.page-header > div:has(.btn),
+.page-header > div[style*="display:flex"],
+.page-header > div[style*="display: flex"] {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 12px !important;
+}
+
+/* Breadcrumbs */
+.breadcrumb-trail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-right: auto;
+}
+.breadcrumb-trail a {
+    color: var(--text-muted);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: var(--transition);
+}
+.breadcrumb-trail a:hover {
+    color: var(--accent-blue);
+}
+.breadcrumb-separator {
+    color: var(--border-dark);
+    font-size: 11px;
+}
+.breadcrumb-current {
+    color: var(--text-primary);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.breadcrumb-current i {
+    color: var(--accent-blue);
+    font-size: 14px;
+}
+
 .page-header .form-control,
 .filter-bar .form-control {
     min-height: 42px;
@@ -724,6 +770,13 @@ table td select.form-control {
 }
 .table-container td.text-center .form-control,
 table td.text-center .form-control {
+    text-align: center !important;
+    text-align-last: center !important;
+}
+.table-container td.text-center select.form-control,
+table td.text-center select.form-control {
+    padding-left: 28px !important;
+    padding-right: 28px !important;
     text-align: center !important;
     text-align-last: center !important;
 }
