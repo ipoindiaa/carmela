@@ -632,6 +632,63 @@ class AccountingEngine {
         return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
     }
 
+    public function categoryEntry($categoryAccountId, $direction, $amount, $date, $primaryAccountId, $narration, $gstAmount = 0) {
+        $direction = strtolower((string) $direction);
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Amount must be greater than zero.");
+        }
+
+        $categoryAccount = $this->db->fetch(
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'GENERAL' AND is_active = 1",
+            [$categoryAccountId, $this->businessId]
+        );
+        if (!$categoryAccount) {
+            throw new Exception("Category account not found.");
+        }
+
+        $primaryAccount = $this->db->fetch(
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK','GST') AND is_active = 1",
+            [$primaryAccountId, $this->businessId]
+        );
+        if (!$primaryAccount) {
+            throw new Exception("Cash, bank, or GST account is required.");
+        }
+
+        if ($direction === 'in') {
+            if ($categoryAccount['group_name'] !== 'INCOME') {
+                throw new Exception("Selected Jama category is not an income account.");
+            }
+            $lines = [
+                ['account_id' => $primaryAccountId, 'amount' => $amount, 'type' => 'DR', 'narration' => $narration],
+                ['account_id' => $categoryAccountId, 'amount' => $amount, 'type' => 'CR', 'narration' => $narration],
+            ];
+            return $this->postJournalEntry('JOURNAL_VOUCHER', $date, $narration, $lines);
+        }
+
+        if ($direction === 'out') {
+            if ($categoryAccount['group_name'] !== 'EXPENSE') {
+                throw new Exception("Selected Udhar category is not an expense account.");
+            }
+            $this->validateCashAvailable($primaryAccountId, $amount);
+            [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+            $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
+
+            $lines = [];
+            if ($baseAmount > 0) {
+                $lines[] = ['account_id' => $categoryAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
+            }
+            if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
+                $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$categoryAccount['name']}"];
+            }
+            $lines[] = ['account_id' => $primaryAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => $narration];
+
+            return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
+        }
+
+        throw new Exception("Invalid category direction.");
+    }
+
     /**
      * PARTNER INVEST
      */

@@ -59,6 +59,30 @@ $preselectedType = get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
 $preselectedCarId = get('car_id', '');
 $preselectedCar = null;
+$entryCategories = $db->fetchAll(
+    "SELECT id, code, name, group_name, sub_group
+     FROM accounts
+     WHERE business_id = ?
+       AND entity_type = 'GENERAL'
+       AND is_active = 1
+       AND sub_group IN ('Daily Jama Categories', 'Daily Udhar Categories')
+     ORDER BY FIELD(sub_group, 'Daily Jama Categories', 'Daily Udhar Categories'), code, name",
+    [$businessId]
+);
+$entryCategoryOptions = array_map(static function ($account) {
+    $isIncome = ($account['group_name'] ?? '') === 'INCOME';
+    return [
+        'value' => 'CATEGORY_ENTRY',
+        'categoryAccountId' => $account['id'],
+        'direction' => $isIncome ? 'in' : 'out',
+        'title' => $account['name'],
+        'desc' => ($isIncome ? 'Jama category' : 'Udhar category') . ' - posts to ' . $account['code'],
+        'icon' => $isIncome ? 'ri-arrow-down-circle-line' : 'ri-arrow-up-circle-line',
+        'flow' => $isIncome ? 'in' : 'out',
+        'group' => $isIncome ? 'Jama Categories' : 'Udhar Categories',
+        'text' => strtolower(trim(($account['name'] ?? '') . ' ' . ($account['code'] ?? '') . ' ' . ($account['sub_group'] ?? ''))),
+    ];
+}, $entryCategories);
 if ($preselectedCarId !== '') {
     $preselectedCar = $db->fetch(
         "SELECT id, registration_no, make, model
@@ -89,6 +113,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         switch ($type) {
+            case 'CATEGORY_ENTRY':
+                $categoryAccountId = post('dynamic_category_account_id');
+                $categoryDirection = post('dynamic_category_direction');
+                $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration, $gstAmount);
+                break;
+
             case 'CAR_PURCHASE':
                 $carId = post('car_id');
                 if (empty($carId) || $carId === 'new') {
@@ -287,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Invalid transaction type: $type");
         }
 
-        setFlash('success', TXN_TYPES[$type] . ' entry posted successfully!');
+        setFlash('success', (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully!');
         redirect('list.php');
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
@@ -328,6 +358,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>" required>
                         <option value="">— Select Transaction Type —</option>
+                        <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Jama / Udhar Category" data-desc="Admin-defined category account.">Jama / Udhar Category</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
@@ -370,6 +401,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="txn-type-list" id="txn-type-list" role="listbox"></div>
                         </div>
                     </div>
+                    <input type="hidden" name="dynamic_category_account_id" id="dynamic_category_account_id">
+                    <input type="hidden" name="dynamic_category_direction" id="dynamic_category_direction">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Date *</label>
@@ -848,6 +881,7 @@ const moneyFlowDefaults = {
     in: 'PARTNER_INVEST',
     out: 'GENERAL_EXPENSE',
 };
+const entryCategoryOptions = <?= json_encode($entryCategoryOptions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 let activeMoneyFlow = '';
 let transactionTypeOptions = [];
 
@@ -930,8 +964,16 @@ function selectMoneyFlow(flow) {
     const select = document.getElementById('transaction_type');
     if (!select || !moneyFlowDefaults[flow]) return;
     activeMoneyFlow = flow;
-    select.value = moneyFlowDefaults[flow];
+    const defaultCategory = (entryCategoryOptions || []).find((option) => option.flow === flow);
+    if (defaultCategory) {
+        setDynamicCategorySelection(defaultCategory.categoryAccountId || '', defaultCategory.direction || '');
+        select.value = 'CATEGORY_ENTRY';
+    } else {
+        clearDynamicCategorySelection();
+        select.value = moneyFlowDefaults[flow];
+    }
     select.dispatchEvent(new Event('change'));
+    syncDynamicCategoryEntryState();
     syncMoneyFlowButtons();
     renderTransactionTypePicker();
     const amountInput = document.querySelector('.amount-input');
@@ -946,16 +988,19 @@ function initTransactionTypePicker() {
     if (!select || !trigger || !menu || !search) return;
 
     transactionTypeOptions = Array.from(select.options)
-        .filter((option) => option.value)
+        .filter((option) => option.value && option.value !== 'CATEGORY_ENTRY')
         .map((option) => ({
             value: option.value,
+            categoryAccountId: '',
+            direction: '',
             title: option.dataset.title || option.textContent.trim(),
             desc: option.dataset.desc || '',
             icon: option.dataset.icon || 'ri-list-check-2',
             flow: option.dataset.flow || 'both',
             group: option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : 'Other',
             text: `${option.textContent} ${option.dataset.desc || ''}`.toLowerCase(),
-        }));
+        }))
+        .concat(entryCategoryOptions || []);
 
     trigger.addEventListener('click', () => {
         const shouldOpen = menu.hidden;
@@ -970,9 +1015,12 @@ function initTransactionTypePicker() {
 
     search.addEventListener('input', renderTransactionTypePicker);
     select.addEventListener('change', () => {
-        const chosen = transactionTypeOptions.find((option) => option.value === select.value);
+        const chosen = transactionTypeOptions.find((option) => getTransactionOptionKey(option) === getSelectedTransactionKey());
         if (chosen && (chosen.flow === 'in' || chosen.flow === 'out')) {
             activeMoneyFlow = chosen.flow;
+        }
+        if (select.value !== 'CATEGORY_ENTRY') {
+            clearDynamicCategorySelection();
         }
         syncMoneyFlowButtons();
         updateTransactionTypeTrigger();
@@ -1018,10 +1066,10 @@ function renderTransactionTypePicker() {
         const groupLabel = option.group !== lastGroup ? `<div class="txn-type-group">${escapeHtml(option.group)}</div>` : '';
         lastGroup = option.group;
         const flowClass = option.flow === 'in' ? 'money-in' : (option.flow === 'out' ? 'money-out' : 'both');
-        const activeClass = select.value === option.value ? 'active' : '';
+        const activeClass = getSelectedTransactionKey() === getTransactionOptionKey(option) ? 'active' : '';
         return `
             ${groupLabel}
-            <button type="button" class="txn-type-item ${flowClass} ${activeClass}" data-value="${escapeHtml(option.value)}" role="option" aria-selected="${select.value === option.value ? 'true' : 'false'}">
+            <button type="button" class="txn-type-item ${flowClass} ${activeClass}" data-value="${escapeHtml(option.value)}" data-category-account-id="${escapeHtml(option.categoryAccountId || '')}" data-category-direction="${escapeHtml(option.direction || '')}" role="option" aria-selected="${activeClass ? 'true' : 'false'}">
                 <span class="txn-type-icon"><i class="${escapeHtml(option.icon)}"></i></span>
                 <span>
                     <strong>${escapeHtml(option.title)}</strong>
@@ -1033,8 +1081,10 @@ function renderTransactionTypePicker() {
 
     list.querySelectorAll('.txn-type-item').forEach((button) => {
         button.addEventListener('click', () => {
+            setDynamicCategorySelection(button.dataset.categoryAccountId || '', button.dataset.categoryDirection || '');
             select.value = button.dataset.value || '';
             select.dispatchEvent(new Event('change'));
+            syncDynamicCategoryEntryState();
             closeTransactionTypePicker();
         });
     });
@@ -1061,7 +1111,7 @@ function updateTransactionTypeTrigger() {
     const select = document.getElementById('transaction_type');
     const trigger = document.getElementById('txn-type-trigger');
     if (!select || !trigger) return;
-    const chosen = transactionTypeOptions.find((option) => option.value === select.value);
+    const chosen = transactionTypeOptions.find((option) => getTransactionOptionKey(option) === getSelectedTransactionKey());
     const icon = trigger.querySelector('.txn-type-trigger-icon i');
     const title = trigger.querySelector('.txn-type-trigger-copy strong');
     const desc = trigger.querySelector('.txn-type-trigger-copy small');
@@ -1079,6 +1129,45 @@ function updateTransactionTypeTrigger() {
             : (activeMoneyFlow === 'out' ? 'Showing Udhar entries only.' : 'Choose Green/Jama or Red/Udhar first for a shorter list.');
         trigger.classList.remove('money-in', 'money-out');
     }
+}
+
+function getTransactionOptionKey(option) {
+    return option.categoryAccountId ? `category:${option.categoryAccountId}` : `type:${option.value}`;
+}
+
+function getSelectedTransactionKey() {
+    const select = document.getElementById('transaction_type');
+    const categoryAccountId = document.getElementById('dynamic_category_account_id')?.value || '';
+    return select?.value === 'CATEGORY_ENTRY' && categoryAccountId ? `category:${categoryAccountId}` : `type:${select?.value || ''}`;
+}
+
+function setDynamicCategorySelection(accountId, direction) {
+    const accountInput = document.getElementById('dynamic_category_account_id');
+    const directionInput = document.getElementById('dynamic_category_direction');
+    if (accountInput) accountInput.value = accountId || '';
+    if (directionInput) directionInput.value = direction || '';
+}
+
+function clearDynamicCategorySelection() {
+    setDynamicCategorySelection('', '');
+}
+
+function syncDynamicCategoryEntryState() {
+    const select = document.getElementById('transaction_type');
+    const categoryDirection = document.getElementById('dynamic_category_direction')?.value || '';
+    if (select?.value !== 'CATEGORY_ENTRY') return;
+
+    document.querySelectorAll('.txn-section').forEach((section) => {
+        section.style.display = 'none';
+    });
+    const gstSection = document.getElementById('gst-section');
+    if (gstSection) {
+        gstSection.style.display = categoryDirection === 'out' ? 'block' : 'none';
+    }
+    const paymentAccountGroup = document.getElementById('payment-account-group');
+    if (paymentAccountGroup) paymentAccountGroup.style.display = '';
+    const paymentLabel = document.getElementById('payment-account-label');
+    if (paymentLabel) paymentLabel.textContent = categoryDirection === 'in' ? 'Receiving Account' : 'Payment Account';
 }
 
 function filterPrimaryPaymentAccounts(type) {
@@ -1243,6 +1332,9 @@ function selectEntityPickerValue(kind, id, label) {
 document.addEventListener('DOMContentLoaded', function() {
     initTransactionTypePicker();
     syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
+    document.getElementById('transaction_type')?.addEventListener('change', () => {
+        setTimeout(syncDynamicCategoryEntryState, 0);
+    });
     document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
         button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));
     });
