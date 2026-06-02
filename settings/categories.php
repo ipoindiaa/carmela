@@ -21,6 +21,12 @@ $categoryGroups = [
         'icon' => 'ri-arrow-up-circle-line',
     ],
 ];
+$systemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
+$categoryWhereSql = "business_id = ?
+       AND entity_type = 'GENERAL'
+       AND group_name IN ('INCOME','EXPENSE')
+       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+       AND code NOT IN (" . implode(',', array_fill(0, count($systemCodes), '?')) . ")";
 
 $nextCategoryCode = static function ($direction) use ($db, $businessId, $categoryGroups) {
     $prefix = $categoryGroups[$direction]['code_prefix'];
@@ -98,10 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Category name is required.');
             }
 
-            $subGroups = array_column($categoryGroups, 'sub_group');
             $account = $db->fetch(
-                "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'GENERAL' AND sub_group IN (?, ?)",
-                [$accountId, $businessId, $subGroups[0], $subGroups[1]]
+                "SELECT * FROM accounts
+                 WHERE id = ?
+                   AND $categoryWhereSql",
+                array_merge([$accountId, $businessId], $systemCodes)
             );
             if (!$account) {
                 throw new Exception('Category not found.');
@@ -115,6 +122,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', 'Category updated successfully.');
         }
 
+        if ($action === 'delete') {
+            $accountId = post('account_id');
+            $account = $db->fetch(
+                "SELECT * FROM accounts
+                 WHERE id = ?
+                   AND $categoryWhereSql",
+                array_merge([$accountId, $businessId], $systemCodes)
+            );
+            if (!$account) {
+                throw new Exception('Category not found.');
+            }
+
+            $usage = $db->fetch("SELECT COUNT(*) AS cnt FROM journal_lines WHERE account_id = ?", [$accountId]);
+            if (($usage['cnt'] ?? 0) > 0) {
+                throw new Exception('This category has entries connected to it, so it cannot be deleted. Mark it inactive instead.');
+            }
+
+            $db->query("DELETE FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
+            Auth::auditLog('DELETE', 'account', $accountId, "Deleted category {$account['name']}");
+            setFlash('success', 'Category deleted successfully.');
+        }
+
         redirect('categories.php');
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
@@ -122,19 +151,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $categories = $db->fetchAll(
-    "SELECT *
+    "SELECT a.*,
+            COALESCE(usage_stats.line_count, 0) AS linked_entries
      FROM accounts
-     WHERE business_id = ?
-       AND entity_type = 'GENERAL'
-       AND sub_group IN (?, ?)
-     ORDER BY FIELD(sub_group, ?, ?), is_active DESC, code, name",
-    [
-        $businessId,
-        $categoryGroups['in']['sub_group'],
-        $categoryGroups['out']['sub_group'],
-        $categoryGroups['in']['sub_group'],
-        $categoryGroups['out']['sub_group'],
-    ]
+     LEFT JOIN (
+        SELECT account_id, COUNT(*) AS line_count
+        FROM journal_lines
+        GROUP BY account_id
+     ) usage_stats ON usage_stats.account_id = a.id
+     WHERE a.business_id = ?
+       AND a.entity_type = 'GENERAL'
+       AND a.group_name IN ('INCOME','EXPENSE')
+       AND COALESCE(a.sub_group, '') <> 'Direct Expenses (Car)'
+       AND a.code NOT IN (" . implode(',', array_fill(0, count($systemCodes), '?')) . ")
+     ORDER BY FIELD(a.group_name, 'INCOME', 'EXPENSE'), a.is_active DESC, a.code, a.name",
+    array_merge([$businessId], $systemCodes)
 );
 ?>
 
@@ -184,6 +215,7 @@ $categories = $db->fetchAll(
                         <th>Code</th>
                         <th>Name</th>
                         <th class="text-right">Current Total</th>
+                        <th class="text-center">Entries</th>
                         <th class="text-center">Status</th>
                         <th class="text-center">Action</th>
                     </tr>
@@ -200,6 +232,7 @@ $categories = $db->fetchAll(
                             <td class="text-bold"><?= clean($category['code']) ?></td>
                             <td><input type="text" name="name" class="form-control" value="<?= clean($category['name']) ?>" form="<?= clean($formId) ?>" required></td>
                             <td class="text-right amount <?= $direction === 'in' ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($category['current_balance']) ?> <?= clean($category['current_balance_type']) ?></td>
+                            <td class="text-center"><?= intval($category['linked_entries'] ?? 0) ?></td>
                             <td class="text-center">
                                 <select name="is_active" class="form-control" form="<?= clean($formId) ?>">
                                     <option value="1" <?= $category['is_active'] ? 'selected' : '' ?>>Active</option>
@@ -213,11 +246,21 @@ $categories = $db->fetchAll(
                                     <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
                                     <button type="submit" class="btn btn-outline btn-sm"><i class="ri-save-line"></i> Save</button>
                                 </form>
+                                <?php if (intval($category['linked_entries'] ?? 0) === 0): ?>
+                                    <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this category? This is allowed only because no entries are connected.">
+                                        <?= csrfField() ?>
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
+                                        <button type="submit" class="btn btn-outline btn-sm text-red"><i class="ri-delete-bin-line"></i> Delete</button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="text-muted" style="display:inline-block; margin-left: 6px; font-size: 12px;">Used</span>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($categories)): ?>
-                        <tr><td colspan="6" class="text-center text-muted" style="padding: 32px;">No Jama or Udhar categories yet.</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No Jama or Udhar categories yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

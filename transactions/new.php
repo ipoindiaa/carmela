@@ -59,15 +59,18 @@ $preselectedType = get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
 $preselectedCarId = get('car_id', '');
 $preselectedCar = null;
+$entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
 $entryCategories = $db->fetchAll(
     "SELECT id, code, name, group_name, sub_group
      FROM accounts
      WHERE business_id = ?
        AND entity_type = 'GENERAL'
        AND is_active = 1
-       AND sub_group IN ('Daily Jama Categories', 'Daily Udhar Categories')
-     ORDER BY FIELD(sub_group, 'Daily Jama Categories', 'Daily Udhar Categories'), code, name",
-    [$businessId]
+       AND group_name IN ('INCOME','EXPENSE')
+       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+       AND code NOT IN (" . implode(',', array_fill(0, count($entryCategorySystemCodes), '?')) . ")
+     ORDER BY FIELD(group_name, 'INCOME', 'EXPENSE'), code, name",
+    array_merge([$businessId], $entryCategorySystemCodes)
 );
 $entryCategoryOptions = array_map(static function ($account) {
     $isIncome = ($account['group_name'] ?? '') === 'INCOME';
