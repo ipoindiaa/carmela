@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = $db->fetchAll(
     "SELECT a.*,
             COALESCE(usage_stats.line_count, 0) AS linked_entries
-     FROM accounts
+     FROM accounts a
      LEFT JOIN (
         SELECT account_id, COUNT(*) AS line_count
         FROM journal_lines
