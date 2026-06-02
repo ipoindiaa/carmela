@@ -339,14 +339,12 @@ body.sidebar-collapsed .main-content {
 }
 
 .page-header h1 {
-    font-size: 24px; font-weight: 700;
-    display: flex; align-items: center; gap: 10px;
-    line-height: 1.15;
+    display: none !important;
 }
 
 .page-header p {
     flex-basis: 100%;
-    margin-top: -10px;
+    margin-top: 0 !important;
     color: var(--text-muted);
 }
 
@@ -601,7 +599,7 @@ body.sidebar-collapsed .main-content {
     width: max(100%, var(--table-min-width));
     border-collapse: separate;
     border-spacing: 0;
-    table-layout: fixed;
+    table-layout: auto;
 }
 
 .table-container-inline {
@@ -617,7 +615,7 @@ body.sidebar-collapsed .main-content {
 
 table {
     width: 100%; border-collapse: collapse;
-    table-layout: fixed;
+    table-layout: auto;
 }
 
 .table-container thead th,
@@ -687,6 +685,38 @@ tbody tr { transition: var(--transition); }
 tbody tr:hover { background: var(--bg-card-hover); }
 tbody tr:last-child td { border-bottom: none; }
 
+/* Table Form Control Styling */
+.table-container td .form-control,
+table td .form-control {
+    padding: 6px 10px;
+    font-size: 13.5px;
+    height: 34px;
+    min-height: unset;
+    box-sizing: border-box;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    width: 100%;
+    transition: var(--transition);
+}
+.table-container td .form-control:hover,
+table td .form-control:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border);
+}
+.table-container td .form-control:focus,
+table td .form-control:focus {
+    background: var(--bg-input);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px var(--accent-blue-glow);
+}
+.table-container td select.form-control,
+table td select.form-control {
+    background-position: right 8px center;
+    padding-right: 28px;
+}
+
 .table-container tfoot td,
 .table-summary-row td {
     position: sticky;
@@ -708,8 +738,9 @@ tbody tr:last-child td { border-bottom: none; }
     color: var(--accent-blue);
 }
 
-.text-right { text-align: right; }
-.text-center { text-align: center; }
+.text-right { text-align: right !important; }
+.text-center { text-align: center !important; }
+.text-left { text-align: left !important; }
 .text-green { color: var(--accent-green) !important; }
 .text-red { color: var(--accent-red) !important; }
 .text-blue { color: var(--accent-blue) !important; }
