@@ -332,9 +332,9 @@ body.sidebar-collapsed .main-content {
 .page-content { padding: 32px; }
 
 .page-header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: flex-end;
     gap: 16px;
-    margin-bottom: 28px;
+    margin-bottom: 16px;
     flex-wrap: wrap;
 }
 
@@ -346,6 +346,7 @@ body.sidebar-collapsed .main-content {
     flex-basis: 100%;
     margin-top: 0 !important;
     color: var(--text-muted);
+    text-align: left;
 }
 
 .page-header > div,
@@ -353,8 +354,13 @@ body.sidebar-collapsed .main-content {
 .page-header form {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     flex-wrap: wrap;
     gap: 10px;
+}
+
+.page-header > div {
+    flex: 1;
 }
 
 .page-header .form-control,
@@ -715,6 +721,11 @@ table td .form-control:focus {
 table td select.form-control {
     background-position: right 8px center;
     padding-right: 28px;
+}
+.table-container td.text-center .form-control,
+table td.text-center .form-control {
+    text-align: center !important;
+    text-align-last: center !important;
 }
 
 .table-container tfoot td,
