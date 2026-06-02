@@ -326,36 +326,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-row-3">
                 <div class="form-group">
                     <label class="form-label">What are you doing? *</label>
-                    <select name="transaction_type" id="transaction_type" class="form-control searchable-select" data-preselected-type="<?= clean($preselectedType) ?>" required>
+                    <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>" required>
                         <option value="">— Select Transaction Type —</option>
                         <optgroup label="Cars">
-                            <option value="CAR_PURCHASE">🚗 Bought a Car</option>
-                            <option value="CAR_SALE">💰 Sold a Car</option>
-                            <option value="CAR_EXPENSE">🔧 Car Repair / Service</option>
+                            <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
+                            <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
+                            <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
                         </optgroup>
                         <optgroup label="Business">
-                            <option value="GENERAL_EXPENSE">🧾 Office / Business Expense</option>
-                            <option value="JOURNAL_VOUCHER">🧩 Large Bill / Split Entry</option>
-                            <option value="CONTRA_TRANSFER">🔄 Cash ↔ Bank Transfer</option>
-                            <option value="GST_PAYMENT">📋 GST Payment</option>
-                            <option value="GST_UTILIZATION">♻️ GST Input Utilization</option>
+                            <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
+                            <option value="JOURNAL_VOUCHER" data-flow="both" data-icon="ri-bill-line" data-title="Large Bill / Split Entry" data-desc="Split one Jama or Udhar across accounts/cars.">Large Bill / Split Entry</option>
+                            <option value="CONTRA_TRANSFER" data-flow="both" data-icon="ri-arrow-left-right-line" data-title="Cash / Bank Transfer" data-desc="Move money between business accounts.">Cash / Bank Transfer</option>
+                            <option value="GST_PAYMENT" data-flow="out" data-icon="ri-file-list-2-line" data-title="GST Payment" data-desc="Business paid GST from GST bank.">GST Payment</option>
+                            <option value="GST_UTILIZATION" data-flow="out" data-icon="ri-loop-left-line" data-title="GST Input Utilization" data-desc="Adjust GST payable against input credit.">GST Input Utilization</option>
                         </optgroup>
                         <optgroup label="Partners">
-                            <option value="PARTNER_INVEST">💼 Partner Added Money</option>
-                            <option value="PARTNER_WITHDRAW">💸 Partner Took Money</option>
-                            <option value="PARTNER_SETTLEMENT">🤝 Partner Settlement</option>
+                            <option value="PARTNER_INVEST" data-flow="in" data-icon="ri-briefcase-4-line" data-title="Partner Added Money" data-desc="Business received money from partner.">Partner Added Money</option>
+                            <option value="PARTNER_WITHDRAW" data-flow="out" data-icon="ri-hand-coin-line" data-title="Partner Took Money" data-desc="Business paid money to partner.">Partner Took Money</option>
+                            <option value="PARTNER_SETTLEMENT" data-flow="both" data-icon="ri-shake-hands-line" data-title="Partner Settlement" data-desc="Pay partner or receive from partner.">Partner Settlement</option>
                         </optgroup>
                         <optgroup label="Employees">
-                            <option value="SALARY_PAYMENT">💵 Paid Salary</option>
-                            <option value="EMPLOYEE_ADVANCE">🤝 Employee Took Advance</option>
+                            <option value="SALARY_PAYMENT" data-flow="out" data-icon="ri-wallet-3-line" data-title="Paid Salary" data-desc="Business paid salary to employee.">Paid Salary</option>
+                            <option value="EMPLOYEE_ADVANCE" data-flow="out" data-icon="ri-user-received-line" data-title="Employee Took Advance" data-desc="Business gave advance to employee.">Employee Took Advance</option>
                         </optgroup>
                         <optgroup label="Loans & Debts">
-                            <option value="LOAN_GIVEN">📤 Lent Money to Someone</option>
-                            <option value="LOAN_RECEIVED">📥 Received Money Back</option>
-                            <option value="LOAN_TAKEN">📥 Borrowed Money</option>
-                            <option value="LOAN_REPAID">📤 Repaid a Loan</option>
+                            <option value="LOAN_GIVEN" data-flow="out" data-icon="ri-arrow-up-circle-line" data-title="Lent Money to Someone" data-desc="Business gave money to debtor.">Lent Money to Someone</option>
+                            <option value="LOAN_RECEIVED" data-flow="in" data-icon="ri-arrow-down-circle-line" data-title="Received Money Back" data-desc="Business got money back from debtor.">Received Money Back</option>
+                            <option value="LOAN_TAKEN" data-flow="in" data-icon="ri-download-cloud-2-line" data-title="Borrowed Money" data-desc="Business received loan from creditor.">Borrowed Money</option>
+                            <option value="LOAN_REPAID" data-flow="out" data-icon="ri-upload-cloud-2-line" data-title="Repaid a Loan" data-desc="Business repaid money to creditor.">Repaid a Loan</option>
                         </optgroup>
                     </select>
+                    <div class="txn-type-picker" id="txn-type-picker">
+                        <button type="button" class="txn-type-trigger" id="txn-type-trigger" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="txn-type-trigger-icon"><i class="ri-list-check-2"></i></span>
+                            <span class="txn-type-trigger-copy">
+                                <strong>Select entry type</strong>
+                                <small>Choose Green/Jama or Red/Udhar first for a shorter list.</small>
+                            </span>
+                            <i class="ri-arrow-down-s-line"></i>
+                        </button>
+                        <div class="txn-type-menu" id="txn-type-menu" hidden>
+                            <input type="search" class="txn-type-search" id="txn-type-search" placeholder="Search entry type..." autocomplete="off">
+                            <div class="txn-type-list" id="txn-type-list" role="listbox"></div>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Date *</label>
@@ -834,6 +848,8 @@ const moneyFlowDefaults = {
     in: 'PARTNER_INVEST',
     out: 'GENERAL_EXPENSE',
 };
+let activeMoneyFlow = '';
+let transactionTypeOptions = [];
 
 function parseNumericString(value) {
     const normalized = String(value || '').replace(/[^0-9.\-]/g, '');
@@ -902,21 +918,167 @@ document.getElementById('entity-picker-search')?.addEventListener('input', funct
 function selectSplitEntryType() {
     const select = document.getElementById('transaction_type');
     if (!select) return;
+    activeMoneyFlow = 'both';
     select.value = 'JOURNAL_VOUCHER';
     select.dispatchEvent(new Event('change'));
+    syncMoneyFlowButtons();
+    renderTransactionTypePicker();
     openSplitEntryModal();
 }
 
 function selectMoneyFlow(flow) {
     const select = document.getElementById('transaction_type');
     if (!select || !moneyFlowDefaults[flow]) return;
+    activeMoneyFlow = flow;
     select.value = moneyFlowDefaults[flow];
     select.dispatchEvent(new Event('change'));
-    document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.moneyFlow === flow);
-    });
+    syncMoneyFlowButtons();
+    renderTransactionTypePicker();
     const amountInput = document.querySelector('.amount-input');
     setTimeout(() => amountInput?.focus(), 40);
+}
+
+function initTransactionTypePicker() {
+    const select = document.getElementById('transaction_type');
+    const trigger = document.getElementById('txn-type-trigger');
+    const menu = document.getElementById('txn-type-menu');
+    const search = document.getElementById('txn-type-search');
+    if (!select || !trigger || !menu || !search) return;
+
+    transactionTypeOptions = Array.from(select.options)
+        .filter((option) => option.value)
+        .map((option) => ({
+            value: option.value,
+            title: option.dataset.title || option.textContent.trim(),
+            desc: option.dataset.desc || '',
+            icon: option.dataset.icon || 'ri-list-check-2',
+            flow: option.dataset.flow || 'both',
+            group: option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : 'Other',
+            text: `${option.textContent} ${option.dataset.desc || ''}`.toLowerCase(),
+        }));
+
+    trigger.addEventListener('click', () => {
+        const shouldOpen = menu.hidden;
+        closeTransactionTypePicker();
+        if (shouldOpen) {
+            menu.hidden = false;
+            trigger.setAttribute('aria-expanded', 'true');
+            renderTransactionTypePicker();
+            setTimeout(() => search.focus(), 30);
+        }
+    });
+
+    search.addEventListener('input', renderTransactionTypePicker);
+    select.addEventListener('change', () => {
+        const chosen = transactionTypeOptions.find((option) => option.value === select.value);
+        if (chosen && (chosen.flow === 'in' || chosen.flow === 'out')) {
+            activeMoneyFlow = chosen.flow;
+        }
+        syncMoneyFlowButtons();
+        updateTransactionTypeTrigger();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('#txn-type-picker')) {
+            closeTransactionTypePicker();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeTransactionTypePicker();
+        }
+    });
+
+    updateTransactionTypeTrigger();
+    renderTransactionTypePicker();
+}
+
+function renderTransactionTypePicker() {
+    const select = document.getElementById('transaction_type');
+    const list = document.getElementById('txn-type-list');
+    const search = document.getElementById('txn-type-search');
+    if (!select || !list) return;
+
+    const query = (search?.value || '').trim().toLowerCase();
+    const flow = activeMoneyFlow;
+    const visible = transactionTypeOptions.filter((option) => {
+        const flowMatches = !flow || flow === 'both' || option.flow === flow || option.flow === 'both';
+        const queryMatches = !query || option.text.includes(query) || option.title.toLowerCase().includes(query);
+        return flowMatches && queryMatches;
+    });
+
+    if (!visible.length) {
+        list.innerHTML = '<div class="txn-type-empty">No matching entry type.</div>';
+        return;
+    }
+
+    let lastGroup = '';
+    list.innerHTML = visible.map((option) => {
+        const groupLabel = option.group !== lastGroup ? `<div class="txn-type-group">${escapeHtml(option.group)}</div>` : '';
+        lastGroup = option.group;
+        const flowClass = option.flow === 'in' ? 'money-in' : (option.flow === 'out' ? 'money-out' : 'both');
+        const activeClass = select.value === option.value ? 'active' : '';
+        return `
+            ${groupLabel}
+            <button type="button" class="txn-type-item ${flowClass} ${activeClass}" data-value="${escapeHtml(option.value)}" role="option" aria-selected="${select.value === option.value ? 'true' : 'false'}">
+                <span class="txn-type-icon"><i class="${escapeHtml(option.icon)}"></i></span>
+                <span>
+                    <strong>${escapeHtml(option.title)}</strong>
+                    <small>${escapeHtml(option.desc)}</small>
+                </span>
+            </button>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.txn-type-item').forEach((button) => {
+        button.addEventListener('click', () => {
+            select.value = button.dataset.value || '';
+            select.dispatchEvent(new Event('change'));
+            closeTransactionTypePicker();
+        });
+    });
+}
+
+function closeTransactionTypePicker() {
+    const menu = document.getElementById('txn-type-menu');
+    const trigger = document.getElementById('txn-type-trigger');
+    if (menu) menu.hidden = true;
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function syncMoneyFlowButtons() {
+    document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.moneyFlow === activeMoneyFlow);
+    });
+    document.querySelector('.simple-entry-option.split')?.classList.toggle(
+        'active',
+        document.getElementById('transaction_type')?.value === 'JOURNAL_VOUCHER'
+    );
+}
+
+function updateTransactionTypeTrigger() {
+    const select = document.getElementById('transaction_type');
+    const trigger = document.getElementById('txn-type-trigger');
+    if (!select || !trigger) return;
+    const chosen = transactionTypeOptions.find((option) => option.value === select.value);
+    const icon = trigger.querySelector('.txn-type-trigger-icon i');
+    const title = trigger.querySelector('.txn-type-trigger-copy strong');
+    const desc = trigger.querySelector('.txn-type-trigger-copy small');
+    if (chosen) {
+        if (icon) icon.className = chosen.icon;
+        if (title) title.textContent = chosen.title;
+        if (desc) desc.textContent = chosen.desc;
+        trigger.classList.toggle('money-in', chosen.flow === 'in');
+        trigger.classList.toggle('money-out', chosen.flow === 'out');
+    } else {
+        if (icon) icon.className = 'ri-list-check-2';
+        if (title) title.textContent = 'Select entry type';
+        if (desc) desc.textContent = activeMoneyFlow === 'in'
+            ? 'Showing Jama entries only.'
+            : (activeMoneyFlow === 'out' ? 'Showing Udhar entries only.' : 'Choose Green/Jama or Red/Udhar first for a shorter list.');
+        trigger.classList.remove('money-in', 'money-out');
+    }
 }
 
 function filterPrimaryPaymentAccounts(type) {
@@ -1079,6 +1241,7 @@ function selectEntityPickerValue(kind, id, label) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    initTransactionTypePicker();
     syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
     document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
         button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));
