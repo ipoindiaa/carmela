@@ -33,12 +33,7 @@ try {
             // Use local variable output buffer to prevent output before header, though on cli/plain text it does not matter
             include __DIR__ . '/transactions/search_entities.php';
             $out = ob_get_clean();
-            // Strip any HTTP warnings about headers
-            $lines = explode("\n", $out);
-            $clean_lines = array_filter($lines, function($line) {
-                return strpos($line, 'Cannot modify header information') === false && strpos($line, 'Warning: ') === false;
-            });
-            echo implode("\n", $clean_lines) . "\n\n";
+            echo $out . "\n\n";
         } catch (Exception $e) {
             echo "ERROR: " . $e->getMessage() . "\n\n";
         }
