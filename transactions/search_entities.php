@@ -3,6 +3,8 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/db.php';
 
+$db = Database::getInstance();
+
 Auth::check();
 Auth::requireAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 
