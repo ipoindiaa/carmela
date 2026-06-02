@@ -86,6 +86,36 @@ $entryCategoryOptions = array_map(static function ($account) {
         'text' => strtolower(trim(($account['name'] ?? '') . ' ' . ($account['code'] ?? '') . ' ' . ($account['sub_group'] ?? ''))),
     ];
 }, $entryCategories);
+
+$dbExpenseCategories = $db->fetchAll(
+    "SELECT DISTINCT name FROM accounts
+     WHERE business_id = ?
+       AND group_name = 'EXPENSE'
+       AND is_active = 1
+       AND entity_type = 'GENERAL'
+       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+     ORDER BY name",
+    [$businessId]
+);
+$defaultExpenseCategories = [
+    'Painting & Polish',
+    'RTO Transfer Charges',
+    'Transport Charges',
+    'Repair & Service',
+    'Insurance',
+    'Commission',
+    'Office Rent',
+    'Electricity',
+    'Tea & Refreshments',
+    'Fuel',
+    'Stationery',
+    'Miscellaneous'
+];
+$expenseDatalistNames = array_unique(array_merge(
+    array_column($dbExpenseCategories, 'name'),
+    $defaultExpenseCategories
+));
+
 if ($preselectedCarId !== '') {
     $preselectedCar = $db->fetch(
         "SELECT id, registration_no, make, model
@@ -571,18 +601,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Expense Category *</label>
                     <input type="text" name="expense_category" class="form-control" placeholder="e.g., Painting, RTO Charges, Office Rent, Tea & Refreshments" list="categories">
                     <datalist id="categories">
-                        <option value="Painting & Polish">
-                        <option value="RTO Transfer Charges">
-                        <option value="Transport Charges">
-                        <option value="Repair & Service">
-                        <option value="Insurance">
-                        <option value="Commission">
-                        <option value="Office Rent">
-                        <option value="Electricity">
-                        <option value="Tea & Refreshments">
-                        <option value="Fuel">
-                        <option value="Stationery">
-                        <option value="Miscellaneous">
+                        <?php foreach ($expenseDatalistNames as $name): ?>
+                            <option value="<?= clean($name) ?>">
+                        <?php endforeach; ?>
                     </datalist>
                 </div>
             </div>
