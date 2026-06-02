@@ -38,7 +38,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $car['sale_price']; $grandProfit += $profit; }
         ?>
         <tr>
-            <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean($car['registration_no']) ?></a></td>
+            <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td class="text-center"><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                 <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span></td>

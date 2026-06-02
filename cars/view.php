@@ -33,7 +33,7 @@ $contributions = $db->fetchAll(
 ?>
 
 <div class="page-header">
-    <h1><i class="ri-car-line"></i> <?= clean($car['registration_no']) ?></h1>
+    <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div style="display: flex; gap: 10px;">
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
@@ -73,7 +73,7 @@ $contributions = $db->fetchAll(
         <div class="card-header"><h3><i class="ri-car-line"></i> Car Details</h3></div>
         <div class="card-body">
             <table style="width: 100%;">
-                <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Registration</td><td class="text-bold"><?= clean($car['registration_no']) ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>

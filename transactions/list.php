@@ -50,7 +50,7 @@ function renderTransactionRows($entries) {
             <td><span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span></td>
             <td style="max-width: 250px;"><?= clean(mb_substr($entry['narration'] ?? '', 0, 60)) ?></td>
             <td class="text-muted">
-                <?php if ($entry['car_reg']): ?><i class="ri-car-line"></i> <?= $entry['car_reg'] ?><?php endif; ?>
+                <?php if ($entry['car_reg']): ?><i class="ri-car-line"></i> <?= formatRegistrationNo($entry['car_reg']) ?><?php endif; ?>
                 <?php if ($entry['partner_name']): ?><i class="ri-user-line"></i> <?= clean($entry['partner_name']) ?><?php endif; ?>
                 <?php if ($entry['employee_name']): ?><i class="ri-user-star-line"></i> <?= clean($entry['employee_name']) ?><?php endif; ?>
             </td>

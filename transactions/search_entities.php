@@ -27,7 +27,7 @@ $logDataPost = [
 ];
 file_put_contents($logFile, json_encode($logDataPost) . "\n", FILE_APPEND);
 
-Auth::requireAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
+Auth::requireAnyBookAccess(array_keys(BOOK_PERMISSIONS), 'read');
 
 header('Content-Type: application/json');
 
@@ -66,7 +66,7 @@ switch ($kind) {
         foreach ($rows as $row) {
             $results[] = [
                 'id' => $row['id'],
-                'label' => trim(($row['code'] ?: '') . ' — ' . ($row['name'] ?: ''), ' —'),
+                'label' => formatAllRegistrationNosInString(trim(($row['code'] ?: '') . ' — ' . ($row['name'] ?: ''), ' —')),
                 'meta' => trim(($row['group_name'] ?: 'General') . (!empty($row['sub_group']) ? ' / ' . $row['sub_group'] : '') . (!empty($row['entity_type']) ? ' | ' . $row['entity_type'] : '')),
             ];
         }
@@ -97,7 +97,7 @@ switch ($kind) {
         foreach ($rows as $row) {
             $results[] = [
                 'id' => $row['id'],
-                'label' => trim($row['registration_no'] . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? ''))),
+                'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? ''))),
                 'meta' => trim(($row['year'] ?: '') . ' ' . ($row['status'] ?? '')),
             ];
         }

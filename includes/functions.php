@@ -236,3 +236,29 @@ function paginate($total, $perPage = 20, $currentPage = 1) {
         'offset' => $offset,
     ];
 }
+
+/**
+ * Format car registration number to GJ05ZX(1212) style.
+ */
+function formatRegistrationNo($value) {
+    $val = trim((string) $value);
+    if (empty($val)) return '';
+    if (preg_match('/^([A-Z]{2}[0-9]{2}[A-Z]{1,3})([0-9]{4})$/i', $val, $matches)) {
+        return strtoupper($matches[1]) . '(' . $matches[2] . ')';
+    }
+    return strtoupper($val);
+}
+
+/**
+ * Replaces any normalized registration number in a string with its formatted style.
+ */
+function formatAllRegistrationNosInString($str) {
+    if (empty($str)) return '';
+    return preg_replace_callback(
+        '/([A-Z]{2}[0-9]{2}[A-Z]{1,3})([0-9]{4})\b/i',
+        function ($matches) {
+            return strtoupper($matches[1]) . '(' . $matches[2] . ')';
+        },
+        $str
+    );
+}

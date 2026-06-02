@@ -37,7 +37,7 @@ function renderCarRows($cars) {
             $profit = $car['status'] === 'SOLD' ? ($netSalePrice - $totalCost) : null;
         ?>
         <tr>
-            <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean($car['registration_no']) ?></a></td>
+            <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= formatDate($car['purchase_date']) ?></td>

@@ -73,7 +73,7 @@ $currentLabel = $currentBalance >= 0 ? 'Business Owes Partner' : 'Partner Owes B
             <table><thead><tr><th>Car</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date</th></tr></thead>
                 <tbody>
                 <?php foreach ($carContribs as $c): ?>
-                <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean($c['registration_no']) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= number_format((float) $c['funding_pct'], 2) ?>%</td><td class="text-right"><?= number_format((float) $c['profit_share_pct'], 2) ?>%</td><td><?= formatDate($c['contribution_date']) ?></td></tr>
+                <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean(formatRegistrationNo($c['registration_no'])) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= number_format((float) $c['funding_pct'], 2) ?>%</td><td class="text-right"><?= number_format((float) $c['profit_share_pct'], 2) ?>%</td><td><?= formatDate($c['contribution_date']) ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (empty($carContribs)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No contributions</td></tr><?php endif; ?>
                 </tbody>
@@ -105,7 +105,7 @@ $currentLabel = $currentBalance >= 0 ? 'Business Owes Partner' : 'Partner Owes B
                 <tbody>
                 <?php foreach ($settlements as $settlement): ?>
                 <tr>
-                    <td><a href="../cars/view.php?id=<?= $settlement['car_id'] ?>"><?= clean($settlement['registration_no']) ?></a></td>
+                    <td><a href="../cars/view.php?id=<?= $settlement['car_id'] ?>"><?= clean(formatRegistrationNo($settlement['registration_no'])) ?></a></td>
                     <td><?= clean($settlement['direction']) ?></td>
                     <td class="text-right amount"><?= formatAmount($settlement['profit_amount']) ?></td>
                     <td class="text-right amount"><?= formatAmount($settlement['outstanding_amount']) ?></td>
