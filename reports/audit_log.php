@@ -7,17 +7,42 @@ $businessId = Auth::user('business_id');
 
 $page = max(1, intval(get('page', 1)));
 $perPage = 50;
-$total = $db->fetch("SELECT COUNT(*) as cnt FROM audit_log WHERE business_id = ?", [$businessId]);
+$logDate = trim((string) get('date', ''));
+$logWhere = "al.business_id = ?";
+$logParams = [$businessId];
+if ($logDate !== '') {
+    $logWhere .= " AND DATE(al.created_at) = ?";
+    $logParams[] = $logDate;
+}
+$total = $db->fetch("SELECT COUNT(*) as cnt FROM audit_log al WHERE {$logWhere}", $logParams);
 $pagination = paginate($total['cnt'], $perPage, $page);
+$logListParams = array_merge($logParams, [$perPage, $pagination['offset']]);
 
 $logs = $db->fetchAll(
     "SELECT al.*, u.full_name FROM audit_log al LEFT JOIN users u ON u.id = al.user_id 
-     WHERE al.business_id = ? ORDER BY al.created_at DESC LIMIT ? OFFSET ?",
-    [$businessId, $perPage, $pagination['offset']]);
+     WHERE {$logWhere} ORDER BY al.created_at DESC LIMIT ? OFFSET ?",
+    $logListParams);
+
+function auditLogUrl($page, $logDate = '') {
+    $query = ['page' => $page];
+    if ($logDate !== '') $query['date'] = $logDate;
+    return '?' . http_build_query($query);
+}
 ?>
 
 <div class="page-header">
     <h1><i class="ri-shield-check-line"></i> Audit Log</h1>
+</div>
+
+<div class="filter-bar">
+    <form method="GET">
+        <div>
+            <label class="form-label">Particular Date</label>
+            <input type="date" name="date" class="form-control" value="<?= clean($logDate) ?>">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <?php if ($logDate !== ''): ?><a href="audit_log.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+    </form>
 </div>
 
 <div class="table-container table-container-fill">
@@ -44,7 +69,7 @@ $logs = $db->fetchAll(
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination">
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="?page=<?= $i ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(auditLogUrl($i, $logDate)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
 </div>
 <?php endif; ?>

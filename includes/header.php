@@ -70,10 +70,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-user-star-line"></i></span>
                     Employees
                 </a>
+                <?php if (!isClientHiddenBook('creditors_report') || !isClientHiddenBook('debtor_ageing')): ?>
                 <a href="<?= APP_URL ?>parties/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'parties/') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-contacts-book-line"></i></span>
                     Debtors / Creditors
                 </a>
+                <?php endif; ?>
             </div>
 
             <div class="nav-section">
@@ -90,79 +92,79 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     Bank Book
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('gst_book', 'read')): ?>
+                <?php if (!isClientHiddenBook('gst_book') && Auth::hasBookAccess('gst_book', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/gst_book.php" class="nav-link <?= $currentPage === 'gst_book' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-file-list-2-line"></i></span>
                     GST Book
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('trial_balance', 'read')): ?>
+                <?php if (!isClientHiddenBook('trial_balance') && Auth::hasBookAccess('trial_balance', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/trial_balance.php" class="nav-link <?= $currentPage === 'trial_balance' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-scales-3-line"></i></span>
                     Trial Balance
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('profit_loss', 'read')): ?>
+                <?php if (!isClientHiddenBook('profit_loss') && Auth::hasBookAccess('profit_loss', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/profit_loss.php" class="nav-link <?= $currentPage === 'profit_loss' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-line-chart-line"></i></span>
                     Profit & Loss
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('balance_sheet', 'read')): ?>
+                <?php if (!isClientHiddenBook('balance_sheet') && Auth::hasBookAccess('balance_sheet', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/balance_sheet.php" class="nav-link <?= $currentPage === 'balance_sheet' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-file-list-3-line"></i></span>
                     Balance Sheet
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('car_profitability', 'read')): ?>
+                <?php if (!isClientHiddenBook('car_profitability') && Auth::hasBookAccess('car_profitability', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/car_profitability.php" class="nav-link <?= $currentPage === 'car_profitability' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-car-washing-line"></i></span>
                     Car Profitability
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('general_ledger', 'read')): ?>
+                <?php if (!isClientHiddenBook('general_ledger') && Auth::hasBookAccess('general_ledger', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/ledger.php" class="nav-link <?= $currentPage === 'ledger' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-file-text-line"></i></span>
                     General Ledger
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('debtor_ageing', 'read')): ?>
+                <?php if (!isClientHiddenBook('debtor_ageing') && Auth::hasBookAccess('debtor_ageing', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/debtor_ageing.php" class="nav-link <?= $currentPage === 'debtor_ageing' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-timer-line"></i></span>
                     Debtor Ageing
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('creditors_report', 'read')): ?>
+                <?php if (!isClientHiddenBook('creditors_report') && Auth::hasBookAccess('creditors_report', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/creditors.php" class="nav-link <?= $currentPage === 'creditors' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-hand-coin-line"></i></span>
                     Creditors
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('partner_accounts', 'read')): ?>
+                <?php if (!isClientHiddenBook('partner_accounts') && Auth::hasBookAccess('partner_accounts', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/partner_accounts.php" class="nav-link <?= $currentPage === 'partner_accounts' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-group-2-line"></i></span>
                     Partner Accounts
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('employee_advances', 'read')): ?>
+                <?php if (!isClientHiddenBook('employee_advances') && Auth::hasBookAccess('employee_advances', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/employee_advances.php" class="nav-link <?= $currentPage === 'employee_advances' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-user-star-line"></i></span>
                     Employee Advances
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('outstanding_summary', 'read')): ?>
+                <?php if (!isClientHiddenBook('outstanding_summary') && Auth::hasBookAccess('outstanding_summary', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/outstanding_summary.php" class="nav-link <?= $currentPage === 'outstanding_summary' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-survey-line"></i></span>
                     Outstanding Summary
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('jv_register', 'read')): ?>
+                <?php if (!isClientHiddenBook('jv_register') && Auth::hasBookAccess('jv_register', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/jv_register.php" class="nav-link <?= $currentPage === 'jv_register' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-booklet-line"></i></span>
                     JV Register
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::isAdmin()): ?>
+                <?php if (!isClientHiddenBook('audit_log') && Auth::isAdmin()): ?>
                 <a href="<?= APP_URL ?>reports/audit_log.php" class="nav-link <?= $currentPage === 'audit_log' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-shield-check-line"></i></span>
                     Audit Log

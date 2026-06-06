@@ -65,8 +65,17 @@ $where = "WHERE c.business_id = ?";
 $params = [$businessId];
 if ($filter) { $where .= " AND c.status = ?"; $params[] = $filter; }
 if ($search !== '') {
-    $where .= " AND UPPER(REPLACE(REPLACE(c.registration_no, '-', ''), ' ', '')) LIKE ?";
-    $params[] = '%' . strtoupper(preg_replace('/[^A-Z0-9]/i', '', $search)) . '%';
+    $where .= " AND (
+        UPPER(REPLACE(REPLACE(c.registration_no, '-', ''), ' ', '')) LIKE ?
+        OR c.registration_no LIKE ?
+        OR c.make LIKE ?
+        OR c.model LIKE ?
+        OR c.year LIKE ?
+        OR c.status LIKE ?
+    )";
+    $normalizedSearch = '%' . strtoupper(preg_replace('/[^A-Z0-9]/i', '', $search)) . '%';
+    $needle = '%' . $search . '%';
+    array_push($params, $normalizedSearch, $needle, $needle, $needle, $needle, $needle);
 }
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
@@ -102,8 +111,8 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
     <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
         <?php if ($filter !== ''): ?><input type="hidden" name="status" value="<?= clean($filter) ?>"><?php endif; ?>
         <div style="min-width:240px;flex:1 1 260px;">
-            <label class="form-label">Search by car number</label>
-            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type GJ05AA0001">
+            <label class="form-label">Search Cars</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Number, make, model, year, or status">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
         <a href="list.php<?= $filter !== '' ? '?status=' . urlencode($filter) : '' ?>" class="btn btn-outline btn-sm">Clear Search</a>

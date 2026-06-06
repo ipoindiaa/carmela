@@ -20,9 +20,9 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="table-container table-container-fill">
-    <table>
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Holding Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale Price</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
+<div class="table-container table-container-fill table-container-fit car-profitability-table">
+    <table class="table-compact table-total-room">
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale Price</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);

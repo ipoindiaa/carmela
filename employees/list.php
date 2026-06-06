@@ -4,6 +4,7 @@ $pageIcon = '<i class="ri-user-star-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+$search = trim((string) get('q', ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     verifyCsrf();
@@ -24,19 +25,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
 }
 
+$employeeWhere = "e.business_id = ?";
+$employeeParams = [$businessId];
+if ($search !== '') {
+    $employeeWhere .= " AND (
+        e.name LIKE ?
+        OR e.role LIKE ?
+        OR e.phone LIKE ?
+        OR e.monthly_salary LIKE ?
+        OR e.join_date LIKE ?
+        OR CASE WHEN e.is_active = 1 THEN 'Active' ELSE 'Left' END LIKE ?
+    )";
+    $needle = '%' . $search . '%';
+    array_push($employeeParams, $needle, $needle, $needle, $needle, $needle, $needle);
+}
+
 $employees = $db->fetchAll(
     "SELECT e.*, a.current_balance as advance_balance, a.current_balance_type as advance_balance_type
      FROM employees e
      LEFT JOIN accounts a ON a.id = e.advance_account_id
-     WHERE e.business_id = ?
+     WHERE {$employeeWhere}
      ORDER BY e.name",
-    [$businessId]
+    $employeeParams
 );
 ?>
 
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> Employees</h1>
     <button onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button>
+</div>
+
+<div class="filter-bar">
+    <form method="GET">
+        <div>
+            <label class="form-label">Search Employee</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, role, phone, salary, date, or status">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <?php if ($search !== ''): ?><a href="list.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+    </form>
 </div>
 
 <div class="table-container table-container-fill">

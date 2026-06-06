@@ -104,6 +104,10 @@ function get($key, $default = '') {
     return isset($_GET[$key]) ? trim($_GET[$key]) : $default;
 }
 
+function isClientHiddenBook($bookKey) {
+    return in_array($bookKey, CLIENT_DEMO_HIDDEN_BOOKS, true);
+}
+
 /**
  * Parse a decimal input that may include commas or currency symbols.
  */

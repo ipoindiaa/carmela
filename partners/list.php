@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
+$search = trim((string) get('q', ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     verifyCsrf();
@@ -27,15 +28,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
 }
 
+$partnerWhere = "WHERE p.business_id = ?";
+$partnerParams = [$businessId];
+if ($search !== '') {
+    $partnerWhere .= " AND (
+        p.name LIKE ?
+        OR p.phone LIKE ?
+        OR p.email LIKE ?
+        OR p.pan LIKE ?
+        OR p.profit_share_pct LIKE ?
+        OR p.joined_date LIKE ?
+        OR CASE WHEN p.is_active = 1 THEN 'Active' ELSE 'Inactive' END LIKE ?
+    )";
+    $needle = '%' . $search . '%';
+    array_push($partnerParams, $needle, $needle, $needle, $needle, $needle, $needle, $needle);
+}
 $partners = $db->fetchAll(
-    "SELECT p.*, a.current_balance as capital_balance, a.current_balance_type 
-     FROM partners p LEFT JOIN accounts a ON a.id = p.capital_account_id 
-     WHERE p.business_id = ? ORDER BY p.name", [$businessId]);
+    "SELECT p.*, a.current_balance as capital_balance, a.current_balance_type
+     FROM partners p LEFT JOIN accounts a ON a.id = p.capital_account_id
+     $partnerWhere
+     ORDER BY p.name",
+    $partnerParams
+);
 ?>
 
 <div class="page-header">
     <h1><i class="ri-group-line"></i> Partners</h1>
     <button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button>
+</div>
+
+<div class="filter-bar">
+    <form method="GET">
+        <div style="min-width:240px;flex:1 1 280px;">
+            <label class="form-label">Search partner</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email, PAN, share, date, or status">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <a href="list.php" class="btn btn-outline btn-sm">Clear</a>
+    </form>
 </div>
 
 <div class="table-container table-container-fill">

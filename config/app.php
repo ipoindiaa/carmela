@@ -86,6 +86,22 @@ define('PRIMARY_BOOK_ACCOUNT_TYPES', [
     'gst_book' => 'GST',
 ]);
 
+define('CLIENT_DEMO_HIDDEN_BOOKS', [
+    'gst_book',
+    'trial_balance',
+    'profit_loss',
+    'balance_sheet',
+    'car_profitability',
+    'general_ledger',
+    'debtor_ageing',
+    'creditors_report',
+    'partner_accounts',
+    'employee_advances',
+    'outstanding_summary',
+    'jv_register',
+    'audit_log',
+]);
+
 // Transaction Types
 define('TXN_TYPES', [
     'CAR_PURCHASE' => 'Bought a Car',

@@ -15,6 +15,9 @@ $tabMeta = [
 ];
 $availableTabs = [];
 foreach ($tabMeta as $bookKey => $meta) {
+    if (isClientHiddenBook($bookKey)) {
+        continue;
+    }
     foreach (($primaryAccountGroups[$bookKey] ?? []) as $index => $account) {
         $tabKey = $meta['tab'] . ($index ? '-' . ($index + 1) : '');
         $availableTabs[$tabKey] = [
@@ -181,6 +184,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <a href="transactions/list.php" class="btn btn-outline btn-lg"><i class="ri-list-check-2"></i> View Entries</a>
         </div>
     </div>
+    <?php if (!isClientHiddenBook('profit_loss')): ?>
     <div class="dashboard-focus-card">
         <span>Current Month P&L</span>
         <strong><?= formatAmount($monthProfit) ?></strong>
@@ -190,6 +194,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <div><i class="ri-notification-3-line"></i> Pending alerts: <?= count($alerts) ?></div>
         </div>
     </div>
+    <?php endif; ?>
 </section>
 
 <?php if (!empty($availableTabs)): ?>

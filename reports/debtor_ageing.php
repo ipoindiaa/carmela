@@ -6,7 +6,15 @@ Auth::requireBookAccess('debtor_ageing', 'read');
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$search = trim((string) get('q', ''));
 $debtors = $engine->getDebtorAgeingReport();
+if ($search !== '') {
+    $needle = mb_strtolower($search);
+    $debtors = array_values(array_filter($debtors, static function ($debtor) use ($needle) {
+        $haystack = mb_strtolower(($debtor['name'] ?? '') . ' ' . ($debtor['phone'] ?? '') . ' ' . ($debtor['type'] ?? ''));
+        return mb_strpos($haystack, $needle) !== false;
+    }));
+}
 
 $grandTotal = 0;
 ?>
@@ -16,7 +24,18 @@ $grandTotal = 0;
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="table-container table-container-fill">
+<div class="filter-bar">
+    <form method="GET">
+        <div>
+            <label class="form-label">Search Debtor</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, or type">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <?php if ($search !== ''): ?><a href="debtor_ageing.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+    </form>
+</div>
+
+<div class="table-container table-container-fill table-total-room">
     <table>
         <thead><tr><th>Debtor</th><th>Type</th><th>Phone</th><th class="text-right">Outstanding</th><th class="text-right">Open Items</th><th>Bad Debt</th><th>Oldest Open</th><th class="text-right">Since</th></tr></thead>
         <tbody>

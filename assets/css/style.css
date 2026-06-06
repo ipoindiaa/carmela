@@ -61,6 +61,7 @@ body {
     min-height: 100vh;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
 }
 
 body.sidebar-open {
@@ -77,7 +78,13 @@ a { color: var(--accent-blue); text-decoration: none; transition: var(--transiti
 a:hover { color: #1d4ed8; }
 
 /* ============ LAYOUT ============ */
-.app-container { display: flex; min-height: 100vh; }
+.app-container {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-height: 100vh;
+    overflow-x: clip;
+}
 
 /* Sidebar */
 .sidebar {
@@ -268,12 +275,16 @@ body.sidebar-collapsed .sidebar-user {
 /* Main Content */
 .main-content {
     margin-left: var(--sidebar-width);
-    flex: 1;
+    width: calc(100% - var(--sidebar-width));
+    max-width: calc(100% - var(--sidebar-width));
+    min-width: 0;
     min-height: 100dvh;
 }
 
 body.sidebar-collapsed .main-content {
     margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
+    max-width: calc(100% - var(--sidebar-collapsed-width));
 }
 
 /* Header */
@@ -329,7 +340,13 @@ body.sidebar-collapsed .main-content {
 }
 
 /* Page Content */
-.page-content { padding: 32px; }
+.page-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 24px;
+    overflow-x: clip;
+}
 
 .page-header {
     display: flex; align-items: center; justify-content: flex-end;
@@ -665,6 +682,54 @@ body.sidebar-collapsed .main-content {
 
 .table-container-inline table {
     width: max(100%, 760px);
+}
+
+.table-container-fit {
+    max-height: none;
+    overflow-x: clip;
+}
+
+.table-container-fit table {
+    width: 100%;
+    min-width: 0;
+}
+
+.table-compact th,
+.table-compact td {
+    padding: 10px 12px;
+    font-size: 12.5px;
+}
+
+.table-total-room tfoot td,
+.table-total-room .table-summary-row td {
+    padding-top: 18px;
+    padding-bottom: 18px;
+}
+
+.table-total-room tfoot .amount,
+.table-total-room .table-summary-row .amount {
+    padding-inline: 18px;
+    letter-spacing: 0.01em;
+}
+
+.car-profitability-table table {
+    table-layout: fixed;
+}
+
+.car-profitability-table th:nth-child(1) { width: 11%; }
+.car-profitability-table th:nth-child(2) { width: 12%; }
+.car-profitability-table th:nth-child(3) { width: 9%; }
+.car-profitability-table th:nth-child(4) { width: 6%; }
+.car-profitability-table th:nth-child(5),
+.car-profitability-table th:nth-child(6),
+.car-profitability-table th:nth-child(7),
+.car-profitability-table th:nth-child(8),
+.car-profitability-table th:nth-child(9) { width: 10%; }
+.car-profitability-table th:nth-child(10) { width: 12%; }
+
+.car-profitability-table td:nth-child(10) {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 table {
@@ -2051,6 +2116,115 @@ html.js .pagination.no-js-pagination { display: none; }
     }
 }
 
+@media (max-width: 1440px) {
+    :root {
+        --sidebar-width: 232px;
+        --sidebar-collapsed-width: 76px;
+        --header-height: 58px;
+        --table-min-width: 900px;
+    }
+
+    .page-content {
+        padding: 16px;
+    }
+
+    .top-header {
+        padding: 8px 18px;
+        gap: 12px;
+    }
+
+    .sidebar-brand {
+        padding: 16px 18px;
+    }
+
+    .sidebar-nav {
+        padding: 12px 10px;
+    }
+
+    .card-header {
+        padding: 14px 18px;
+    }
+
+    .card-body {
+        padding: 18px;
+    }
+
+    .stats-grid,
+    .grid-2,
+    .grid-3,
+    .grid-4 {
+        gap: 16px;
+    }
+
+    .dashboard-hero {
+        padding: 20px;
+        gap: 18px;
+        border-radius: 20px;
+    }
+
+    .dashboard-hero h1 {
+        font-size: 30px;
+    }
+
+    .dashboard-focus-card,
+    .dashboard-book-card,
+    .dashboard-mini-stat,
+    .dashboard-panel {
+        border-radius: 14px;
+    }
+
+    .filter-bar {
+        padding: 12px;
+        gap: 10px;
+    }
+}
+
+@media (max-width: 1366px) {
+    :root {
+        --sidebar-width: 216px;
+        --sidebar-collapsed-width: 68px;
+        --table-min-width: 840px;
+    }
+
+    body {
+        font-size: 13.5px;
+    }
+
+    .nav-link {
+        padding: 9px 10px;
+        font-size: 13px;
+    }
+
+    .page-content {
+        padding: 14px;
+    }
+
+    .top-header {
+        padding-inline: 14px;
+    }
+
+    .page-title {
+        font-size: 18px;
+    }
+
+    .form-row,
+    .form-row-3 {
+        gap: 12px;
+    }
+
+    .table-container thead th,
+    thead th,
+    .table-container tbody td,
+    tbody td {
+        padding-inline: 10px;
+    }
+
+    .stats-grid {
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+}
+
 @media (max-width: 768px) {
     .sidebar-backdrop {
         display: block;
@@ -2076,7 +2250,11 @@ html.js .pagination.no-js-pagination { display: none; }
         width: min(88vw, 320px);
     }
     .sidebar.open { transform: translateX(0); }
-    .main-content { margin-left: 0; }
+    .main-content {
+        margin-left: 0;
+        width: 100%;
+        max-width: 100%;
+    }
     .account-cards { grid-template-columns: 1fr; }
     .stats-grid,
     .stats-grid[style] { grid-template-columns: 1fr !important; }

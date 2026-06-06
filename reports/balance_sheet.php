@@ -26,7 +26,7 @@ $bs = $engine->getBalanceSheet($asOnDate);
     <div class="card">
         <div class="card-header"><h3 class="text-blue"><i class="ri-safe-2-line"></i> Assets</h3></div>
         <div class="card-body" style="padding:0;">
-            <div class="table-container table-container-inline">
+            <div class="table-container table-container-inline table-container-fit">
                 <table>
                     <tbody>
                         <?php $lastSub = ''; foreach ($bs['ASSET'] as $item):
@@ -45,7 +45,7 @@ $bs = $engine->getBalanceSheet($asOnDate);
         <div class="card" style="margin-bottom: 24px;">
             <div class="card-header"><h3 class="text-yellow"><i class="ri-hand-coin-line"></i> Liabilities</h3></div>
             <div class="card-body" style="padding:0;">
-                <div class="table-container table-container-inline">
+                <div class="table-container table-container-inline table-container-fit">
                     <table>
                         <tbody>
                         <?php foreach ($bs['LIABILITY'] as $item): ?>
@@ -61,7 +61,7 @@ $bs = $engine->getBalanceSheet($asOnDate);
         <div class="card">
             <div class="card-header"><h3 class="text-purple"><i class="ri-group-line"></i> Equity / Capital</h3></div>
             <div class="card-body" style="padding:0;">
-                <div class="table-container table-container-inline">
+                <div class="table-container table-container-inline table-container-fit">
                     <table>
                         <tbody>
                         <?php foreach ($bs['EQUITY'] as $item): ?>

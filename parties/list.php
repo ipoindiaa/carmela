@@ -28,9 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
 
 $page = max(1, intval(get('page', 1)));
 $perPage = 30;
+$search = trim((string) get('q', ''));
 
-function partiesListUrl($page, $lazy = false) {
+function partiesListUrl($page, $lazy = false, $search = '') {
     $query = ['page' => $page];
+    if ($search !== '') $query['q'] = $search;
     if ($lazy) $query['lazy'] = 1;
     return 'list.php?' . http_build_query($query);
 }
@@ -62,16 +64,25 @@ function renderPartyRows($parties, $snapshots) {
     return trim(ob_get_clean());
 }
 
-$total = $db->fetch("SELECT COUNT(*) as cnt FROM debtors_creditors WHERE business_id = ?", [$businessId]);
+$partyWhere = "dc.business_id = ?";
+$partyParams = [$businessId];
+if ($search !== '') {
+    $partyWhere .= " AND (dc.name LIKE ? OR dc.phone LIKE ? OR dc.type LIKE ? OR dc.pan_gstin LIKE ?)";
+    $needle = '%' . $search . '%';
+    array_push($partyParams, $needle, $needle, $needle, $needle);
+}
+
+$total = $db->fetch("SELECT COUNT(*) as cnt FROM debtors_creditors dc WHERE {$partyWhere}", $partyParams);
 $pagination = paginate($total['cnt'], $perPage, $page);
+$listParams = array_merge($partyParams, [$perPage, $pagination['offset']]);
 $parties = $db->fetchAll(
     "SELECT dc.*, a.current_balance, a.current_balance_type
      FROM debtors_creditors dc
      LEFT JOIN accounts a ON a.id = dc.account_id
-     WHERE dc.business_id = ?
+     WHERE {$partyWhere}
      ORDER BY dc.type, dc.name
      LIMIT ? OFFSET ?",
-    [$businessId, $perPage, $pagination['offset']]
+    $listParams
 );
 
 $partySnapshots = [];
@@ -104,17 +115,28 @@ if ($isLazyRequest) {
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
         'html' => renderPartyRows($parties, $partySnapshots),
-        'next_url' => $nextPage ? partiesListUrl($nextPage, true) : '',
+        'next_url' => $nextPage ? partiesListUrl($nextPage, true, $search) : '',
     ]);
     exit;
 }
 
-$nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true) : '';
+$nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, $search) : '';
 ?>
 
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> Debtors & Creditors</h1>
     <button onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button>
+</div>
+
+<div class="filter-bar">
+    <form method="GET">
+        <div>
+            <label class="form-label">Search Party</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, type, or GSTIN">
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
+        <?php if ($search !== ''): ?><a href="list.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+    </form>
 </div>
 
 <div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
@@ -133,11 +155,11 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true) 
 
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination no-js-pagination">
-    <?php if ($page > 1): ?><a href="<?= clean(partiesListUrl($page - 1)) ?>">← Prev</a><?php endif; ?>
+    <?php if ($page > 1): ?><a href="<?= clean(partiesListUrl($page - 1, false, $search)) ?>">← Prev</a><?php endif; ?>
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="<?= clean(partiesListUrl($i)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(partiesListUrl($i, false, $search)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
-    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(partiesListUrl($page + 1)) ?>">Next →</a><?php endif; ?>
+    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(partiesListUrl($page + 1, false, $search)) ?>">Next →</a><?php endif; ?>
 </div>
 <?php endif; ?>
 
