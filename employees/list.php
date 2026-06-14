@@ -57,7 +57,7 @@ $employees = $db->fetchAll(
 
 <div class="filter-bar">
     <form method="GET">
-        <div>
+        <div class="filter-main-field">
             <label class="form-label">Search Employee</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, role, phone, salary, date, or status">
         </div>

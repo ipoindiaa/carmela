@@ -27,7 +27,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
 
 <div class="filter-bar">
     <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
-        <div style="min-width:240px;flex:1 1 280px;">
+        <div class="filter-main-field">
             <label class="form-label">Search partner</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type partner name">
         </div>

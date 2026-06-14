@@ -85,7 +85,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="filter-bar">
     <form method="GET">
         <?php if ($requestedType !== ''): ?><input type="hidden" name="type" value="<?= clean($requestedType) ?>"><?php endif; ?>
-        <div style="min-width:240px;flex:1 1 280px;">
+        <div class="filter-main-field filter-main-field-wide">
             <label class="form-label">Search partner</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email, PAN, share, date, or status">
         </div>

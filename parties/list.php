@@ -130,7 +130,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <div class="filter-bar">
     <form method="GET">
-        <div>
+        <div class="filter-main-field">
             <label class="form-label">Search Party</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, type, or GSTIN">
         </div>

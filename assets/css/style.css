@@ -2391,13 +2391,16 @@ html.js .pagination.no-js-pagination { display: none; }
 
 /* ============ FILTER BAR ============ */
 .filter-bar {
-    display: flex; align-items: center; gap: 12px;
-    margin-bottom: 20px; flex-wrap: wrap;
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.74);
-    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px solid rgba(199, 211, 224, 0.85);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 251, 255, 0.9));
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
 }
 
 .entry-menu-legend {
@@ -2479,11 +2482,59 @@ html.js .pagination.no-js-pagination { display: none; }
     display: flex;
     align-items: flex-end;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px;
     width: 100%;
 }
 
-.filter-bar .form-control { width: auto; min-width: 160px; }
+.filter-bar form > div {
+    min-width: 0;
+}
+
+.filter-bar .form-label {
+    margin-bottom: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.filter-bar .form-control {
+    width: auto;
+    min-width: 140px;
+    min-height: 38px;
+    padding: 8px 12px;
+    border-radius: 11px;
+    font-size: 13px;
+}
+
+.filter-bar .btn {
+    min-height: 38px;
+    padding: 8px 14px;
+    border-radius: 11px;
+}
+
+.filter-main-field {
+    flex: 0 1 360px !important;
+    min-width: min(300px, 100%) !important;
+    max-width: 420px;
+}
+
+.filter-main-field.filter-main-field-wide {
+    flex-basis: 420px !important;
+    max-width: 520px;
+}
+
+.filter-bar.filter-bar-chipset {
+    padding: 8px 10px;
+    gap: 8px;
+}
+
+.filter-bar.filter-bar-chipset .btn {
+    min-height: 34px;
+    padding: 6px 12px;
+    border-radius: 10px;
+}
 .top-entry-btn { box-shadow: var(--shadow-sm); }
 
 .sidebar-backdrop {

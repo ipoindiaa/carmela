@@ -26,7 +26,7 @@ $grandTotal = 0;
 
 <div class="filter-bar">
     <form method="GET">
-        <div>
+        <div class="filter-main-field">
             <label class="form-label">Search Debtor</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, or type">
         </div>

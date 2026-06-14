@@ -118,7 +118,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 <div class="filter-bar">
     <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
         <?php if ($filter !== ''): ?><input type="hidden" name="status" value="<?= clean($filter) ?>"><?php endif; ?>
-        <div style="min-width:240px;flex:1 1 260px;">
+        <div class="filter-main-field filter-main-field-wide">
             <label class="form-label">Search Cars</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Number, make, model, year, or status">
         </div>
@@ -127,7 +127,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
     </form>
 </div>
 
-<div class="filter-bar">
+<div class="filter-bar filter-bar-chipset">
     <a href="list.php<?= $search !== '' ? '?q=' . urlencode($search) : '' ?>" class="btn btn-sm <?= !$filter ? 'btn-primary' : 'btn-outline' ?>">All</a>
     <a href="list.php?<?= http_build_query(array_filter(['status' => 'IN_STOCK', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'IN_STOCK' ? 'btn-primary' : 'btn-outline' ?>">In Stock</a>
     <a href="list.php?<?= http_build_query(array_filter(['status' => 'SOLD', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'SOLD' ? 'btn-primary' : 'btn-outline' ?>">Sold</a>
