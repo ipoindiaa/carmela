@@ -45,7 +45,15 @@ $preselectedAccountType = match ($preselectedAccount) {
     'bank' => 'BANK',
     default => '',
 };
-if ($preselectedAccountType !== '') {
+if (get('account_id', '') !== '') {
+    $requestedAccountId = trim((string) get('account_id', ''));
+    foreach ($writablePrimaryAccounts as $account) {
+        if (($account['id'] ?? '') === $requestedAccountId) {
+            $preselectedAccountId = $requestedAccountId;
+            break;
+        }
+    }
+} elseif ($preselectedAccountType !== '') {
     foreach ($writablePrimaryAccounts as $account) {
         if (($account['entity_type'] ?? '') === $preselectedAccountType) {
             $preselectedAccountId = $account['id'];

@@ -1,5 +1,9 @@
 <?php
-$pageTitle = 'Partners';
+$requestedType = strtoupper(trim((string) get('type', '')));
+if (!in_array($requestedType, ['MAIN', 'CARWISE'], true)) {
+    $requestedType = '';
+}
+$pageTitle = $requestedType === 'CARWISE' ? 'Car-wise Partners' : ($requestedType === 'MAIN' ? 'Main Partners' : 'Partners');
 $pageIcon = '<i class="ri-group-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
@@ -29,12 +33,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
             'joined_date' => post('joined_date'),
         ]);
         setFlash('success', "Partner $name added successfully!");
-        redirect('list.php');
+        redirect('list.php' . ($partnerType ? '?type=' . urlencode($partnerType) : ''));
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
 }
 
 $partnerWhere = "WHERE p.business_id = ?";
 $partnerParams = [$businessId];
+if ($requestedType !== '') {
+    $partnerWhere .= " AND p.partner_type = ?";
+    $partnerParams[] = $requestedType;
+}
 if ($search !== '') {
     $partnerWhere .= " AND (
         p.name LIKE ?
@@ -58,31 +66,44 @@ $partners = $db->fetchAll(
 );
 $mainPartners = array_values(array_filter($partners, static fn($partner) => ($partner['partner_type'] ?? 'MAIN') === 'MAIN'));
 $carWisePartners = array_values(array_filter($partners, static fn($partner) => ($partner['partner_type'] ?? 'MAIN') === 'CARWISE'));
+$pageHeading = $requestedType === 'CARWISE' ? 'Car-wise Partners' : ($requestedType === 'MAIN' ? 'Main Partners' : 'Partners');
+$pageDescription = $requestedType === 'CARWISE'
+    ? 'Deal-specific partners for individual cars and changing profit percentages.'
+    : ($requestedType === 'MAIN'
+        ? 'Core business partners for capital, withdrawals, and settlement tracking.'
+        : 'Manage both main business partners and car-wise deal partners.');
 ?>
 
 <div class="page-header">
-    <h1><i class="ri-group-line"></i> Partners</h1>
+    <div>
+        <h1><i class="ri-group-line"></i> <?= clean($pageHeading) ?></h1>
+        <div class="text-muted" style="margin-top:4px;"><?= clean($pageDescription) ?></div>
+    </div>
     <button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button>
 </div>
 
 <div class="filter-bar">
     <form method="GET">
+        <?php if ($requestedType !== ''): ?><input type="hidden" name="type" value="<?= clean($requestedType) ?>"><?php endif; ?>
         <div style="min-width:240px;flex:1 1 280px;">
             <label class="form-label">Search partner</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email, PAN, share, date, or status">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
-        <a href="list.php" class="btn btn-outline btn-sm">Clear</a>
+        <a href="list.php<?= $requestedType !== '' ? '?type=' . urlencode($requestedType) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
     </form>
 </div>
 
+<?php if ($requestedType === ''): ?>
 <div class="card" style="margin-bottom:16px;">
     <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
         <div class="stat-card"><div class="stat-value text-blue"><?= count($mainPartners) ?></div><div class="stat-label">Main Partners</div></div>
         <div class="stat-card"><div class="stat-value text-purple"><?= count($carWisePartners) ?></div><div class="stat-label">Car-wise Partners</div></div>
     </div>
 </div>
+<?php endif; ?>
 
+<?php if ($requestedType !== 'CARWISE'): ?>
 <div class="table-container table-container-fill" style="margin-bottom:20px;">
     <div style="padding:16px 16px 0;font-weight:700;">Main Partners</div>
     <table>
@@ -107,7 +128,9 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
         </tbody>
     </table>
 </div>
+<?php endif; ?>
 
+<?php if ($requestedType !== 'MAIN'): ?>
 <div class="table-container table-container-fill">
     <div style="padding:16px 16px 0;font-weight:700;">Car-wise Partners</div>
     <table>
@@ -132,6 +155,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
         </tbody>
     </table>
 </div>
+<?php endif; ?>
 
 <!-- Add Partner Modal -->
 <div class="modal-overlay" id="add-partner">
@@ -144,8 +168,8 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                 <div class="form-group">
                     <label class="form-label">Partner Type *</label>
                     <select name="partner_type" class="form-control" required>
-                        <option value="MAIN">Main Partner</option>
-                        <option value="CARWISE">Car-wise Partner</option>
+                        <option value="MAIN" <?= $requestedType === 'MAIN' ? 'selected' : '' ?>>Main Partner</option>
+                        <option value="CARWISE" <?= $requestedType === 'CARWISE' ? 'selected' : '' ?>>Car-wise Partner</option>
                     </select>
                 </div>
                 <div class="form-group"><label class="form-label">Full Name *</label><input type="text" name="name" class="form-control" required></div>

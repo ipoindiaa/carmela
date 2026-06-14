@@ -62,9 +62,13 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-car-line"></i></span>
                     Cars
                 </a>
-                <a href="<?= APP_URL ?>partners/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'partners/') !== false ? 'active' : '' ?>">
+                <a href="<?= APP_URL ?>partners/list.php?type=MAIN" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'partners/') !== false && (($_GET['type'] ?? '') !== 'CARWISE') ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-group-line"></i></span>
-                    Partners
+                    Main Partners
+                </a>
+                <a href="<?= APP_URL ?>partners/list.php?type=CARWISE" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'partners/') !== false && (($_GET['type'] ?? '') === 'CARWISE') ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-team-line"></i></span>
+                    Car-wise Partners
                 </a>
                 <a href="<?= APP_URL ?>employees/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'employees/') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-user-star-line"></i></span>

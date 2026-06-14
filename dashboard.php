@@ -21,6 +21,7 @@ foreach ($tabMeta as $bookKey => $meta) {
         $tabKey = $meta['tab'] . ($index ? '-' . ($index + 1) : '');
         $availableTabs[$tabKey] = [
             'book_key' => $bookKey,
+            'book_label' => $bookKey === 'cash_book' ? 'Cash Book' : 'Bank Book',
             'label' => $account['name'] ?: $meta['fallback_label'],
             'icon' => $meta['icon'],
             'class' => $meta['class'],
@@ -166,9 +167,15 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
 ?>
 
 <section class="dashboard-hero">
-    <div>
+    <div class="dashboard-hero-main">
         <div class="dashboard-eyebrow"><?= APP_NAME ?> Command Center</div>
+        <h1>Car business control, made clear and fast.</h1>
         <p>Manage cash, bank, car expenses, partners, salary, loans, and large split bills from one New Entry flow.</p>
+        <div class="dashboard-hero-pills">
+            <span><i class="ri-car-line"></i> In Stock <?= intval($totalCars['cnt'] ?? 0) ?></span>
+            <span><i class="ri-check-double-line"></i> Sold <?= intval($totalSold['cnt'] ?? 0) ?></span>
+            <span><i class="ri-bank-card-line"></i> Books <?= count($availableTabs) ?></span>
+        </div>
         <div class="dashboard-hero-actions">
             <?php if ($canWritePrimaryBooks): ?>
                 <a href="transactions/new.php" class="btn btn-primary btn-lg"><i class="ri-add-circle-line"></i> New Entry</a>
@@ -177,17 +184,57 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <a href="transactions/list.php" class="btn btn-outline btn-lg"><i class="ri-list-check-2"></i> View Entries</a>
         </div>
     </div>
-    <?php if (!isClientHiddenBook('profit_loss')): ?>
-    <div class="dashboard-focus-card">
-        <span>Current Month P&L</span>
-        <strong><?= formatAmount($monthProfit) ?></strong>
-        <div class="dashboard-focus-list">
-            <div><i class="ri-arrow-down-circle-line"></i> Income: <?= formatAmount($monthIncome['total'] ?? 0) ?></div>
-            <div><i class="ri-arrow-up-circle-line"></i> Expense: <?= formatAmount($monthExpense['total'] ?? 0) ?></div>
-            <div><i class="ri-notification-3-line"></i> Pending alerts: <?= count($alerts) ?></div>
+    <div class="dashboard-hero-visual">
+        <div class="dashboard-car-showcase">
+            <div class="dashboard-showcase-copy">
+                <div class="dashboard-showcase-label">Today’s Business View</div>
+                <div class="dashboard-showcase-grid">
+                    <div>
+                        <strong><?= intval($totalEmployees['cnt'] ?? 0) ?></strong>
+                        <span>Employees</span>
+                    </div>
+                    <div>
+                        <strong><?= intval($totalPartners['cnt'] ?? 0) ?></strong>
+                        <span>Partners</span>
+                    </div>
+                    <div>
+                        <strong><?= count($alerts) ?></strong>
+                        <span>Alerts</span>
+                    </div>
+                </div>
+            </div>
+            <div class="dashboard-car-illustration" aria-hidden="true">
+                <div class="dashboard-road-line"></div>
+                <div class="dashboard-car-body">
+                    <div class="dashboard-car-roof"></div>
+                    <div class="dashboard-car-window dashboard-car-window-front"></div>
+                    <div class="dashboard-car-window dashboard-car-window-back"></div>
+                    <div class="dashboard-car-headlight"></div>
+                    <div class="dashboard-car-wheel dashboard-car-wheel-front"></div>
+                    <div class="dashboard-car-wheel dashboard-car-wheel-back"></div>
+                </div>
+                <div class="dashboard-floating-chip dashboard-chip-profit">
+                    <i class="ri-line-chart-line"></i>
+                    <span>P&amp;L</span>
+                </div>
+                <div class="dashboard-floating-chip dashboard-chip-stock">
+                    <i class="ri-stack-line"></i>
+                    <span>Cars</span>
+                </div>
+            </div>
         </div>
+        <?php if (!isClientHiddenBook('profit_loss')): ?>
+        <div class="dashboard-focus-card">
+            <span>Current Month P&amp;L</span>
+            <strong><?= formatAmount($monthProfit) ?></strong>
+            <div class="dashboard-focus-list">
+                <div><i class="ri-arrow-down-circle-line"></i> Income: <?= formatAmount($monthIncome['total'] ?? 0) ?></div>
+                <div><i class="ri-arrow-up-circle-line"></i> Expense: <?= formatAmount($monthExpense['total'] ?? 0) ?></div>
+                <div><i class="ri-notification-3-line"></i> Pending alerts: <?= count($alerts) ?></div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 </section>
 
 <?php if (!empty($availableTabs)): ?>
@@ -196,12 +243,14 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <a href="?tab=<?= clean($tabKey) ?>" class="dashboard-book-card <?= $activeTab === $tabKey ? 'active' : '' ?>">
                 <div class="dashboard-book-top">
                     <div>
+                        <div class="dashboard-book-tag dashboard-book-tag-<?= clean($tab['class']) ?>"><?= clean($tab['book_label']) ?></div>
                         <div class="dashboard-book-label"><?= clean($tab['label']) ?></div>
+                        <div class="dashboard-book-meta"><?= clean($tab['account']['code'] ?? '') ?><?php if (!empty($tab['account']['current_balance_type'])): ?> • <?= clean($tab['account']['current_balance_type']) ?><?php endif; ?></div>
                         <div class="dashboard-book-balance"><?= formatAmount($tab['account']['current_balance'] ?? 0) ?></div>
                     </div>
                     <div class="dashboard-book-icon"><?= $tab['icon'] ?></div>
                 </div>
-                <span class="text-muted">Click kari recent ledger jo.</span>
+                <span class="text-muted"><?= $activeTab === $tabKey ? 'Currently showing this account ledger.' : 'Open this account ledger.' ?></span>
             </a>
         <?php endforeach; ?>
     </div>
@@ -247,7 +296,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
         <div class="dashboard-panel-head">
             <h3><i class="ri-book-open-line"></i> <?= clean($activeAccountLabel) ?> Recent Ledger</h3>
             <?php if ($activeBookKey && Auth::hasBookAccess($activeBookKey, 'write')): ?>
-                <a href="transactions/new.php?account=<?= clean($activeTab) ?>" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> Entry</a>
+                <a href="transactions/new.php?account_id=<?= clean($activeAccountId) ?>" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> Entry</a>
             <?php endif; ?>
         </div>
         <div class="dashboard-panel-body">

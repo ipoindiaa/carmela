@@ -36,11 +36,12 @@ $currentBalance = floatval($position['current_balance'] ?? 0);
 $capitalLabel = $capitalBalance >= 0 ? 'Partner Capital Credit' : 'Capital Overdrawn';
 $currentLabel = $currentBalance >= 0 ? 'Business Owes Partner' : 'Partner Owes Business';
 $partnerTypeLabel = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise Partner' : 'Main Partner';
+$backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MAIN';
 ?>
 
 <div class="page-header">
     <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?> <span class="badge badge-purple" style="vertical-align:middle;"><?= clean($partnerTypeLabel) ?></span></h1>
-    <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+    <a href="list.php?type=<?= clean($backType) ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
 <div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
