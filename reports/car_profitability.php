@@ -10,7 +10,7 @@ $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $cars = $db->fetchAll(
     "SELECT c.*, a.current_balance as total_cost 
      FROM cars c LEFT JOIN accounts a ON a.id = c.account_id 
-     WHERE c.business_id = ? ORDER BY c.status, c.created_at DESC", [$businessId]);
+     WHERE c.business_id = ? ORDER BY c.created_at DESC", [$businessId]);
 
 $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 ?>

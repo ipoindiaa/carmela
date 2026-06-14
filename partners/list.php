@@ -61,7 +61,7 @@ $partners = $db->fetchAll(
     "SELECT p.*, a.current_balance as capital_balance, a.current_balance_type
      FROM partners p LEFT JOIN accounts a ON a.id = p.capital_account_id
      $partnerWhere
-     ORDER BY p.partner_type, p.name",
+     ORDER BY p.partner_type, p.created_at DESC, p.name",
     $partnerParams
 );
 $mainPartners = array_values(array_filter($partners, static fn($partner) => ($partner['partner_type'] ?? 'MAIN') === 'MAIN'));
@@ -107,7 +107,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill" style="margin-bottom:20px;">
     <div style="padding:16px 16px 0;font-weight:700;">Main Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($mainPartners)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No main partners yet</td></tr>
@@ -119,7 +119,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td><?= clean($p['pan'] ?: '-') ?></td>
                     <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
                     <td class="text-right amount"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
-                    <td><?= formatDate($p['joined_date']) ?></td>
+                    <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                 </tr>
@@ -134,7 +134,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill">
     <div style="padding:16px 16px 0;font-weight:700;">Car-wise Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($carWisePartners)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No car-wise partners yet</td></tr>
@@ -146,7 +146,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td><?= clean($p['pan'] ?: '-') ?></td>
                     <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
                     <td class="text-right amount"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
-                    <td><?= formatDate($p['joined_date']) ?></td>
+                    <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                 </tr>

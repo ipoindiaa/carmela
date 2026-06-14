@@ -51,7 +51,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 <?php if ($canReadPrimaryBooks): ?>
                 <a href="<?= APP_URL ?>transactions/list.php" class="nav-link <?= $currentPage === 'list' && strpos($_SERVER['PHP_SELF'], 'transactions') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-exchange-line"></i></span>
-                    Transactions
+                    All Entries
                 </a>
                 <?php endif; ?>
             </div>

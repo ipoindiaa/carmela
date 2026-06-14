@@ -9,11 +9,11 @@ if (!$emp) { setFlash('error', 'Employee not found.'); redirect('list.php'); }
 
 $advanceOutstanding = (($emp['advance_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($emp['advance_balance'] ?? 0)) : 0;
 
-$salaryHistory = $db->fetchAll("SELECT * FROM salary_records WHERE employee_id = ? ORDER BY year DESC, month DESC", [$id]);
+$salaryHistory = $db->fetchAll("SELECT * FROM salary_records WHERE employee_id = ? ORDER BY processed_date DESC, created_at DESC", [$id]);
 $advanceLedger = $db->fetchAll(
-    "SELECT je.entry_date, je.reference_no, je.narration, jl.amount, jl.entry_type
+    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC", [$emp['advance_account_id']]);
+     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$emp['advance_account_id']]);
 ?>
 
 <div class="page-header">
@@ -38,13 +38,13 @@ $advanceLedger = $db->fetchAll(
     <div class="card">
         <div class="card-header"><h3>Salary History</h3></div>
         <div class="card-body" style="padding:0;">
-            <table><thead><tr><th>Month</th><th class="text-right">Gross</th><th class="text-right">Advance Ded.</th><th class="text-right">Net Paid</th><th>Mode</th><th>Date</th></tr></thead>
+            <table><thead><tr><th>Month</th><th class="text-right">Gross</th><th class="text-right">Advance Ded.</th><th class="text-right">Net Paid</th><th>Mode</th><th>Date / Time</th></tr></thead>
             <tbody>
             <?php foreach ($salaryHistory as $s): ?>
             <tr><td><?= date('F', mktime(0,0,0,$s['month'],1)) ?> <?= $s['year'] ?></td><td class="text-right amount"><?= formatAmount($s['gross_salary']) ?></td>
                 <td class="text-right amount text-yellow"><?= $s['advance_deducted'] > 0 ? formatAmount($s['advance_deducted']) : '-' ?></td>
                 <td class="text-right amount text-green"><?= formatAmount($s['net_paid']) ?></td>
-                <td><span class="badge badge-blue"><?= $s['payment_mode'] ?></span></td><td><?= formatDate($s['processed_date']) ?></td></tr>
+                <td><span class="badge badge-blue"><?= $s['payment_mode'] ?></span></td><td><?= renderDateTimeStack($s['processed_date'], $s['created_at']) ?></td></tr>
             <?php endforeach; ?>
             <?php if (empty($salaryHistory)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No salary records</td></tr><?php endif; ?>
             </tbody></table>
@@ -53,10 +53,10 @@ $advanceLedger = $db->fetchAll(
     <div class="card">
         <div class="card-header"><h3>Advance Ledger</h3></div>
         <div class="card-body" style="padding:0;">
-            <table><thead><tr><th>Date</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
+            <table><thead><tr><th>Date / Time</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
             <tbody>
             <?php foreach ($advanceLedger as $l): ?>
-            <tr><td><?= formatDate($l['entry_date']) ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
+            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>

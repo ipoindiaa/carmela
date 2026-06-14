@@ -80,7 +80,7 @@ $parties = $db->fetchAll(
      FROM debtors_creditors dc
      LEFT JOIN accounts a ON a.id = dc.account_id
      WHERE {$partyWhere}
-     ORDER BY dc.type, dc.name
+     ORDER BY dc.created_at DESC, dc.name
      LIMIT ? OFFSET ?",
     $listParams
 );

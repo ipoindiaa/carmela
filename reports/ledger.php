@@ -45,12 +45,25 @@ if ($accountId) {
         ];
 
         $entries = $db->fetchAll(
-            "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+            "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
              FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
              WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date BETWEEN ? AND ?
              ORDER BY je.entry_date, je.created_at", [$accountId, $dateFrom, $dateTo]);
     }
 }
+
+$displayEntries = [];
+$bal = $openingBalanceSigned;
+foreach ($entries as $entry) {
+    if ($entry['entry_type'] === 'DR') {
+        $bal += $entry['amount'];
+    } else {
+        $bal -= $entry['amount'];
+    }
+    $entry['running_balance'] = $bal;
+    $displayEntries[] = $entry;
+}
+$displayEntries = array_reverse($displayEntries);
 ?>
 
 <div class="page-header">
@@ -84,18 +97,16 @@ if ($accountId) {
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
+        <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
-        <?php $bal = $openingBalanceSigned; foreach ($entries as $e):
-            if ($e['entry_type'] === 'DR') $bal += $e['amount']; else $bal -= $e['amount'];
-        ?>
+        <?php foreach ($displayEntries as $e): ?>
         <tr>
-            <td><?= formatDate($e['entry_date']) ?></td><td><?= $e['reference_no'] ?></td>
+            <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><?= $e['reference_no'] ?></td>
             <td><span class="badge badge-blue" style="font-size:10px;"><?= TXN_TYPES[$e['transaction_type']] ?? $e['transaction_type'] ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($bal)) ?> <?= $bal >= 0 ? 'Dr' : 'Cr' ?></td>
+            <td class="text-right amount <?= $e['running_balance'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($e['running_balance'])) ?> <?= $e['running_balance'] >= 0 ? 'Dr' : 'Cr' ?></td>
         </tr>
         <?php endforeach; ?>
         <?php if (empty($entries)): ?><tr><td colspan="7" class="text-center text-muted" style="padding:30px;">No entries for this period</td></tr><?php endif; ?>

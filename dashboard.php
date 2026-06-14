@@ -250,7 +250,13 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                     </div>
                     <div class="dashboard-book-icon"><?= $tab['icon'] ?></div>
                 </div>
-                <span class="text-muted"><?= $activeTab === $tabKey ? 'Currently showing this account ledger.' : 'Open this account ledger.' ?></span>
+                <div class="dashboard-book-foot">
+                    <span class="dashboard-book-state <?= $activeTab === $tabKey ? 'active' : '' ?>">
+                        <i class="<?= $activeTab === $tabKey ? 'ri-check-line' : 'ri-arrow-right-line' ?>"></i>
+                        <?= $activeTab === $tabKey ? 'Selected' : 'Open ledger' ?>
+                    </span>
+                    <span class="dashboard-book-link">Recent entries</span>
+                </div>
             </a>
         <?php endforeach; ?>
     </div>
@@ -318,7 +324,8 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                         </div>
                         <div class="activity-side">
                             <strong class="amount <?= $line['entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($line['amount']) ?></strong>
-                            <span><?= clean($line['reference_no']) ?> · <?= formatDate($line['entry_date']) ?></span>
+                            <span><?= clean($line['reference_no']) ?></span>
+                            <?= renderDateTimeStack($line['entry_date'], $line['created_at'] ?? null) ?>
                         </div>
                     </a>
                 <?php endforeach; ?>
@@ -363,7 +370,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                         </div>
                         <div class="activity-side">
                             <strong><?= clean($txn['reference_no']) ?></strong>
-                            <span><?= formatDate($txn['entry_date']) ?></span>
+                            <?= renderDateTimeStack($txn['entry_date'], $txn['created_at'] ?? null) ?>
                         </div>
                     </a>
                 <?php endforeach; ?>

@@ -31,7 +31,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Bill Ref</th><th>Date</th><th>Bill Type</th><th>Main Book</th><th class="text-right">Amount</th><th>Status</th><th>Daily Entry</th><th>Narration</th></tr></thead>
+        <thead><tr><th>Bill Ref</th><th>Date / Time</th><th>Bill Type</th><th>Main Book</th><th class="text-right">Amount</th><th>Status</th><th>Daily Entry</th><th>Narration</th></tr></thead>
         <tbody>
             <?php if (empty($vouchers)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 32px;">No journal vouchers found for this period.</td></tr>
@@ -39,7 +39,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
                 <?php foreach ($vouchers as $voucher): ?>
                     <tr>
                         <td class="text-bold"><?= clean($voucher['reference_no']) ?></td>
-                        <td><?= formatDate($voucher['voucher_date']) ?></td>
+                        <td><?= renderDateTimeStack($voucher['voucher_date'], $voucher['created_at'] ?? null) ?></td>
                         <td><?= clean($voucher['voucher_type']) ?></td>
                         <td><?= clean($voucher['primary_account_name']) ?> <span class="dr-cr-pill <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= $voucher['primary_entry_type'] ?></span></td>
                         <td class="text-right amount <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($voucher['primary_amount']) ?></td>

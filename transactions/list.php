@@ -1,5 +1,5 @@
 <?php
-$pageTitle = 'Transactions';
+$pageTitle = 'All Entries';
 $pageIcon = '<i class="ri-exchange-line"></i>';
 $isLazyRequest = ($_GET['lazy'] ?? '') === '1';
 if ($isLazyRequest) {
@@ -37,6 +37,16 @@ function transactionsListUrl($page, $filterType, $filterDate, $filterStatus, $la
     return 'list.php?' . http_build_query($query);
 }
 
+function transactionContextLabel($type) {
+    return match ($type) {
+        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_SALE' => 'Receive / Jama',
+        'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'Payment / Expense',
+        'CONTRA_TRANSFER' => 'Cash / Bank Transfer',
+        'JOURNAL_VOUCHER' => 'Large Bill Split',
+        default => 'Entry',
+    };
+}
+
 function renderTransactionRows($entries) {
     ob_start();
     ?>
@@ -46,9 +56,17 @@ function renderTransactionRows($entries) {
         <?php foreach ($entries as $entry): ?>
         <tr>
             <td><a href="view.php?id=<?= $entry['id'] ?>" class="text-bold"><?= $entry['reference_no'] ?></a></td>
-            <td><?= formatDate($entry['entry_date']) ?></td>
-            <td><span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span></td>
-            <td style="max-width: 250px;"><?= clean(mb_substr($entry['narration'] ?? '', 0, 60)) ?></td>
+            <td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td>
+            <td>
+                <span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span>
+                <div class="transaction-context-chip"><?= clean(transactionContextLabel($entry['transaction_type'])) ?></div>
+            </td>
+            <td style="max-width: 250px;">
+                <?php $fullNarration = trim((string) ($entry['narration'] ?? '')); ?>
+                <span class="narration-tooltip" data-full-text="<?= clean($fullNarration) ?>">
+                    <?= clean(mb_strimwidth($fullNarration, 0, 58, '…')) ?>
+                </span>
+            </td>
             <td class="text-muted">
                 <?php if ($entry['car_reg']): ?><i class="ri-car-line"></i> <?= formatRegistrationNo($entry['car_reg']) ?><?php endif; ?>
                 <?php if ($entry['partner_name']): ?><i class="ri-user-line"></i> <?= clean($entry['partner_name']) ?><?php endif; ?>
@@ -126,13 +144,23 @@ $nextUrl = $page < $pagination['total_pages']
 ?>
 
 <div class="page-header">
-    <h1><i class="ri-exchange-line"></i> Transactions</h1>
+    <div>
+        <h1><i class="ri-exchange-line"></i> All Entries</h1>
+        <div class="text-muted" style="margin-top:4px;">See every business entry clearly: Receive/Jama, Payments, cash-bank transfers, and large bill splits.</div>
+    </div>
     <div style="display:flex; gap:12px;">
         <?php if (Auth::hasBookAccess('jv_register', 'write')): ?>
             <a href="new.php?type=JOURNAL_VOUCHER" class="btn btn-outline"><i class="ri-bill-line"></i> Large Bill Split</a>
         <?php endif; ?>
         <a href="new.php" class="btn btn-primary"><i class="ri-add-line"></i> New Entry</a>
     </div>
+</div>
+
+<div class="entry-menu-legend">
+    <span><i class="ri-arrow-down-circle-line"></i> Receive / Jama</span>
+    <span><i class="ri-arrow-up-circle-line"></i> Payment / Expense</span>
+    <span><i class="ri-bank-card-line"></i> Cash / Bank</span>
+    <span><i class="ri-bill-line"></i> Large Bill Split</span>
 </div>
 
 <div class="filter-bar">
@@ -159,7 +187,7 @@ $nextUrl = $page < $pagination['total_pages']
         <thead>
             <tr>
                 <th>Ref No.</th>
-                <th>Date</th>
+                <th>Date / Time</th>
                 <th>Type</th>
                 <th>Narration</th>
                 <th>Related</th>

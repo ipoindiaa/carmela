@@ -35,9 +35,9 @@ $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
 // Car ledger entries
 $ledger = $db->fetchAll(
-    "SELECT je.id as entry_id, je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+    "SELECT je.id as entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date, je.created_at", [$car['account_id']]);
+     WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$car['account_id']]);
 
 // Partner contributions
 $contributions = $db->fetchAll(
@@ -45,7 +45,7 @@ $contributions = $db->fetchAll(
      FROM car_partner_contributions cpc
      JOIN partners p ON p.id = cpc.partner_id
      WHERE cpc.car_id = ?
-     ORDER BY cpc.contribution_date, cpc.created_at", [$id]);
+     ORDER BY cpc.contribution_date DESC, cpc.created_at DESC", [$id]);
 ?>
 
 <div class="page-header">
@@ -171,7 +171,7 @@ $contributions = $db->fetchAll(
                 <p class="text-muted">No partner contributions. Fully business-funded.</p>
             <?php else: ?>
                 <table style="width: 100%;">
-                    <thead><tr><th>Partner</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date</th></tr></thead>
+                    <thead><tr><th>Partner</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date / Time</th></tr></thead>
                     <tbody>
                     <?php foreach ($contributions as $c): ?>
                         <tr>
@@ -179,7 +179,7 @@ $contributions = $db->fetchAll(
                             <td class="text-right amount"><?= formatAmount($c['amount']) ?></td>
                             <td class="text-right"><?= number_format((float) $c['funding_pct'], 2) ?>%</td>
                             <td class="text-right"><?= number_format((float) $c['profit_share_pct'], 2) ?>%</td>
-                            <td><?= formatDate($c['contribution_date']) ?></td>
+                            <td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -223,14 +223,14 @@ $contributions = $db->fetchAll(
     <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Ledger</h3></div>
     <div class="card-body" style="padding: 0;">
         <table>
-            <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
                     <tr><td colspan="6" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
                 <?php else: ?>
                     <?php foreach ($ledger as $l): ?>
                     <tr>
-                        <td><?= formatDate($l['entry_date']) ?></td>
+                        <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= $l['entry_id'] ?>"><?= $l['reference_no'] ?></a></td>
                         <td><span class="badge badge-blue" style="font-size: 10px;"><?= TXN_TYPES[$l['transaction_type']] ?? $l['transaction_type'] ?></span></td>
                         <td><?= clean(mb_substr($l['narration'] ?? '', 0, 50)) ?></td>

@@ -32,6 +32,35 @@ function formatDate($date, $format = 'd M Y') {
 }
 
 /**
+ * Format time for display.
+ */
+function formatTime($dateTime, $format = 'h:i A') {
+    if (!$dateTime) return '-';
+    $timestamp = strtotime($dateTime);
+    if ($timestamp === false) return '-';
+    return date($format, $timestamp);
+}
+
+/**
+ * Render date + time in a compact two-line stack.
+ */
+function renderDateTimeStack($date, $timeSource = null, $dateFormat = 'd M Y', $timeFormat = 'h:i A') {
+    if (!$date && !$timeSource) {
+        return '<span class="date-time-stack"><span class="date-time-primary">-</span><span class="date-time-secondary">-</span></span>';
+    }
+
+    $dateLabel = formatDate($date ?: $timeSource, $dateFormat);
+    $resolvedTimeSource = $timeSource ?: $date;
+    $hasTime = is_string($resolvedTimeSource) && preg_match('/\d{1,2}:\d{2}/', $resolvedTimeSource);
+    $timeLabel = $hasTime ? formatTime($resolvedTimeSource, $timeFormat) : '-';
+
+    return '<span class="date-time-stack">'
+        . '<span class="date-time-primary">' . clean($dateLabel) . '</span>'
+        . '<span class="date-time-secondary">' . clean($timeLabel) . '</span>'
+        . '</span>';
+}
+
+/**
  * Get current financial year
  */
 function getCurrentFY($date = null) {

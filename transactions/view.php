@@ -100,12 +100,12 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <div class="card-body">
             <table style="width: 100%;">
                 <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Date</td><td><?= formatDate($entry['entry_date']) ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= $entry['status'] ?></span></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
 	                <tr><td class="text-muted" style="padding: 8px 0;">Created By</td><td><?= clean($entry['created_by_name']) ?></td></tr>
-	                <tr><td class="text-muted" style="padding: 8px 0;">Created At</td><td><?= formatDate($entry['created_at'], 'd M Y, h:i A') ?></td></tr>
+	                <tr><td class="text-muted" style="padding: 8px 0;">Created At</td><td><?= renderDateTimeStack($entry['created_at'], $entry['created_at']) ?></td></tr>
 	                <?php if (!empty($entry['journal_voucher_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Voucher</td><td><a href="../reports/jv_register.php"><?= clean($entry['voucher_reference_no'] ?: $entry['journal_voucher_id']) ?></a></td></tr><?php endif; ?>
 	                <?php if ($entry['car_reg']): ?><tr><td class="text-muted" style="padding: 8px 0;">Car</td><td><a href="../cars/view.php?id=<?= $entry['car_id'] ?>"><?= formatRegistrationNo($entry['car_reg']) ?></a></td></tr><?php endif; ?>
                 <?php if ($entry['partner_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Partner</td><td><?= clean($entry['partner_name']) ?></td></tr><?php endif; ?>

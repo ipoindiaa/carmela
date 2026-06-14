@@ -57,13 +57,30 @@ if ($bankAccount) {
 $entries = [];
 if ($bankAccount) {
     $entries = $db->fetchAll(
-        "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+        "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
          FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date BETWEEN ? AND ?
          ORDER BY je.entry_date, je.created_at",
         [$bankAccount['id'], $dateFrom, $dateTo]
     );
 }
+
+$displayEntries = [];
+$bal = $openingBalanceSigned;
+$totalDr = 0;
+$totalCr = 0;
+foreach ($entries as $entry) {
+    if ($entry['entry_type'] === 'DR') {
+        $bal += $entry['amount'];
+        $totalDr += $entry['amount'];
+    } else {
+        $bal -= $entry['amount'];
+        $totalCr += $entry['amount'];
+    }
+    $entry['running_balance'] = $bal;
+    $displayEntries[] = $entry;
+}
+$displayEntries = array_reverse($displayEntries);
 ?>
 
 <div class="page-header">
@@ -99,19 +116,16 @@ if ($bankAccount) {
 
 <div class="table-container table-container-fill">
     <table class="table-total-room">
-        <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Deposit (Dr)</th><th class="text-right credit-amount">Withdrawal (Cr)</th><th class="text-right">Balance</th></tr></thead>
+        <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Deposit (Dr)</th><th class="text-right credit-amount">Withdrawal (Cr)</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
-        <?php $bal = $openingBalanceSigned; $totalDr = 0; $totalCr = 0; ?>
-        <?php foreach ($entries as $e): 
-            if ($e['entry_type'] === 'DR') { $bal += $e['amount']; $totalDr += $e['amount']; } else { $bal -= $e['amount']; $totalCr += $e['amount']; }
-        ?>
+        <?php foreach ($displayEntries as $e): ?>
         <tr>
-            <td><?= formatDate($e['entry_date']) ?></td><td><?= $e['reference_no'] ?></td>
+            <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><?= $e['reference_no'] ?></td>
             <td><span class="badge badge-blue" style="font-size:10px;"><?= TXN_TYPES[$e['transaction_type']] ?? $e['transaction_type'] ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
-            <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
+            <td class="text-right amount <?= $e['running_balance'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($e['running_balance']) ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody>

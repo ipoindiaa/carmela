@@ -2897,6 +2897,7 @@ class AccountingEngine {
                         'reference_no' => $row['reference_no'],
                         'transaction_type' => $row['transaction_type'],
                         'entry_date' => $row['entry_date'],
+                        'created_at' => $row['created_at'],
                         'narration' => trim((string) ($row['line_narration'] ?: $row['entry_narration'] ?: '')),
                         'original_amount' => $amount,
                         'outstanding_amount' => $amount,

@@ -10,6 +10,9 @@ if (!$party) { setFlash('error', 'Party not found.'); redirect('list.php'); }
 
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $openItems = $engine->getPartyOpenItems($party['id']);
+usort($openItems, static function ($left, $right) {
+    return strtotime(($right['entry_date'] ?? '') . ' ' . ($right['created_at'] ?? '')) <=> strtotime(($left['entry_date'] ?? '') . ' ' . ($left['created_at'] ?? ''));
+});
 $openOutstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
 
 $debtorOutstanding = in_array($party['type'], ['DEBTOR', 'BUYER'], true) && ($party['current_balance_type'] ?? 'DR') === 'DR'
@@ -17,9 +20,9 @@ $debtorOutstanding = in_array($party['type'], ['DEBTOR', 'BUYER'], true) && ($pa
     : 0;
 
 $ledger = $db->fetchAll(
-    "SELECT je.entry_date, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date", [$party['account_id']]);
+     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
 ?>
 
 <div class="page-header">
@@ -43,11 +46,11 @@ $ledger = $db->fetchAll(
     <div class="card-header"><h3>Open Items</h3></div>
     <div class="card-body" style="padding:0;">
         <table>
-            <thead><tr><th>Date</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Pending</th><th class="text-right">Age</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Pending</th><th class="text-right">Age</th></tr></thead>
             <tbody>
             <?php foreach ($openItems as $item): $days = max(0, (int) floor((time() - strtotime($item['entry_date'])) / 86400)); ?>
                 <tr>
-                    <td><?= formatDate($item['entry_date']) ?></td>
+                    <td><?= renderDateTimeStack($item['entry_date'], $item['created_at'] ?? null) ?></td>
                     <td><?= clean($item['reference_no']) ?></td>
                     <td><span class="badge badge-blue"><?= TXN_TYPES[$item['transaction_type']] ?? $item['transaction_type'] ?></span></td>
                     <td><?= clean(mb_substr($item['narration'] ?? '', 0, 60)) ?></td>
@@ -65,12 +68,10 @@ $ledger = $db->fetchAll(
     <div class="card-header"><h3>Account Ledger</h3></div>
     <div class="card-body" style="padding:0;">
         <table>
-            <thead><tr><th>Date</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>
-            <?php $runBal = 0; foreach ($ledger as $l): 
-                $runBal += $l['entry_type'] === 'DR' ? $l['amount'] : -$l['amount'];
-            ?>
-            <tr><td><?= formatDate($l['entry_date']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,50)) ?></td>
+            <?php foreach ($ledger as $l): ?>
+            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,50)) ?></td>
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>

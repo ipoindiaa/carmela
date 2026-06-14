@@ -48,7 +48,7 @@ if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
 
         <table style="width: 100%; margin-bottom: 20px;">
             <tr><td class="text-muted" style="padding: 8px 0;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
-            <tr><td class="text-muted" style="padding: 8px 0;">Date</td><td><?= formatDate($entry['entry_date']) ?></td></tr>
+            <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
             <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></td></tr>
             <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
         </table>

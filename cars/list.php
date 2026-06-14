@@ -41,7 +41,7 @@ function renderCarRows($cars) {
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
-            <td><?= formatDate($car['purchase_date']) ?></td>
+            <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
             <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
             <td class="text-right amount"><?= formatAmount($totalCost) ?></td>
             <td class="text-right amount">
@@ -142,7 +142,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th>Reg. No.</th>
                 <th>Make / Model</th>
                 <th>Year</th>
-                <th>Purchase Date</th>
+                <th>Purchase Date / Time</th>
                 <th class="text-right">Purchase Price</th>
                 <th class="text-right">Total Cost</th>
                 <th class="text-right">Sale Price</th>
