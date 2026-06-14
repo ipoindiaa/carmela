@@ -45,12 +45,12 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 </div>
 
 <div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
-    <div class="stat-card"><div class="stat-value text-green"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Total Invested</div></div>
-    <div class="stat-card"><div class="stat-value text-red"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Total Withdrawn</div></div>
-    <div class="stat-card"><div class="stat-value <?= $capitalBalance >= 0 ? 'text-blue' : 'text-red' ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
-    <div class="stat-card"><div class="stat-value <?= $currentBalance >= 0 ? 'text-purple' : 'text-red' ?>"><?= formatAmount($currentBalance, true) ?></div><div class="stat-label"><?= clean($currentLabel) ?></div></div>
-    <div class="stat-card"><div class="stat-value text-yellow"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
-    <div class="stat-card"><div class="stat-value text-red"><?= formatAmount(($position['pending_payable'] ?? 0) + ($position['pending_receivable'] ?? 0)) ?></div><div class="stat-label">Pending Settlements</div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Total Invested</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Total Withdrawn</div></div>
+    <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
+    <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></div><div class="stat-label"><?= clean($currentLabel) ?></div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
+    <div class="stat-card"><div class="stat-value <?= (($position['pending_payable'] ?? 0) > ($position['pending_receivable'] ?? 0)) ? 'flow-out' : 'flow-in' ?>"><?= formatAmount(($position['pending_payable'] ?? 0) + ($position['pending_receivable'] ?? 0)) ?></div><div class="stat-label">Pending Settlements</div></div>
 </div>
 
 <div class="grid-2">
@@ -109,8 +109,8 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                 <tr>
                     <td><a href="../cars/view.php?id=<?= $settlement['car_id'] ?>"><?= clean(formatRegistrationNo($settlement['registration_no'])) ?></a></td>
                     <td><?= clean($settlement['direction']) ?></td>
-                    <td class="text-right amount"><?= formatAmount($settlement['profit_amount']) ?></td>
-                    <td class="text-right amount"><?= formatAmount($settlement['outstanding_amount']) ?></td>
+                    <td class="text-right amount <?= $settlement['direction'] === 'PAYABLE' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($settlement['profit_amount']) ?></td>
+                    <td class="text-right amount <?= $settlement['direction'] === 'PAYABLE' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($settlement['outstanding_amount']) ?></td>
                     <td><span class="badge badge-blue"><?= clean($settlement['status']) ?></span></td>
                 </tr>
                 <?php endforeach; ?>

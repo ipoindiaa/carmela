@@ -42,12 +42,12 @@ function renderCarRows($cars) {
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
-            <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
-            <td class="text-right amount"><?= formatAmount($totalCost) ?></td>
-            <td class="text-right amount">
+            <td class="text-right amount flow-out"><?= formatAmount($car['purchase_price']) ?></td>
+            <td class="text-right amount flow-out"><?= formatAmount($totalCost) ?></td>
+            <td class="text-right amount flow-in">
                 <?php if ($car['sale_price']): ?>
                     <?= formatAmount($car['sale_price']) ?>
-                    <?php if ($commissionAmount > 0): ?><div class="text-muted" style="font-size:11px;">+ Comm <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
+                    <?php if ($commissionAmount > 0): ?><div class="flow-in" style="font-size:11px;">+ Comm <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
                 <?php else: ?>
                     -
                 <?php endif; ?>

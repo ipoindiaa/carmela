@@ -118,7 +118,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td><?= clean($p['phone'] ?: '-') ?></td>
                     <td><?= clean($p['pan'] ?: '-') ?></td>
                     <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
-                    <td class="text-right amount"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
+                    <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
@@ -145,7 +145,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td><?= clean($p['phone'] ?: '-') ?></td>
                     <td><?= clean($p['pan'] ?: '-') ?></td>
                     <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
-                    <td class="text-right amount"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
+                    <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>

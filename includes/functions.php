@@ -24,6 +24,52 @@ function formatAmount($amount, $showSign = false) {
 }
 
 /**
+ * Transaction flow from business perspective.
+ */
+function transactionBusinessFlow($transactionType) {
+    return match (strtoupper((string) $transactionType)) {
+        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_SALE' => 'in',
+        'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'out',
+        'CONTRA_TRANSFER', 'JOURNAL_VOUCHER', 'REVERSAL', 'OPENING_BALANCE' => 'neutral',
+        default => 'neutral',
+    };
+}
+
+function transactionBusinessFlowLabel($transactionType) {
+    return match (transactionBusinessFlow($transactionType)) {
+        'in' => 'Money In',
+        'out' => 'Money Out',
+        default => 'Transfer / Internal',
+    };
+}
+
+function flowColorClass($flow) {
+    return match ((string) $flow) {
+        'in' => 'flow-in',
+        'out' => 'flow-out',
+        default => 'flow-neutral',
+    };
+}
+
+function transactionFlowColorClass($transactionType) {
+    return flowColorClass(transactionBusinessFlow($transactionType));
+}
+
+function signedAmountColorClass($amount, $positiveMeans = 'in') {
+    $value = floatval($amount);
+    if (abs($value) < 0.00001) {
+        return 'flow-neutral';
+    }
+
+    $positiveMeans = strtolower((string) $positiveMeans) === 'out' ? 'out' : 'in';
+    if ($value > 0) {
+        return $positiveMeans === 'in' ? 'flow-in' : 'flow-out';
+    }
+
+    return $positiveMeans === 'in' ? 'flow-out' : 'flow-in';
+}
+
+/**
  * Format date for display
  */
 function formatDate($date, $format = 'd M Y') {

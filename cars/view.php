@@ -63,17 +63,17 @@ $contributions = $db->fetchAll(
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon" style="background: var(--accent-blue-glow); color: var(--accent-blue);"><i class="ri-shopping-cart-line"></i></div></div>
-        <div class="stat-value"><?= formatAmount($car['purchase_price']) ?></div>
+        <div class="stat-value flow-out"><?= formatAmount($car['purchase_price']) ?></div>
         <div class="stat-label">Purchase Price</div>
     </div>
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon" style="background: var(--accent-yellow-glow); color: var(--accent-yellow);"><i class="ri-tools-line"></i></div></div>
-        <div class="stat-value"><?= formatAmount(max(0, $expenses)) ?></div>
+        <div class="stat-value flow-out"><?= formatAmount(max(0, $expenses)) ?></div>
         <div class="stat-label">Total Expenses</div>
     </div>
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon" style="background: var(--accent-purple-glow); color: var(--accent-purple);"><i class="ri-calculator-line"></i></div></div>
-        <div class="stat-value"><?= formatAmount($car['total_cost']) ?></div>
+        <div class="stat-value flow-out"><?= formatAmount($car['total_cost']) ?></div>
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="stat-card">
@@ -155,9 +155,9 @@ $contributions = $db->fetchAll(
                 </td></tr>
                 <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted" style="padding: 8px 0;">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
                 <?php if ($car['sold_date']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
-                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount positive"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Total Buyer Amount</td><td class="amount text-bold"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
+                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
             </table>
         </div>

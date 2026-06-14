@@ -52,11 +52,11 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                     ?>
                     <tr>
                         <td class="text-bold"><?= clean($partner['name']) ?></td>
-                        <td class="text-right amount <?= $capitalBalance >= 0 ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($capitalBalance, true) ?></td>
-                        <td class="text-right amount <?= $currentBalance >= 0 ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($currentBalance, true) ?></td>
-                        <td class="text-right amount"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
-                        <td class="text-right amount credit-amount"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
-                        <td class="text-right amount debit-amount"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
+                        <td class="text-right amount <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></td>
+                        <td class="text-right amount <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></td>
+                        <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
+                        <td class="text-right amount flow-out"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
+                        <td class="text-right amount flow-in"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
                         <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                     </tr>
                 <?php endforeach; ?>
@@ -81,11 +81,11 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                     ?>
                     <tr>
                         <td class="text-bold"><?= clean($partner['name']) ?></td>
-                        <td class="text-right amount <?= $capitalBalance >= 0 ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($capitalBalance, true) ?></td>
-                        <td class="text-right amount <?= $currentBalance >= 0 ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($currentBalance, true) ?></td>
-                        <td class="text-right amount"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
-                        <td class="text-right amount credit-amount"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
-                        <td class="text-right amount debit-amount"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
+                        <td class="text-right amount <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></td>
+                        <td class="text-right amount <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></td>
+                        <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
+                        <td class="text-right amount flow-out"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
+                        <td class="text-right amount flow-in"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
                         <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                     </tr>
                 <?php endforeach; ?>

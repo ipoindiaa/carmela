@@ -65,8 +65,8 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
     <div class="card-header"><h3><i class="ri-bill-line"></i> Large Bill Summary</h3></div>
     <div class="card-body">
         <div class="stats-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
-            <div class="stat-card"><div class="stat-value"><?= formatAmount($voucherDetails['voucher']['primary_amount']) ?></div><div class="stat-label">Bill Total</div></div>
-            <div class="stat-card"><div class="stat-value"><?= clean($voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'Payment' : 'Receipt') ?></div><div class="stat-label">Bill Direction</div></div>
+            <div class="stat-card"><div class="stat-value amount <?= $voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($voucherDetails['voucher']['primary_amount']) ?></div><div class="stat-label">Bill Total</div></div>
+            <div class="stat-card"><div class="stat-value <?= $voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= clean($voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'Payment' : 'Receipt') ?></div><div class="stat-label">Bill Direction</div></div>
             <div class="stat-card"><div class="stat-value"><?= count($voucherDetails['lines']) ?></div><div class="stat-label">Split Lines</div></div>
             <div class="stat-card"><div class="stat-value"><?= clean($voucherDetails['voucher']['primary_account_name']) ?></div><div class="stat-label">Main Book</div></div>
         </div>
@@ -84,7 +84,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                             </td>
                             <td class="text-muted"><?= clean($allocation['group_name'] . (!empty($allocation['sub_group']) ? ' / ' . $allocation['sub_group'] : '')) ?></td>
                             <td><?= clean($allocation['narration'] ?: '-') ?></td>
-                            <td class="text-right amount"><?= formatAmount($allocation['amount']) ?></td>
+                            <td class="text-right amount <?= $voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($allocation['amount']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -101,7 +101,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
             <table style="width: 100%;">
                 <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span> <span class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type']) ?>" style="margin-left:8px;display:inline-flex;"><?= clean(transactionBusinessFlowLabel($entry['transaction_type'])) ?></span></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= $entry['status'] ?></span></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
 	                <tr><td class="text-muted" style="padding: 8px 0;">Created By</td><td><?= clean($entry['created_by_name']) ?></td></tr>

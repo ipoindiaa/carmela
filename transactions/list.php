@@ -59,7 +59,7 @@ function renderTransactionRows($entries) {
             <td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td>
             <td>
                 <span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span>
-                <div class="transaction-context-chip"><?= clean(transactionContextLabel($entry['transaction_type'])) ?></div>
+                <div class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type']) ?>"><?= clean(transactionContextLabel($entry['transaction_type'])) ?></div>
             </td>
             <td style="max-width: 250px;">
                 <?php $fullNarration = trim((string) ($entry['narration'] ?? '')); ?>

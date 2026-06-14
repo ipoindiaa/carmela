@@ -79,8 +79,8 @@ $employees = $db->fetchAll(
                     <td class="text-bold"><?= clean($e['name']) ?></td>
                     <td><?= clean($e['role'] ?: '-') ?></td>
                     <td><?= clean($e['phone'] ?: '-') ?></td>
-                    <td class="text-right amount"><?= formatAmount($e['monthly_salary']) ?></td>
-                    <td class="text-right amount <?= $advanceOutstanding > 0 ? 'text-yellow' : '' ?>"><?= formatAmount($advanceOutstanding) ?></td>
+                    <td class="text-right amount flow-out"><?= formatAmount($e['monthly_salary']) ?></td>
+                    <td class="text-right amount <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></td>
                     <td><?= renderDateTimeStack($e['join_date'], $e['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
                     <td class="text-center"><a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>

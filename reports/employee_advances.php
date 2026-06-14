@@ -51,8 +51,8 @@ $employees = $db->fetchAll(
                     <tr>
                         <td class="text-bold"><?= clean($employee['name']) ?></td>
                         <td><?= clean($employee['role'] ?: '-') ?></td>
-                        <td class="text-right amount"><?= formatAmount($employee['monthly_salary']) ?></td>
-                        <td class="text-right amount"><?= formatAmount($advanceOutstanding) ?></td>
+                        <td class="text-right amount flow-out"><?= formatAmount($employee['monthly_salary']) ?></td>
+                        <td class="text-right amount <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></td>
                         <td><span class="badge <?= $employee['is_active'] ? 'badge-green' : 'badge-gray' ?>"><?= $employee['is_active'] ? 'Active' : 'Inactive' ?></span></td>
                         <td class="text-center"><a href="../employees/view.php?id=<?= $employee['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
                     </tr>

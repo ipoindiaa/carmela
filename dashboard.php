@@ -226,10 +226,10 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
         <?php if (!isClientHiddenBook('profit_loss')): ?>
         <div class="dashboard-focus-card">
             <span>Current Month P&amp;L</span>
-            <strong><?= formatAmount($monthProfit) ?></strong>
+            <strong class="amount <?= signedAmountColorClass($monthProfit, 'in') ?>"><?= formatAmount($monthProfit) ?></strong>
             <div class="dashboard-focus-list">
-                <div><i class="ri-arrow-down-circle-line"></i> Income: <?= formatAmount($monthIncome['total'] ?? 0) ?></div>
-                <div><i class="ri-arrow-up-circle-line"></i> Expense: <?= formatAmount($monthExpense['total'] ?? 0) ?></div>
+                <div class="flow-in"><i class="ri-arrow-down-circle-line"></i> Income: <?= formatAmount($monthIncome['total'] ?? 0) ?></div>
+                <div class="flow-out"><i class="ri-arrow-up-circle-line"></i> Expense: <?= formatAmount($monthExpense['total'] ?? 0) ?></div>
                 <div><i class="ri-notification-3-line"></i> Pending alerts: <?= count($alerts) ?></div>
             </div>
         </div>

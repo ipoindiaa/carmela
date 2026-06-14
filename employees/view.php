@@ -29,8 +29,8 @@ $advanceLedger = $db->fetchAll(
 </div>
 
 <div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
-    <div class="stat-card"><div class="stat-value"><?= formatAmount($emp['monthly_salary']) ?></div><div class="stat-label">Monthly Salary</div></div>
-    <div class="stat-card"><div class="stat-value text-yellow"><?= formatAmount($advanceOutstanding) ?></div><div class="stat-label">Advance Outstanding</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($emp['monthly_salary']) ?></div><div class="stat-label">Monthly Salary</div></div>
+    <div class="stat-card"><div class="stat-value <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></div><div class="stat-label">Advance Outstanding</div></div>
     <div class="stat-card"><div class="stat-value"><?= clean($emp['role'] ?: 'N/A') ?></div><div class="stat-label">Role</div></div>
 </div>
 
@@ -42,8 +42,8 @@ $advanceLedger = $db->fetchAll(
             <tbody>
             <?php foreach ($salaryHistory as $s): ?>
             <tr><td><?= date('F', mktime(0,0,0,$s['month'],1)) ?> <?= $s['year'] ?></td><td class="text-right amount"><?= formatAmount($s['gross_salary']) ?></td>
-                <td class="text-right amount text-yellow"><?= $s['advance_deducted'] > 0 ? formatAmount($s['advance_deducted']) : '-' ?></td>
-                <td class="text-right amount text-green"><?= formatAmount($s['net_paid']) ?></td>
+                <td class="text-right amount flow-in"><?= $s['advance_deducted'] > 0 ? formatAmount($s['advance_deducted']) : '-' ?></td>
+                <td class="text-right amount flow-out"><?= formatAmount($s['net_paid']) ?></td>
                 <td><span class="badge badge-blue"><?= $s['payment_mode'] ?></span></td><td><?= renderDateTimeStack($s['processed_date'], $s['created_at']) ?></td></tr>
             <?php endforeach; ?>
             <?php if (empty($salaryHistory)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No salary records</td></tr><?php endif; ?>

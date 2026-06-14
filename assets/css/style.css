@@ -1001,6 +1001,12 @@ table td.text-center select.form-control {
 .amount { font-family: 'Inter', monospace; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .amount.positive { color: var(--accent-green); }
 .amount.negative { color: var(--accent-red); }
+.amount.flow-in,
+.flow-in { color: var(--accent-green) !important; }
+.amount.flow-out,
+.flow-out { color: var(--accent-red) !important; }
+.amount.flow-neutral,
+.flow-neutral { color: var(--text-secondary) !important; }
 .amount.debit-amount,
 .debit-amount { color: var(--accent-green) !important; }
 .amount.credit-amount,
@@ -2418,6 +2424,20 @@ html.js .pagination.no-js-pagination { display: none; }
 .transaction-context-chip {
     margin-top: 6px;
     width: fit-content;
+}
+
+.transaction-context-chip.flow-in {
+    background: var(--accent-green-glow);
+    border-color: rgba(21, 128, 61, 0.22);
+}
+
+.transaction-context-chip.flow-out {
+    background: var(--accent-red-glow);
+    border-color: rgba(220, 38, 38, 0.22);
+}
+
+.transaction-context-chip.flow-neutral {
+    background: rgba(255, 255, 255, 0.86);
 }
 
 .narration-tooltip {
