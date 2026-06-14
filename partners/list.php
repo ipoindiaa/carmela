@@ -1,5 +1,5 @@
 <?php
-$requestedType = strtoupper(trim((string) get('type', '')));
+$requestedType = strtoupper(trim((string) ($_GET['type'] ?? '')));
 if (!in_array($requestedType, ['MAIN', 'CARWISE'], true)) {
     $requestedType = '';
 }
