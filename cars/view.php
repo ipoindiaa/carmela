@@ -3,6 +3,7 @@ $pageTitle = 'Car Detail';
 $pageIcon = '<i class="ri-car-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+require_once __DIR__ . '/../includes/attachments.php';
 
 $id = get('id');
 $businessId = Auth::user('business_id');
@@ -11,11 +12,26 @@ $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $car = $db->fetch("SELECT c.*, a.current_balance as total_cost FROM cars c LEFT JOIN accounts a ON a.id = c.account_id WHERE c.id = ? AND c.business_id = ?", [$id, $businessId]);
 if (!$car) { setFlash('error', 'Car not found.'); redirect('list.php'); }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_car_images') {
+    verifyCsrf();
+    try {
+        $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
+        $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'images');
+        setFlash('success', $count > 0 ? "$count image uploaded." : 'No image selected.');
+        redirect("view.php?id=$id");
+    } catch (Exception $e) {
+        setFlash('error', $e->getMessage());
+        redirect("view.php?id=$id");
+    }
+}
+
 $profitability = $engine->getCarProfitability($id);
 $profit = $profitability['status'] === 'SOLD' ? $profitability['profit'] : null;
 $expenses = $profitability['total_expenses'];
 $partnerships = $profitability['partnerships'];
 $settlements = $profitability['settlements'];
+$buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
+$sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
 // Car ledger entries
 $ledger = $db->fetchAll(
@@ -67,6 +83,61 @@ $contributions = $db->fetchAll(
     </div>
 </div>
 
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3><i class="ri-image-add-line"></i> Car Images</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="upload_car_images">
+            <div class="form-group">
+                <label class="form-label">Image Type</label>
+                <select name="image_type" class="form-control searchable-select">
+                    <option value="SELLER">From Seller</option>
+                    <option value="BUYER">From Buyer</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Upload Images</label>
+                <input type="file" name="car_images[]" class="form-control" accept="image/*" multiple>
+                <div class="form-hint">Upload RC, delivery, car condition, or party photos. Each image can be opened or shared on mobile.</div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload</button>
+        </form>
+
+        <div class="attachment-columns">
+            <?php foreach ([['title' => 'From Seller', 'items' => $sellerImages], ['title' => 'From Buyer', 'items' => $buyerImages]] as $group): ?>
+                <div>
+                    <h4 class="attachment-group-title"><?= clean($group['title']) ?></h4>
+                    <?php if (empty($group['items'])): ?>
+                        <div class="empty-state compact">No images uploaded.</div>
+                    <?php else: ?>
+                        <div class="attachment-grid">
+                            <?php foreach ($group['items'] as $attachment): ?>
+                                <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); ?>
+                                <div class="attachment-card">
+                                    <a href="<?= clean($url) ?>" target="_blank" rel="noopener">
+                                        <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
+                                    </a>
+                                    <div class="attachment-meta">
+                                        <strong><?= clean($attachment['original_name']) ?></strong>
+                                        <span><?= formatDate($attachment['created_at'], 'd M Y, h:i A') ?></span>
+                                    </div>
+                                    <div class="attachment-actions">
+                                        <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
+                                        <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
 <div class="grid-2">
     <!-- Car Details -->
     <div class="card">
@@ -85,7 +156,8 @@ $contributions = $db->fetchAll(
                 <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted" style="padding: 8px 0;">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
                 <?php if ($car['sold_date']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
                 <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_gst_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale GST</td><td class="amount credit-amount"><?= formatAmount($car['sale_gst_amount']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount positive"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Total Buyer Amount</td><td class="amount text-bold"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
             </table>
         </div>

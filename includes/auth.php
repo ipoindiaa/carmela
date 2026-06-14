@@ -160,6 +160,10 @@ class Auth {
     }
 
     public static function hasBookAccess($bookKey, $access = 'read') {
+        if (!array_key_exists($bookKey, BOOK_PERMISSIONS)) {
+            return false;
+        }
+
         if (self::isAdmin()) {
             return true;
         }
@@ -241,7 +245,7 @@ class Auth {
                AND entity_id IS NULL
                AND is_active = 1
                AND entity_type IN ($placeholders)
-             ORDER BY FIELD(entity_type, 'CASH', 'BANK', 'GST'), code, name",
+             ORDER BY FIELD(entity_type, 'CASH', 'BANK'), code, name",
             array_merge([$businessId], $types)
         );
 

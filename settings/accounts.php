@@ -8,7 +8,6 @@ $businessId = Auth::user('business_id');
 $accountTypes = [
     'CASH' => ['label' => 'Cash Account', 'prefix' => 'CASH', 'icon' => 'ri-wallet-3-line'],
     'BANK' => ['label' => 'Bank Account', 'prefix' => 'BANK', 'icon' => 'ri-bank-line'],
-    'GST' => ['label' => 'GST Bank Account', 'prefix' => 'GST', 'icon' => 'ri-file-list-2-line'],
 ];
 
 $nextAccountCode = static function ($type) use ($db, $businessId, $accountTypes) {
@@ -90,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $account = $db->fetch(
-                "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK','GST') AND entity_id IS NULL",
+                "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK') AND entity_id IS NULL",
                 [$accountId, $businessId]
             );
             if (!$account) {
@@ -125,9 +124,9 @@ $accounts = $db->fetchAll(
     "SELECT *
      FROM accounts
      WHERE business_id = ?
-       AND entity_type IN ('CASH','BANK','GST')
+       AND entity_type IN ('CASH','BANK')
        AND entity_id IS NULL
-     ORDER BY FIELD(entity_type, 'CASH', 'BANK', 'GST'), is_active DESC, code, name",
+     ORDER BY FIELD(entity_type, 'CASH', 'BANK'), is_active DESC, code, name",
     [$businessId]
 );
 ?>
@@ -135,7 +134,7 @@ $accounts = $db->fetchAll(
 <div class="page-header">
     <div>
         <h1><i class="ri-bank-card-line"></i> Account Settings</h1>
-        <p class="text-muted">Manage the business Cash, Bank, and GST Bank accounts used in New Entry.</p>
+        <p class="text-muted">Manage the business Cash and Bank accounts used in New Entry.</p>
     </div>
 </div>
 

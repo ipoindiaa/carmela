@@ -52,7 +52,7 @@ $_SESSION['full_name'] = 'Harshil Vekariya';
 
 $engine = new AccountingEngine($businessId, $userId);
 $engine->setupDefaultAccounts();
-echo "  ✅ Default accounts created (Cash, Bank, GST, Income, Expense)\n\n";
+echo "  ✅ Default accounts created (Cash, Bank, Income, Expense)\n\n";
 
 // ---- STEP 4: Create Financial Year ----
 echo "4️⃣  Creating financial year...\n";

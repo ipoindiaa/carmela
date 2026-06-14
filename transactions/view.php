@@ -3,6 +3,7 @@ $pageTitle = 'Transaction Detail';
 $pageIcon = '<i class="ri-file-list-3-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+require_once __DIR__ . '/../includes/attachments.php';
 
 $id = get('id');
 $businessId = Auth::user('business_id');
@@ -26,8 +27,23 @@ $entry = $db->fetch(
 
 if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
 
+$voucherDetails = !empty($entry['journal_voucher_id']) ? $engine->getJournalVoucherDetails($entry['journal_voucher_id']) : null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_vouchers') {
+    verifyCsrf();
+    try {
+        $count = uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'vouchers');
+        setFlash('success', $count > 0 ? "$count voucher uploaded." : 'No voucher selected.');
+        redirect("view.php?id=$id");
+    } catch (Exception $e) {
+        setFlash('error', $e->getMessage());
+        redirect("view.php?id=$id");
+    }
+}
+
 $lines = $db->fetchAll(
     "SELECT jl.*, a.name as account_name, a.code as account_code FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id WHERE jl.journal_entry_id = ? ORDER BY jl.entry_type DESC, jl.amount DESC", [$id]);
+$vouchers = fetchEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER');
 
 $totalDr = $totalCr = 0;
 foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']; else $totalCr += $l['amount']; }
@@ -43,6 +59,40 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
+
+<?php if ($voucherDetails): ?>
+<div class="card" style="margin-bottom:24px;">
+    <div class="card-header"><h3><i class="ri-bill-line"></i> Large Bill Summary</h3></div>
+    <div class="card-body">
+        <div class="stats-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
+            <div class="stat-card"><div class="stat-value"><?= formatAmount($voucherDetails['voucher']['primary_amount']) ?></div><div class="stat-label">Bill Total</div></div>
+            <div class="stat-card"><div class="stat-value"><?= clean($voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'Payment' : 'Receipt') ?></div><div class="stat-label">Bill Direction</div></div>
+            <div class="stat-card"><div class="stat-value"><?= count($voucherDetails['lines']) ?></div><div class="stat-label">Split Lines</div></div>
+            <div class="stat-card"><div class="stat-value"><?= clean($voucherDetails['voucher']['primary_account_name']) ?></div><div class="stat-label">Main Book</div></div>
+        </div>
+        <div class="table-container" style="margin-top:16px;">
+            <table>
+                <thead>
+                    <tr><th>Split To</th><th>Type</th><th>Note</th><th class="text-right">Amount</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($voucherDetails['lines'] as $allocation): ?>
+                        <tr>
+                            <td class="text-bold">
+                                <?= !empty($allocation['car_reg']) ? clean(formatRegistrationNo($allocation['car_reg'])) . ' — ' : '' ?>
+                                <?= clean($allocation['account_name']) ?>
+                            </td>
+                            <td class="text-muted"><?= clean($allocation['group_name'] . (!empty($allocation['sub_group']) ? ' / ' . $allocation['sub_group'] : '')) ?></td>
+                            <td><?= clean($allocation['narration'] ?: '-') ?></td>
+                            <td class="text-right amount"><?= formatAmount($allocation['amount']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="grid-2">
     <div class="card">
@@ -97,6 +147,49 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                 </div>
             <?php endif; ?>
         </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header"><h3><i class="ri-attachment-2"></i> Physical Vouchers</h3></div>
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="upload_vouchers">
+            <div class="form-group">
+                <label class="form-label">Upload Bill / Voucher</label>
+                <input type="file" name="vouchers[]" class="form-control" accept="image/*,application/pdf" multiple>
+                <div class="form-hint">Upload bill photos or PDF. Open/share links work on mobile.</div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload Voucher</button>
+        </form>
+
+        <?php if (empty($vouchers)): ?>
+            <div class="empty-state compact">No vouchers uploaded.</div>
+        <?php else: ?>
+            <div class="attachment-grid">
+                <?php foreach ($vouchers as $attachment): ?>
+                    <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); $isImage = str_starts_with($attachment['mime_type'], 'image/'); ?>
+                    <div class="attachment-card">
+                        <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="attachment-preview">
+                            <?php if ($isImage): ?>
+                                <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
+                            <?php else: ?>
+                                <div class="attachment-file-icon"><i class="ri-file-pdf-2-line"></i><span>PDF</span></div>
+                            <?php endif; ?>
+                        </a>
+                        <div class="attachment-meta">
+                            <strong><?= clean($attachment['original_name']) ?></strong>
+                            <span><?= formatDate($attachment['created_at'], 'd M Y, h:i A') ?></span>
+                        </div>
+                        <div class="attachment-actions">
+                            <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
+                            <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

@@ -43,14 +43,12 @@ echo "💰 Setting up opening balances...\n";
 
 $cashAccount = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL", [$businessId]);
 $bankAccount = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'BANK' AND entity_id IS NULL", [$businessId]);
-$gstAccount  = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'GST' AND entity_id IS NULL", [$businessId]);
 
 // Give business ₹50,00,000 cash and ₹2,00,00,000 in bank
 $db->query("UPDATE accounts SET current_balance = 5000000, current_balance_type = 'DR' WHERE id = ?", [$cashAccount['id']]);
 $db->query("UPDATE accounts SET current_balance = 20000000, current_balance_type = 'DR' WHERE id = ?", [$bankAccount['id']]);
-$db->query("UPDATE accounts SET current_balance = 150000, current_balance_type = 'DR' WHERE id = ?", [$gstAccount['id']]);
 
-echo "  ✅ Cash: ₹50,00,000 | Bank: ₹2,00,00,000 | GST: ₹1,50,000\n\n";
+echo "  ✅ Cash: ₹50,00,000 | Bank: ₹2,00,00,000\n\n";
 
 // ============================================================
 // 2. CREATE PARTNERS
@@ -291,14 +289,6 @@ echo "💸 Partner withdrawal...\n";
 
 $engine->partnerWithdraw($partnerId2, 50000, '2026-03-01', $cashAccount['id'], 'Vikram Shah - Personal withdrawal');
 echo "  ✅ Vikram Shah withdrew ₹50,000 (Cash)\n\n";
-
-// ============================================================
-// 14. GST PAYMENT
-// ============================================================
-echo "🧾 GST payment...\n";
-
-$engine->gstPayment(45000, '2026-03-15', 'GST payment for Q4 FY2025-26 via GST portal');
-echo "  ✅ GST paid ₹45,000 from GST Bank A/c\n\n";
 
 // ============================================================
 // DONE!

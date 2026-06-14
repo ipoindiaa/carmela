@@ -3,8 +3,10 @@ $pageTitle = 'Add Car';
 $pageIcon = '<i class="ri-car-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+require_once __DIR__ . '/../includes/attachments.php';
 
 $businessId = Auth::user('business_id');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 
 // Get payment accounts for dropdown
 $primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
@@ -14,20 +16,19 @@ $paymentAccountIds = array_values(array_filter(array_map(
     $paymentAccounts
 )));
 
-// Get partners for optional funding
-$partners = $db->fetchAll("SELECT id, name FROM partners WHERE business_id = ? AND is_active = 1", [$businessId]);
+// Get car-wise partners for optional funding
+$partners = $db->fetchAll("SELECT id, name FROM partners WHERE business_id = ? AND is_active = 1 AND partner_type = 'CARWISE' ORDER BY name", [$businessId]);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     try {
-        $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $carId = Database::uuid();
         $regNo = normalizeRegistrationNo(post('registration_no'));
         if (!isValidRegistrationNo($regNo)) {
             throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
         }
         $purchasePrice = parseDecimalInput(post('purchase_price'));
-        $gstAmount = parseDecimalInput(post('gst_amount', 0));
+        $gstAmount = 0.0;
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
         if (!in_array($paymentAccount, $paymentAccountIds, true)) {
@@ -70,9 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
         $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount);
+        $uploadWarning = '';
+        try {
+            uploadEntityAttachments($businessId, 'CAR', $carId, 'SELLER', 'seller_images', Auth::user('user_id'), 'images');
+        } catch (Exception $uploadError) {
+            $uploadWarning = ' Seller image upload failed: ' . $uploadError->getMessage();
+        }
 
         Auth::auditLog('CREATE', 'car', $carId, "Car $regNo added with purchase entry");
-        setFlash('success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!");
+        setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
         redirect("view.php?id=$carId");
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
@@ -87,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="card" style="max-width: 800px;">
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <?= csrfField() ?>
             <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-blue);"><i class="ri-car-line"></i> Vehicle Details</h3>
             <div class="form-row">
@@ -129,12 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label class="form-label">GST Input Included (₹)</label>
-                <input type="text" name="gst_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
-                <div class="form-hint">Optional. If entered, inventory cost will exclude this GST and GST Input Credit will be debited separately.</div>
-            </div>
-
             <hr style="border-color: var(--border); margin: 24px 0;">
             <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-green);"><i class="ri-bank-card-line"></i> Payment Details</h3>
 
@@ -150,16 +151,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
+            <div class="form-group">
+                <label class="form-label">Seller Images</label>
+                <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
+                <div class="form-hint">Optional. Upload photos or documents received from seller.</div>
+            </div>
+
             <?php if (!empty($partners)): ?>
             <hr style="border-color: var(--border); margin: 24px 0;">
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-purple);"><i class="ri-group-line"></i> Partner Funding (Optional)</h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">If partners are contributing to this purchase, add their amounts below. The remaining will be paid from the selected account above.</p>
+            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-purple);"><i class="ri-group-line"></i> Car-wise Partners (Optional)</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Add only deal-specific partners for this car. Main business partners are managed separately.</p>
 
             <div id="partner-funding">
                 <div class="form-row partner-row">
                     <div class="form-group">
                         <select name="partner_ids[]" class="form-control">
-                            <option value="">-- Select Partner --</option>
+                            <option value="">-- Select Car-wise Partner --</option>
                             <?php foreach ($partners as $p): ?>
                                 <option value="<?= $p['id'] ?>"><?= clean($p['name']) ?></option>
                             <?php endforeach; ?>

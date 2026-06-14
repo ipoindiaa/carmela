@@ -27,14 +27,12 @@ class AccountingEngine {
         $defaults = [
             ['CASH-001', 'Cash Account', 'ASSET', 'Current Assets', 'CASH'],
             ['BANK-001', 'Bank Account', 'ASSET', 'Current Assets', 'BANK'],
-            ['GST-001', 'GST Bank Account', 'ASSET', 'Current Assets', 'GST'],
             ['SAL-EXP', 'Salary Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['RENT-EXP', 'Office Rent', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['MISC-EXP', 'Miscellaneous Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['CAR-REV', 'Car Sales Revenue', 'INCOME', 'Direct Income', 'GENERAL'],
+            ['SALE-COMM', 'Car Sale Commission Income', 'INCOME', 'Direct Income', 'GENERAL'],
             ['PNL', 'Profit & Loss Account', 'INCOME', 'P&L', 'GENERAL'],
-            ['GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities', 'GENERAL'],
-            ['GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets', 'GENERAL'],
             ['BAD-DEBT', 'Bad Debt Expense', 'EXPENSE', 'Direct Expenses', 'GENERAL'],
             ['ADV-WOFF', 'Employee Advance Write-Off Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
         ];
@@ -186,6 +184,12 @@ class AccountingEngine {
             }
             if (!$this->columnExists('cars', 'sale_gst_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
+            }
+            if (!$this->columnExists('cars', 'sale_commission_amount')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
+            }
+            if (!$this->columnExists('partners', 'partner_type')) {
+                $this->db->query("ALTER TABLE `partners` ADD COLUMN `partner_type` ENUM('MAIN','CARWISE') NOT NULL DEFAULT 'MAIN' AFTER `name`");
             }
             if (!$this->columnExists('car_partner_contributions', 'funding_pct')) {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `funding_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `amount`");
@@ -512,26 +516,29 @@ class AccountingEngine {
     /**
      * CAR SALE — Full or partial payment
      */
-    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0) {
+    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0, $commissionAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
         if ($car['status'] === 'SOLD') throw new Exception("Car is already sold");
         if ($salePrice <= 0) throw new Exception("Sale price must be greater than zero.");
+        $commissionAmount = round(floatval($commissionAmount), 2);
+        if ($commissionAmount < 0) throw new Exception("Commission cannot be negative.");
 
         $carAccountId = $car['account_id'];
         $totalCost = $this->getCarTotalCost($carId);
         [$grossSalePrice, $gstAmount, $netSalePrice] = $this->normalizeGstComponent($salePrice, $gstAmount);
-        $received = $amountReceived === null ? $grossSalePrice : round(floatval($amountReceived), 2);
+        $grossReceiptTarget = round($grossSalePrice + $commissionAmount, 2);
+        $received = $amountReceived === null ? $grossReceiptTarget : round(floatval($amountReceived), 2);
         if ($received < 0) throw new Exception("Amount received cannot be negative.");
-        if ($received - $grossSalePrice > 0.01) throw new Exception("Amount received cannot be more than the sale price.");
-        $outstanding = $grossSalePrice - $received;
+        if ($received - $grossReceiptTarget > 0.01) throw new Exception("Amount received cannot be more than total buyer amount.");
+        $outstanding = $grossReceiptTarget - $received;
         if ($outstanding > 0.009 && trim((string) $buyerName) === '') {
             throw new Exception("Buyer name is required when sale payment is pending.");
         }
-        $profit = $netSalePrice - $totalCost;
+        $profit = ($netSalePrice + $commissionAmount) - $totalCost;
 
         $lines = [];
-        $lines[] = ['account_id' => $receivingAccount, 'amount' => $received, 'type' => 'DR', 'narration' => 'Sale amount received'];
+        $lines[] = ['account_id' => $receivingAccount, 'amount' => $received, 'type' => 'DR', 'narration' => 'Buyer amount received'];
         
         if ($outstanding > 0 && $buyerName) {
             // Create debtor for outstanding amount
@@ -543,6 +550,10 @@ class AccountingEngine {
         // Revenue entry
         $revenueAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'CAR-REV'", [$this->businessId]);
         $lines[] = ['account_id' => $revenueAccount['id'], 'amount' => $netSalePrice, 'type' => 'CR', 'narration' => "Car sale revenue - {$car['registration_no']}"];
+        if ($commissionAmount > 0) {
+            $commissionIncome = $this->getOrCreateSystemAccount('SALE-COMM', 'Car Sale Commission Income', 'INCOME', 'Direct Income');
+            $lines[] = ['account_id' => $commissionIncome['id'], 'amount' => $commissionAmount, 'type' => 'CR', 'narration' => "Commission income - {$car['registration_no']}"];
+        }
         if ($gstAmount > 0) {
             $gstPayable = $this->getOrCreateSystemAccount('GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities');
             $lines[] = ['account_id' => $gstPayable['id'], 'amount' => $gstAmount, 'type' => 'CR', 'narration' => "GST output on {$car['registration_no']}"];
@@ -562,8 +573,8 @@ class AccountingEngine {
 
         // Update car status
         $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
-        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_gst_amount = ?, buyer_name = ? WHERE id = ?",
-            [$status, $date, $grossSalePrice, $gstAmount, $buyerName, $carId]);
+        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, sale_gst_amount = ?, buyer_name = ? WHERE id = ?",
+            [$status, $date, $grossSalePrice, $commissionAmount, $gstAmount, $buyerName, $carId]);
 
         $this->recordPartnerProfitDistribution($carId, $profit, $date);
 
@@ -648,11 +659,11 @@ class AccountingEngine {
         }
 
         $primaryAccount = $this->db->fetch(
-            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK','GST') AND is_active = 1",
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK') AND is_active = 1",
             [$primaryAccountId, $this->businessId]
         );
         if (!$primaryAccount) {
-            throw new Exception("Cash, bank, or GST account is required.");
+            throw new Exception("Cash or bank account is required.");
         }
 
         if ($direction === 'in') {
@@ -695,6 +706,7 @@ class AccountingEngine {
     public function partnerInvest($partnerId, $amount, $date, $receivingAccount, $narration) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ?", [$partnerId]);
         if (!$partner) throw new Exception("Partner not found");
+        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can add business capital.");
 
         $lines = [
             ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => "Received from {$partner['name']}"],
@@ -710,6 +722,7 @@ class AccountingEngine {
     public function partnerWithdraw($partnerId, $amount, $date, $paymentAccount, $narration) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ?", [$partnerId]);
         if (!$partner) throw new Exception("Partner not found");
+        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can withdraw business capital.");
 
         // RULE 5: Cannot withdraw more than available partner funds after commitments
         [$capitalAmount, $capitalType] = $this->getAccountBalanceRow($partner['capital_account_id']);
@@ -739,6 +752,7 @@ class AccountingEngine {
     public function partnerSettlement($partnerId, $amount, $date, $accountId, $direction, $narration) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ?", [$partnerId]);
         if (!$partner) throw new Exception("Partner not found");
+        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can use manual partner settlement entries.");
         if ($amount <= 0) throw new Exception("Settlement amount must be greater than zero.");
 
         $direction = strtoupper($direction);
@@ -1404,6 +1418,7 @@ class AccountingEngine {
                          SET status = 'IN_STOCK',
                              sold_date = NULL,
                              sale_price = NULL,
+                             sale_commission_amount = 0,
                              sale_gst_amount = 0,
                              buyer_name = NULL
                          WHERE id = ? AND business_id = ?",
@@ -1520,6 +1535,8 @@ class AccountingEngine {
                  registration_no = ?,
                  sold_date = NULL,
                  sale_price = NULL,
+                 sale_commission_amount = 0,
+                 sale_gst_amount = 0,
                  buyer_name = NULL,
                  notes = ?
              WHERE id = ? AND business_id = ?",
@@ -1669,9 +1686,12 @@ class AccountingEngine {
 
         $totalCost = $this->getCarTotalCost($carId);
         $salePrice = $car['sale_price'] ?? 0;
+        $saleCommissionAmount = floatval($car['sale_commission_amount'] ?? 0);
         $saleGstAmount = floatval($car['sale_gst_amount'] ?? 0);
         $netSalePrice = max(0, $salePrice - $saleGstAmount);
-        $profit = $netSalePrice - $totalCost;
+        $totalSaleRealisation = $salePrice + $saleCommissionAmount;
+        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount;
+        $profit = $netBusinessRevenue - $totalCost;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
             "SELECT pps.*, p.name as partner_name
@@ -1688,8 +1708,11 @@ class AccountingEngine {
             'total_expenses' => $totalCost - $car['purchase_price'],
             'total_cost' => $totalCost,
             'sale_price' => $salePrice,
+            'sale_commission_amount' => $saleCommissionAmount,
             'sale_gst_amount' => $saleGstAmount,
             'net_sale_price' => $netSalePrice,
+            'total_sale_realisation' => $totalSaleRealisation,
+            'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
             'status' => $car['status'],
             'holding_days' => $car['sold_date'] ? max(0, (int) floor((strtotime($car['sold_date']) - strtotime($car['purchase_date'])) / 86400)) : max(0, (int) floor((time() - strtotime($car['purchase_date'])) / 86400)),
@@ -2121,6 +2144,36 @@ class AccountingEngine {
 
         $sql .= " ORDER BY jv.voucher_date DESC, jv.created_at DESC";
         return $this->db->fetchAll($sql, $params);
+    }
+
+    public function getJournalVoucherDetails($voucherId) {
+        $voucher = $this->db->fetch(
+            "SELECT jv.*, pa.name as primary_account_name, pa.code as primary_account_code, u.full_name as created_by_name, je.reference_no as posted_reference_no
+             FROM journal_vouchers jv
+             JOIN accounts pa ON pa.id = jv.primary_account_id
+             JOIN users u ON u.id = jv.created_by
+             LEFT JOIN journal_entries je ON je.id = jv.posted_entry_id
+             WHERE jv.id = ? AND jv.business_id = ?",
+            [$voucherId, $this->businessId]
+        );
+        if (!$voucher) {
+            return null;
+        }
+
+        $lines = $this->db->fetchAll(
+            "SELECT jvl.*, a.name as account_name, a.code as account_code, a.group_name, a.sub_group, c.registration_no as car_reg
+             FROM journal_voucher_lines jvl
+             JOIN accounts a ON a.id = jvl.account_id
+             LEFT JOIN cars c ON c.account_id = a.id
+             WHERE jvl.journal_voucher_id = ?
+             ORDER BY jvl.entry_type DESC, jvl.amount DESC, a.name",
+            [$voucherId]
+        );
+
+        return [
+            'voucher' => $voucher,
+            'lines' => $lines,
+        ];
     }
 
     private function normalizePartnerFunding($purchaseAmount, $partnerFunding) {

@@ -34,7 +34,8 @@ function renderCarRows($cars) {
         <?php foreach ($cars as $car):
             $totalCost = $car['total_cost'] ?? $car['purchase_price'];
             $netSalePrice = max(0, (float) ($car['sale_price'] ?? 0) - (float) ($car['sale_gst_amount'] ?? 0));
-            $profit = $car['status'] === 'SOLD' ? ($netSalePrice - $totalCost) : null;
+            $commissionAmount = (float) ($car['sale_commission_amount'] ?? 0);
+            $profit = $car['status'] === 'SOLD' ? (($netSalePrice + $commissionAmount) - $totalCost) : null;
         ?>
         <tr>
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
@@ -43,7 +44,14 @@ function renderCarRows($cars) {
             <td><?= formatDate($car['purchase_date']) ?></td>
             <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
             <td class="text-right amount"><?= formatAmount($totalCost) ?></td>
-            <td class="text-right amount"><?= $car['sale_price'] ? formatAmount($car['sale_price']) : '-' ?></td>
+            <td class="text-right amount">
+                <?php if ($car['sale_price']): ?>
+                    <?= formatAmount($car['sale_price']) ?>
+                    <?php if ($commissionAmount > 0): ?><div class="text-muted" style="font-size:11px;">+ Comm <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
+                <?php else: ?>
+                    -
+                <?php endif; ?>
+            </td>
             <td class="text-right amount <?= $profit !== null ? ($profit >= 0 ? 'positive' : 'negative') : '' ?>">
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?>
             </td>

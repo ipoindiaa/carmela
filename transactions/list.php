@@ -129,7 +129,7 @@ $nextUrl = $page < $pagination['total_pages']
     <h1><i class="ri-exchange-line"></i> Transactions</h1>
     <div style="display:flex; gap:12px;">
         <?php if (Auth::hasBookAccess('jv_register', 'write')): ?>
-            <a href="new.php?type=JOURNAL_VOUCHER" class="btn btn-outline"><i class="ri-bill-line"></i> Split Entry</a>
+            <a href="new.php?type=JOURNAL_VOUCHER" class="btn btn-outline"><i class="ri-bill-line"></i> Large Bill Split</a>
         <?php endif; ?>
         <a href="new.php" class="btn btn-primary"><i class="ri-add-line"></i> New Entry</a>
     </div>

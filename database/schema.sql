@@ -139,6 +139,7 @@ CREATE TABLE `cars` (
     `account_id` CHAR(36) DEFAULT NULL,
     `sold_date` DATE DEFAULT NULL,
     `sale_price` DECIMAL(15,2) DEFAULT NULL,
+    `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `buyer_name` VARCHAR(200) DEFAULT NULL,
     `buyer_contact` VARCHAR(20) DEFAULT NULL,
@@ -159,6 +160,7 @@ CREATE TABLE `partners` (
     `id` CHAR(36) NOT NULL,
     `business_id` CHAR(36) NOT NULL,
     `name` VARCHAR(200) NOT NULL,
+    `partner_type` ENUM('MAIN','CARWISE') NOT NULL DEFAULT 'MAIN',
     `phone` VARCHAR(20) DEFAULT NULL,
     `email` VARCHAR(100) DEFAULT NULL,
     `pan` VARCHAR(10) DEFAULT NULL,
@@ -380,6 +382,29 @@ CREATE TABLE `alerts` (
     PRIMARY KEY (`id`),
     KEY `idx_alerts_business` (`business_id`),
     CONSTRAINT `fk_alerts_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: attachments
+-- ============================================================
+CREATE TABLE `attachments` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `entity_type` ENUM('CAR','JOURNAL_ENTRY') NOT NULL,
+    `entity_id` CHAR(36) NOT NULL,
+    `attachment_type` ENUM('BUYER','SELLER','VOUCHER') NOT NULL,
+    `original_name` VARCHAR(255) NOT NULL,
+    `stored_name` VARCHAR(255) NOT NULL,
+    `relative_path` VARCHAR(500) NOT NULL,
+    `mime_type` VARCHAR(120) NOT NULL,
+    `file_size` INT NOT NULL DEFAULT 0,
+    `uploaded_by` CHAR(36) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_attachment_entity` (`business_id`, `entity_type`, `entity_id`, `attachment_type`),
+    KEY `idx_attachment_uploaded_by` (`uploaded_by`),
+    CONSTRAINT `fk_attachments_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
+    CONSTRAINT `fk_attachments_user` FOREIGN KEY (`uploaded_by`) REFERENCES `users`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

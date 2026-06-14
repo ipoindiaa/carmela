@@ -8,7 +8,7 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $summary = $engine->getOutstandingSummary();
-$partners = $db->fetchAll("SELECT id FROM partners WHERE business_id = ?", [$businessId]);
+$partners = $db->fetchAll("SELECT id FROM partners WHERE business_id = ? AND partner_type = 'MAIN'", [$businessId]);
 
 $partnerPayable = 0;
 $partnerReceivable = 0;

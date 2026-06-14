@@ -180,19 +180,16 @@ try {
 
     $cash = getAccountByType($db, $businessId, 'CASH');
     $bank = getAccountByType($db, $businessId, 'BANK');
-    $gst = getAccountByType($db, $businessId, 'GST');
 
     getOrCreateAccount($db, $engine, $businessId, 'SAL-EXP', 'Salary Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL');
     getOrCreateAccount($db, $engine, $businessId, 'CAR-REV', 'Car Sales Revenue', 'INCOME', 'Direct Income', 'GENERAL');
     getOrCreateAccount($db, $engine, $businessId, 'PNL', 'Profit & Loss Account', 'INCOME', 'P&L', 'GENERAL');
-    getOrCreateAccount($db, $engine, $businessId, 'GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities', 'GENERAL');
     $openingCapital = getOrCreateAccount($db, $engine, $businessId, 'DEMO-CAP-2026', 'Demo Opening Capital', 'EQUITY', 'Owner Capital', 'GENERAL');
 
     $engine->postJournalEntry('OPENING_BALANCE', '2026-01-01', "$marker Opening balances for realistic demo operations", [
         ['account_id' => $cash['id'], 'amount' => 12500000, 'type' => 'DR', 'narration' => 'Opening showroom cash'],
         ['account_id' => $bank['id'], 'amount' => 72000000, 'type' => 'DR', 'narration' => 'Opening bank balance'],
-        ['account_id' => $gst['id'], 'amount' => 2800000, 'type' => 'DR', 'narration' => 'Opening GST bank balance'],
-        ['account_id' => $openingCapital, 'amount' => 87300000, 'type' => 'CR', 'narration' => 'Demo capital introduced'],
+        ['account_id' => $openingCapital, 'amount' => 84500000, 'type' => 'CR', 'narration' => 'Demo capital introduced'],
     ]);
     out("  Opening balances posted.");
 
@@ -389,11 +386,6 @@ try {
         $engine->contraTransfer($from, $to, round($amount / 1000) * 1000, date('Y-m-d', strtotime('2026-01-12 +' . ($i * 8) . ' days')), "$marker Cash-bank transfer for showroom operations");
     }
     out("  Contra transfers posted.");
-
-    foreach ([185000, 226000, 192000, 248000] as $i => $amount) {
-        $engine->gstPayment($amount, date('Y-m-d', strtotime('2026-02-10 +' . ($i * 24) . ' days')), "$marker GST payment through portal");
-    }
-    out("  GST payments posted.");
 
     $activeCarAccounts = $db->fetchAll(
         "SELECT a.id, c.registration_no

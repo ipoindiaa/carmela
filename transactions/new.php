@@ -3,6 +3,7 @@ $pageTitle = 'New Entry';
 $pageIcon = '<i class="ri-add-circle-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+require_once __DIR__ . '/../includes/attachments.php';
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
@@ -12,8 +13,7 @@ Auth::requireAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 $writableAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
 $cashAccounts = $writableAccountGroups['cash_book'] ?? [];
 $bankAccounts = $writableAccountGroups['bank_book'] ?? [];
-$gstAccounts = $writableAccountGroups['gst_book'] ?? [];
-$writablePrimaryAccounts = array_merge($cashAccounts, $bankAccounts, $gstAccounts);
+$writablePrimaryAccounts = array_merge($cashAccounts, $bankAccounts);
 $writableAccountIds = array_values(array_filter(array_map(
     static fn($account) => $account['id'] ?? null,
     $writablePrimaryAccounts
@@ -23,7 +23,6 @@ $primaryAccountIcon = static function ($entityType) {
     return match ($entityType) {
         'CASH' => '💵',
         'BANK' => '🏦',
-        'GST' => '📋',
         default => '💼',
     };
 };
@@ -44,7 +43,6 @@ $preselectedAccountId = '';
 $preselectedAccountType = match ($preselectedAccount) {
     'cash' => 'CASH',
     'bank' => 'BANK',
-    'gst' => 'GST',
     default => '',
 };
 if ($preselectedAccountType !== '') {
@@ -134,12 +132,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = post('transaction_type');
     $date = post('entry_date');
     $amount = parseDecimalInput(post('amount'));
-    $gstAmount = parseDecimalInput(post('gst_amount', 0));
+    $gstAmount = 0.0;
     $narration = post('narration');
     $paymentAccountId = post('payment_account');
 
     try {
         $entryId = null;
+        $attachmentCarId = null;
 
         if ($paymentAccountId && !in_array($paymentAccountId, $writableAccountIds, true)) {
             throw new Exception('You do not have write access to that book/account.');
@@ -200,14 +199,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [max(0, $amount - $gstAmount), $carId, $businessId]);
                 }
                 $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount);
+                $attachmentCarId = $carId;
                 break;
 
             case 'CAR_SALE':
                 $carId = post('sale_car_id');
                 $salePrice = parseDecimalInput(post('sale_price'));
-                $amountReceived = parseDecimalInput(post('amount_received') ?: $salePrice);
+                $commissionAmount = parseDecimalInput(post('sale_commission_amount'));
+                $amountReceived = parseDecimalInput(post('amount_received') ?: ($salePrice + $commissionAmount));
                 $buyerName = post('buyer_name');
-                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount);
+                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount, $commissionAmount);
+                $attachmentCarId = $carId;
                 break;
 
             case 'CAR_EXPENSE':
@@ -283,23 +285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $entryId = $engine->contraTransfer($fromAccount, $toAccount, $amount, $date, $narration);
                 break;
 
-            case 'GST_PAYMENT':
-                if (!Auth::hasBookAccess('gst_book', 'write')) {
-                    throw new Exception('You do not have write access to the GST book.');
-                }
-                $entryId = $engine->gstPayment($amount, $date, $narration, $paymentAccountId);
-                break;
-
-            case 'GST_UTILIZATION':
-                if (!Auth::hasBookAccess('gst_book', 'write')) {
-                    throw new Exception('You do not have write access to the GST book.');
-                }
-                $entryId = $engine->gstUtilization($amount, $date, $narration);
-                break;
-
             case 'JOURNAL_VOUCHER':
                 if (!$paymentAccountId) {
-                    throw new Exception('Primary cash/bank/GST account is required.');
+                    throw new Exception('Primary cash/bank account is required.');
                 }
 
                 $direction = post('jv_direction', 'PAYMENT');
@@ -350,7 +338,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Invalid transaction type: $type");
         }
 
-        setFlash('success', (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully!');
+        $uploadWarning = '';
+        if ($entryId) {
+            try {
+                uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $entryId, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'vouchers');
+                if ($type === 'CAR_PURCHASE' && $attachmentCarId) {
+                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'SELLER', 'seller_images', Auth::user('user_id'), 'images');
+                }
+                if ($type === 'CAR_SALE' && $attachmentCarId) {
+                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'images');
+                }
+            } catch (Exception $uploadError) {
+                $uploadWarning = (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
+            }
+        }
+
+        if ($uploadWarning !== '') {
+            setFlash('warning', $uploadWarning);
+        } else {
+            setFlash('success', (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully!');
+        }
         redirect('list.php');
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
@@ -360,18 +367,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-add-circle-line"></i> New Entry</h1>
-    <p class="text-muted">All entries from one screen: simple Jama, Udhar, car entry, salary, loan, and large split bills.</p>
+    <p class="text-muted">All entries from one screen: Receive/Jama, Payments, car entry, salary, loan, and one large bill split into many places.</p>
 </div>
 
 <div class="simple-entry-switch">
     <button type="button" class="simple-entry-option money-in" data-money-flow="in">
         <i class="ri-arrow-down-circle-line"></i>
-        <span>Green / Jama</span>
+        <span>Receive / Jama</span>
         <strong>Business received money</strong>
     </button>
     <button type="button" class="simple-entry-option money-out" data-money-flow="out">
         <i class="ri-arrow-up-circle-line"></i>
-        <span>Red / Udhar</span>
+        <span>Payments</span>
         <strong>Business paid money</strong>
     </button>
     <button type="button" class="simple-entry-option split" onclick="selectSplitEntryType()">
@@ -383,7 +390,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="card entry-card">
     <div class="card-body">
-        <form method="POST" id="transaction-form">
+        <form method="POST" id="transaction-form" enctype="multipart/form-data">
             <?= csrfField() ?>
 
             <div class="form-row-3">
@@ -391,7 +398,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>" required>
                         <option value="">— Select Transaction Type —</option>
-                        <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Jama / Udhar Category" data-desc="Admin-defined category account.">Jama / Udhar Category</option>
+                        <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Receive / Jama or Payments Category" data-desc="Admin-defined category account.">Receive / Jama or Payments Category</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
@@ -399,10 +406,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
-                            <option value="JOURNAL_VOUCHER" data-flow="both" data-icon="ri-bill-line" data-title="Large Bill / Split Entry" data-desc="Split one Jama or Udhar across accounts/cars.">Large Bill / Split Entry</option>
+                            <option value="JOURNAL_VOUCHER" data-flow="both" data-icon="ri-bill-line" data-title="Large Bill Split" data-desc="One big bill that goes into many cars or expense accounts.">Large Bill Split</option>
                             <option value="CONTRA_TRANSFER" data-flow="both" data-icon="ri-arrow-left-right-line" data-title="Cash / Bank Transfer" data-desc="Move money between business accounts.">Cash / Bank Transfer</option>
-                            <option value="GST_PAYMENT" data-flow="out" data-icon="ri-file-list-2-line" data-title="GST Payment" data-desc="Business paid GST from GST bank.">GST Payment</option>
-                            <option value="GST_UTILIZATION" data-flow="out" data-icon="ri-loop-left-line" data-title="GST Input Utilization" data-desc="Adjust GST payable against input credit.">GST Input Utilization</option>
                         </optgroup>
                         <optgroup label="Partners">
                             <option value="PARTNER_INVEST" data-flow="in" data-icon="ri-briefcase-4-line" data-title="Partner Added Money" data-desc="Business received money from partner.">Partner Added Money</option>
@@ -425,7 +430,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span class="txn-type-trigger-icon"><i class="ri-list-check-2"></i></span>
                             <span class="txn-type-trigger-copy">
                                 <strong>Select entry type</strong>
-                                <small>Choose Green/Jama or Red/Udhar first for a shorter list.</small>
+                                <small>Choose Receive/Jama or Payments first for a shorter list.</small>
                             </span>
                             <i class="ri-arrow-down-s-line"></i>
                         </button>
@@ -450,7 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group" id="amount-group">
                     <label class="form-label">Amount (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
@@ -460,19 +465,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Narration / Description *</label>
                     <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" required>
-                </div>
-            </div>
-
-            <div class="txn-section" id="gst-section" style="display:none;">
-                <div class="form-row" id="car-picker-row">
-                    <div class="form-group">
-                        <label class="form-label">GST Input Included (₹)</label>
-                        <div class="input-group">
-                            <span class="input-prefix">₹</span>
-                            <input type="text" name="gst_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
-                        </div>
-                        <div class="form-hint">Optional. If entered, this GST will go to Input Credit and the remaining amount will hit car cost or expense.</div>
-                    </div>
                 </div>
             </div>
 
@@ -510,6 +502,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" name="car_id" value="new">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Seller Images</label>
+                    <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
+                    <div class="form-hint">Optional. Upload seller-side car photos or documents.</div>
+                </div>
             </div>
 
             <!-- PARTNER FUNDING SECTION -->
@@ -527,7 +524,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	                            <div class="form-group">
 	                                <label class="form-label">Partner</label>
                                     <input type="hidden" name="pf_partner_id[]" class="pf-partner-id">
-	                                <button type="button" class="picker-trigger picker-trigger-wide pf-partner-trigger" onclick="openEntityPicker('partner', this)">
+	                                <button type="button" class="picker-trigger picker-trigger-wide pf-partner-trigger" onclick="openEntityPicker('car_partner', this)">
                                         <span>Select partner</span>
                                         <i class="ri-search-line"></i>
                                     </button>
@@ -574,24 +571,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="buyer-section" style="display:none;">
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Sale Price (₹) *</label>
+                        <label class="form-label">Sell Car Amount (₹) *</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
                             <input type="text" name="sale_price" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                         </div>
+                        <div class="form-hint">This is the actual car selling amount.</div>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Commission Income (₹)</label>
+                        <div class="input-group">
+                            <span class="input-prefix">₹</span>
+                            <input type="text" name="sale_commission_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                        </div>
+                        <div class="form-hint">Business earning on this sold car.</div>
+                    </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Buyer Name</label>
                         <input type="text" name="buyer_name" class="form-control" placeholder="Buyer's full name">
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Amount Received Now (₹)</label>
+                        <div class="input-group">
+                            <span class="input-prefix">₹</span>
+                            <input type="text" name="amount_received" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                        </div>
+                        <div class="form-hint">Leave blank to receive full car amount + commission now.</div>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Amount Received Now (₹)</label>
-                    <div class="input-group">
-                        <span class="input-prefix">₹</span>
-                        <input type="text" name="amount_received" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
-                    </div>
-                    <div class="form-hint">Leave blank if receiving full payment now</div>
+                    <label class="form-label">Buyer Images</label>
+                    <input type="file" name="buyer_images[]" class="form-control" accept="image/*" multiple>
+                    <div class="form-hint">Optional. Upload buyer-side delivery or party photos.</div>
                 </div>
             </div>
 
@@ -613,7 +626,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Partner *</label>
                     <input type="hidden" name="partner_id" id="partner_id">
-                    <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('partner', this)">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('main_partner', this)">
                         <span>Select partner</span>
                         <i class="ri-search-line"></i>
                     </button>
@@ -717,18 +730,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="split-bill-section" style="display:none;">
                 <div class="split-entry-panel">
                     <div>
-                        <h4><i class="ri-bill-line"></i> Large Bill / Split Entry</h4>
-                        <p>Example: pay one garage bill once, then split the repair amount across multiple cars or accounts.</p>
+                        <h4><i class="ri-bill-line"></i> Large Bill Split</h4>
+                        <p>Use this when one bill is paid once, but that amount belongs to many cars or other expense accounts.</p>
                     </div>
                     <div class="split-entry-summary">
-                        <span>Total amount</span>
+                        <span>Bill total</span>
                         <strong id="split-total-display">₹0.00</strong>
                     </div>
-                    <button type="button" class="btn btn-primary" onclick="openSplitEntryModal()">
-                        <i class="ri-add-box-line"></i> Open split details
-                    </button>
+                    <div class="split-entry-summary">
+                        <span>Split rows</span>
+                        <strong id="split-line-count">0</strong>
+                    </div>
                 </div>
-                <div class="form-hint">Saving this entry creates a posted JV. Corrections should be done through reversal entries.</div>
+                <div class="form-hint">This saves one main daily transaction. On open, user will see the full bill split summary and every related account impact.</div>
+
+                <div class="split-guide" style="margin-top:16px;">
+                    <div><strong>1.</strong> Enter the full bill amount above.</div>
+                    <div><strong>2.</strong> Add where this bill should go: cars or other accounts.</div>
+                    <div><strong>3.</strong> Save only when remaining amount is zero.</div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Bill Direction</label>
+                        <select name="jv_direction" class="form-control searchable-select">
+                            <option value="PAYMENT">Payment / Money Out</option>
+                            <option value="RECEIPT">Receipt / Money In</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Bill Type</label>
+                        <select name="jv_voucher_type" class="form-control searchable-select">
+                            <option value="SPLIT_BILL">General Large Bill</option>
+                            <option value="GARAGE_BILL_SPLIT">Garage Bill Across Cars</option>
+                            <option value="AUCTION_PURCHASE_SPLIT">Auction / Mela Bill</option>
+                            <option value="COMMON_EXPENSE_ALLOCATION">Common Expense Allocation</option>
+                            <option value="MIXED_FUNDING">Mixed Funding Entry</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="split-balance-card" id="split-balance-card">
+                    <div>
+                        <span>Total</span>
+                        <strong id="split-modal-total">₹0.00</strong>
+                    </div>
+                    <div>
+                        <span>Allocated</span>
+                        <strong id="split-allocated-total">₹0.00</strong>
+                    </div>
+                    <div>
+                        <span>Remaining</span>
+                        <strong id="split-remaining-total">₹0.00</strong>
+                    </div>
+                </div>
+
+                <div id="split-lines" class="split-lines">
+                    <div class="split-line-row">
+                        <input type="hidden" name="jv_account_id[]" class="split-account-id">
+                        <div class="split-account-cell">
+                            <label class="form-label">Where should this part go? *</label>
+                            <button type="button" class="picker-trigger" onclick="openAccountPicker(this)">
+                                <span>Select car or account</span>
+                                <i class="ri-search-line"></i>
+                            </button>
+                        </div>
+                        <div>
+                            <label class="form-label">Amount *</label>
+                            <input type="text" name="jv_amount[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                        </div>
+                        <div>
+                            <label class="form-label">Short note</label>
+                            <input type="text" name="jv_narration[]" class="form-control" placeholder="e.g. Denting for Swift">
+                        </div>
+                        <button type="button" class="btn btn-outline btn-icon split-remove-btn" onclick="removeSplitLine(this)" title="Remove row">
+                            <i class="ri-delete-bin-line"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="addSplitLine()"><i class="ri-add-line"></i> Add Another Line</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="focusFirstSplitLine()"><i class="ri-focus-3-line"></i> Continue Split</button>
+                </div>
+            </div>
+
+            <div class="attachment-upload-panel">
+                <div>
+                    <label class="form-label"><i class="ri-attachment-2"></i> Physical Voucher / Bill Photos</label>
+                    <div class="form-hint">Optional. Upload bill photos or PDF voucher. You can open and share them from the transaction detail page.</div>
+                </div>
+                <input type="file" name="vouchers[]" class="form-control" accept="image/*,application/pdf" multiple>
             </div>
 
             <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; gap: 12px;">
@@ -741,12 +833,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 </div>
 
-<div class="modal-overlay" id="split-entry-modal">
+<div class="modal-overlay" id="split-entry-modal-legacy" style="display:none;">
     <div class="modal modal-wide">
         <div class="modal-header">
             <div>
                 <h3><i class="ri-bill-line"></i> Split Large Bill</h3>
-                <p class="modal-subtitle">Choose the main cash/bank/GST account, then split the amount across cars or accounts.</p>
+                <p class="modal-subtitle">Choose the main cash/bank account, then split the amount across cars or accounts.</p>
             </div>
             <button type="button" class="modal-close" onclick="closeModal('split-entry-modal')">&times;</button>
         </div>
@@ -760,14 +852,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Entry direction</label>
-                    <select name="jv_direction" class="form-control searchable-select" form="transaction-form">
+                    <select name="jv_direction_modal" class="form-control searchable-select">
                         <option value="PAYMENT">Payment / Money Out</option>
                         <option value="RECEIPT">Receipt / Money In</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Split type</label>
-                    <select name="jv_voucher_type" class="form-control searchable-select" form="transaction-form">
+                    <select name="jv_voucher_type_modal" class="form-control searchable-select">
                         <option value="SPLIT_BILL">Large Bill Split</option>
                         <option value="GARAGE_BILL_SPLIT">Garage Bill Across Cars</option>
                         <option value="AUCTION_PURCHASE_SPLIT">Auction / Mela Purchase Split</option>
@@ -777,24 +869,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="split-balance-card" id="split-balance-card">
+            <div class="split-balance-card" id="split-balance-card-legacy">
                 <div>
                     <span>Total</span>
-                    <strong id="split-modal-total">₹0.00</strong>
+                    <strong id="split-modal-total-legacy">₹0.00</strong>
                 </div>
                 <div>
                     <span>Allocated</span>
-                    <strong id="split-allocated-total">₹0.00</strong>
+                    <strong id="split-allocated-total-legacy">₹0.00</strong>
                 </div>
                 <div>
                     <span>Remaining</span>
-                    <strong id="split-remaining-total">₹0.00</strong>
+                    <strong id="split-remaining-total-legacy">₹0.00</strong>
                 </div>
             </div>
 
-            <div id="split-lines" class="split-lines">
+            <div id="split-lines-legacy" class="split-lines">
                 <div class="split-line-row">
-                    <input type="hidden" name="jv_account_id[]" class="split-account-id" form="transaction-form">
+                    <input type="hidden" name="jv_account_id_modal[]" class="split-account-id">
                     <div class="split-account-cell">
                         <label class="form-label">Account / Car *</label>
                         <button type="button" class="picker-trigger" onclick="openAccountPicker(this)">
@@ -804,11 +896,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div>
                         <label class="form-label">Amount *</label>
-                        <input type="text" name="jv_amount[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" form="transaction-form">
+                        <input type="text" name="jv_amount_modal[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
                     </div>
                     <div>
                         <label class="form-label">Note</label>
-                        <input type="text" name="jv_narration[]" class="form-control" placeholder="e.g. Swift repair" form="transaction-form">
+                        <input type="text" name="jv_narration_modal[]" class="form-control" placeholder="e.g. Swift repair">
                     </div>
                     <button type="button" class="btn btn-outline btn-icon split-remove-btn" onclick="removeSplitLine(this)" title="Remove row">
                         <i class="ri-delete-bin-line"></i>
@@ -869,9 +961,16 @@ const entityPickerConfig = {
         triggerId: 'car-picker-trigger',
         emptyLabel: 'Select car',
     },
-    partner: {
-        title: 'Search Partners',
+    main_partner: {
+        title: 'Search Main Partners',
         subtitle: 'Search by partner name or phone number.',
+        inputId: 'partner_id',
+        triggerId: 'partner-picker-trigger',
+        emptyLabel: 'Select partner',
+    },
+    car_partner: {
+        title: 'Search Car-wise Partners',
+        subtitle: 'Search partner for this specific car deal.',
         inputId: 'partner_id',
         triggerId: 'partner-picker-trigger',
         emptyLabel: 'Select partner',
@@ -981,7 +1080,8 @@ function selectSplitEntryType() {
     select.dispatchEvent(new Event('change'));
     syncMoneyFlowButtons();
     renderTransactionTypePicker();
-    openSplitEntryModal();
+    document.getElementById('split-bill-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => document.querySelector('#split-lines .picker-trigger')?.focus(), 120);
 }
 
 function selectMoneyFlow(flow) {
@@ -1149,8 +1249,8 @@ function updateTransactionTypeTrigger() {
         if (icon) icon.className = 'ri-list-check-2';
         if (title) title.textContent = 'Select entry type';
         if (desc) desc.textContent = activeMoneyFlow === 'in'
-            ? 'Showing Jama entries only.'
-            : (activeMoneyFlow === 'out' ? 'Showing Udhar entries only.' : 'Choose Green/Jama or Red/Udhar first for a shorter list.');
+            ? 'Showing Receive/Jama entries only.'
+            : (activeMoneyFlow === 'out' ? 'Showing Payments entries only.' : 'Choose Receive/Jama or Payments first for a shorter list.');
         trigger.classList.remove('money-in', 'money-out');
     }
 }
@@ -1184,10 +1284,6 @@ function syncDynamicCategoryEntryState() {
     document.querySelectorAll('.txn-section').forEach((section) => {
         section.style.display = 'none';
     });
-    const gstSection = document.getElementById('gst-section');
-    if (gstSection) {
-        gstSection.style.display = categoryDirection === 'out' ? 'block' : 'none';
-    }
     const paymentAccountGroup = document.getElementById('payment-account-group');
     if (paymentAccountGroup) paymentAccountGroup.style.display = '';
     const paymentLabel = document.getElementById('payment-account-label');
@@ -1197,7 +1293,7 @@ function syncDynamicCategoryEntryState() {
 function filterPrimaryPaymentAccounts(type) {
     const select = document.getElementById('payment_account');
     if (!select) return;
-    const requiredAccountType = type === 'GST_PAYMENT' ? 'GST' : '';
+    const requiredAccountType = '';
     let selectedVisible = false;
 
     Array.from(select.options).forEach((option) => {
@@ -1214,9 +1310,28 @@ function filterPrimaryPaymentAccounts(type) {
     }
 }
 
+function syncSaleAmountUi() {
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    const amountGroup = document.getElementById('amount-group');
+    const amountInput = document.querySelector('input[name=\"amount\"]');
+    const salePriceInput = document.querySelector('input[name=\"sale_price\"]');
+    const commissionInput = document.querySelector('input[name=\"sale_commission_amount\"]');
+    if (!amountGroup || !amountInput) return;
+
+    const isCarSale = txnType === 'CAR_SALE';
+    amountGroup.style.display = isCarSale ? 'none' : '';
+    amountInput.required = !isCarSale;
+    if (isCarSale) {
+        const salePrice = parseNumericString(salePriceInput?.value || '0');
+        const commission = parseNumericString(commissionInput?.value || '0');
+        amountInput.value = String(salePrice + commission || '');
+    }
+}
+
 function openSplitEntryModal() {
     updateSplitTotals();
-    openModal('split-entry-modal');
+    const section = document.getElementById('split-bill-section');
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function addSplitLine() {
@@ -1231,6 +1346,10 @@ function addSplitLine() {
     }
     container.appendChild(clone);
     updateSplitTotals();
+}
+
+function focusFirstSplitLine() {
+    document.querySelector('#split-lines .split-line-row:last-child .picker-trigger')?.focus();
 }
 
 function removeSplitLine(button) {
@@ -1249,8 +1368,11 @@ function removeSplitLine(button) {
 function updateSplitTotals() {
     const total = parseNumericString(document.querySelector('.amount-input')?.value || '0');
     let allocated = 0;
+    let activeRows = 0;
     document.querySelectorAll('.split-line-amount').forEach((input) => {
-        allocated += parseNumericString(input.value || '0');
+        const amount = parseNumericString(input.value || '0');
+        allocated += amount;
+        if (amount > 0) activeRows += 1;
     });
     const remaining = total - allocated;
     const balanceCard = document.getElementById('split-balance-card');
@@ -1259,6 +1381,8 @@ function updateSplitTotals() {
     document.getElementById('split-modal-total').textContent = formatINR(total);
     document.getElementById('split-allocated-total').textContent = formatINR(allocated);
     document.getElementById('split-remaining-total').textContent = formatINR(remaining);
+    const countNode = document.getElementById('split-line-count');
+    if (countNode) countNode.textContent = String(activeRows);
     balanceCard?.classList.toggle('is-balanced', Math.abs(remaining) < 0.01 && total > 0);
     balanceCard?.classList.toggle('is-warning', Math.abs(remaining) >= 0.01);
 }
@@ -1327,7 +1451,7 @@ async function renderEntityPickerResults(query) {
 
 function selectEntityPickerValue(kind, id, label) {
     const triggerButton = activeEntityPicker?.button || null;
-    if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
+    if ((kind === 'partner' || kind === 'car_partner') && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
         const input = row?.querySelector('.pf-partner-id');
         const span = triggerButton.querySelector('span');
@@ -1358,11 +1482,15 @@ document.addEventListener('DOMContentLoaded', function() {
     syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
     document.getElementById('transaction_type')?.addEventListener('change', () => {
         setTimeout(syncDynamicCategoryEntryState, 0);
+        setTimeout(syncSaleAmountUi, 0);
     });
+    document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
+    document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
         button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));
     });
     filterPrimaryPaymentAccounts(document.getElementById('transaction_type')?.value || '');
+    syncSaleAmountUi();
 });
 
 async function renderAccountPickerResults(query) {

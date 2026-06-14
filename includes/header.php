@@ -70,12 +70,10 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-user-star-line"></i></span>
                     Employees
                 </a>
-                <?php if (!isClientHiddenBook('creditors_report') || !isClientHiddenBook('debtor_ageing')): ?>
                 <a href="<?= APP_URL ?>parties/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'parties/') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-contacts-book-line"></i></span>
                     Debtors / Creditors
                 </a>
-                <?php endif; ?>
             </div>
 
             <div class="nav-section">
@@ -90,12 +88,6 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 <a href="<?= APP_URL ?>reports/bankbook.php" class="nav-link <?= $currentPage === 'bankbook' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-bank-line"></i></span>
                     Bank Book
-                </a>
-                <?php endif; ?>
-                <?php if (!isClientHiddenBook('gst_book') && Auth::hasBookAccess('gst_book', 'read')): ?>
-                <a href="<?= APP_URL ?>reports/gst_book.php" class="nav-link <?= $currentPage === 'gst_book' ? 'active' : '' ?>">
-                    <span class="nav-icon"><i class="ri-file-list-2-line"></i></span>
-                    GST Book
                 </a>
                 <?php endif; ?>
                 <?php if (!isClientHiddenBook('trial_balance') && Auth::hasBookAccess('trial_balance', 'read')): ?>

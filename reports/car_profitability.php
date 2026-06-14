@@ -22,7 +22,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale Price</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -30,12 +30,14 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             $expenses = max(0, $carProfitability['total_expenses'] ?? ($totalCost - $car['purchase_price']));
             $profit = $car['status'] === 'SOLD' ? $carProfitability['profit'] : null;
             $grossSalePrice = $carProfitability['sale_price'] ?? $car['sale_price'];
+            $commissionAmount = $carProfitability['sale_commission_amount'] ?? ($car['sale_commission_amount'] ?? 0);
             $saleGstAmount = $carProfitability['sale_gst_amount'] ?? ($car['sale_gst_amount'] ?? 0);
+            $totalSaleRealisation = $carProfitability['total_sale_realisation'] ?? ($grossSalePrice + $commissionAmount);
             $settlementSummary = [];
             foreach ($carProfitability['settlements'] as $settlement) {
                 $settlementSummary[] = $settlement['partner_name'] . ': ' . $settlement['status'];
             }
-            if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $car['sale_price']; $grandProfit += $profit; }
+            if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $totalSaleRealisation; $grandProfit += $profit; }
         ?>
         <tr>
             <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
@@ -48,8 +50,9 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             <td class="text-right amount text-bold"><?= formatAmount($totalCost) ?></td>
             <td class="text-right amount">
                 <?php if ($grossSalePrice): ?>
-                    <?= formatAmount($grossSalePrice) ?>
-                    <?php if ($saleGstAmount > 0): ?><div class="text-muted" style="font-size:11px;">GST <?= formatAmount($saleGstAmount) ?></div><?php endif; ?>
+                    <?= formatAmount($totalSaleRealisation) ?>
+                    <?php if ($commissionAmount > 0): ?><div class="text-muted" style="font-size:11px;">Includes commission <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
+                    <?php if ($saleGstAmount > 0): ?><div class="text-muted" style="font-size:11px;">Net revenue adjusted</div><?php endif; ?>
                 <?php else: ?>
                     -
                 <?php endif; ?>

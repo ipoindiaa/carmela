@@ -732,6 +732,99 @@ body.sidebar-collapsed .main-content {
     overflow-wrap: anywhere;
 }
 
+.attachment-upload-panel {
+    display: grid;
+    grid-template-columns: minmax(180px, 260px) minmax(240px, 1fr) auto;
+    gap: 14px;
+    align-items: end;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    margin-bottom: 18px;
+}
+
+.attachment-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.attachment-group-title {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.attachment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+}
+
+.attachment-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    overflow: hidden;
+}
+
+.attachment-card img,
+.attachment-preview {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: var(--bg-tertiary);
+}
+
+.attachment-file-icon {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    display: grid;
+    place-items: center;
+    gap: 6px;
+    color: var(--accent-red);
+    background: var(--accent-red-glow);
+    font-weight: 700;
+}
+
+.attachment-file-icon i {
+    font-size: 34px;
+}
+
+.attachment-meta {
+    display: grid;
+    gap: 3px;
+    padding: 10px;
+    font-size: 12px;
+}
+
+.attachment-meta strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-meta span {
+    color: var(--text-muted);
+}
+
+.attachment-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 10px 10px;
+    flex-wrap: wrap;
+}
+
+.empty-state.compact {
+    padding: 18px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+}
+
 table {
     width: 100%; border-collapse: collapse;
     table-layout: auto;
@@ -2260,6 +2353,13 @@ html.js .pagination.no-js-pagination { display: none; }
     .stats-grid[style] { grid-template-columns: 1fr !important; }
     .form-row, .form-row-3 { grid-template-columns: 1fr; }
     .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr !important; }
+    .attachment-upload-panel,
+    .attachment-columns {
+        grid-template-columns: 1fr;
+    }
+    .attachment-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
     .entry-helper-strip,
     .simple-entry-switch,
     .split-entry-panel,

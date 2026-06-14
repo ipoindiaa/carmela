@@ -1,6 +1,6 @@
 <?php
 // Application Configuration
-define('APP_NAME', 'AutoBooks Pro');
+define('APP_NAME', 'Tiranga Car World');
 define('APP_VERSION', '1.0');
 define('APP_CURRENCY', '₹');
 define('APP_CURRENCY_CODE', 'INR');
@@ -29,10 +29,6 @@ define('BOOK_PERMISSIONS', [
     'bank_book' => [
         'label' => 'Bank Book',
         'description' => 'View bank activity and post bank-based entries',
-    ],
-    'gst_book' => [
-        'label' => 'GST Book',
-        'description' => 'View GST account activity and post GST-bank entries',
     ],
     'general_ledger' => [
         'label' => 'General Ledger',
@@ -83,24 +79,9 @@ define('BOOK_PERMISSIONS', [
 define('PRIMARY_BOOK_ACCOUNT_TYPES', [
     'cash_book' => 'CASH',
     'bank_book' => 'BANK',
-    'gst_book' => 'GST',
 ]);
 
-define('CLIENT_DEMO_HIDDEN_BOOKS', [
-    'gst_book',
-    'trial_balance',
-    'profit_loss',
-    'balance_sheet',
-    'car_profitability',
-    'general_ledger',
-    'debtor_ageing',
-    'creditors_report',
-    'partner_accounts',
-    'employee_advances',
-    'outstanding_summary',
-    'jv_register',
-    'audit_log',
-]);
+define('CLIENT_DEMO_HIDDEN_BOOKS', []);
 
 // Transaction Types
 define('TXN_TYPES', [
@@ -108,7 +89,7 @@ define('TXN_TYPES', [
     'CAR_SALE' => 'Sold a Car',
     'CAR_EXPENSE' => 'Car Repair / Service',
     'GENERAL_EXPENSE' => 'Office / Business Expense',
-    'JOURNAL_VOUCHER' => 'Journal Voucher',
+    'JOURNAL_VOUCHER' => 'Large Bill Split',
     'PARTNER_INVEST' => 'Partner Added Money',
     'PARTNER_WITHDRAW' => 'Partner Took Money',
     'PARTNER_SETTLEMENT' => 'Partner Settlement',
@@ -120,8 +101,8 @@ define('TXN_TYPES', [
     'LOAN_TAKEN' => 'Borrowed Money',
     'LOAN_REPAID' => 'Repaid a Loan',
     'CONTRA_TRANSFER' => 'Cash to Bank / Bank to Cash',
-    'GST_PAYMENT' => 'GST Payment',
-    'GST_UTILIZATION' => 'GST Input Utilized',
+    'GST_PAYMENT' => 'Tax Payment',
+    'GST_UTILIZATION' => 'Tax Credit Utilized',
     'BAD_DEBT' => 'Bad Debt Write-Off',
 ]);
 

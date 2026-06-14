@@ -1,5 +1,5 @@
 <?php
-$pageTitle = 'JV Register';
+$pageTitle = 'Large Bill Register';
 $pageIcon = '<i class="ri-booklet-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 Auth::requireBookAccess('jv_register', 'read');
@@ -14,9 +14,9 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
 ?>
 
 <div class="page-header">
-    <h1><i class="ri-booklet-line"></i> JV Register</h1>
+    <h1><i class="ri-booklet-line"></i> Large Bill Register</h1>
     <div style="display:flex; gap:12px;">
-        <a href="../transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-primary btn-sm"><i class="ri-add-circle-line"></i> New Split Entry</a>
+        <a href="../transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-primary btn-sm"><i class="ri-add-circle-line"></i> New Large Bill Split</a>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>
 </div>
@@ -31,7 +31,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>JV Ref</th><th>Date</th><th>Type</th><th>Primary Account</th><th class="text-right">Amount</th><th>Status</th><th>Posted Ref</th><th>Narration</th></tr></thead>
+        <thead><tr><th>Bill Ref</th><th>Date</th><th>Bill Type</th><th>Main Book</th><th class="text-right">Amount</th><th>Status</th><th>Daily Entry</th><th>Narration</th></tr></thead>
         <tbody>
             <?php if (empty($vouchers)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 32px;">No journal vouchers found for this period.</td></tr>

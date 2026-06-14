@@ -16,7 +16,7 @@
 - Large selection fields must include search because the system will have hundreds of accounts and thousands of cars.
 - User-facing labels can use simple English plus Gujlish where it improves clarity for Gujarati operators.
 - Every transaction must preserve double-entry balance.
-- The main accounting gateway remains Cash, Bank, and GST Bank.
+- The main accounting gateway remains Cash and Bank.
 - Corrections happen through reversal, not silent edits.
 - The completed product should be light mode, not dark mode.
 - The site should feel lightning fast: minimal UI chrome, small assets, fast server-rendered pages.
@@ -34,7 +34,6 @@ Books currently tracked for permissions:
 
 - Cash Book
 - Bank Book
-- GST Book
 - General Ledger
 - Trial Balance
 - Profit & Loss

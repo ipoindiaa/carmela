@@ -11,7 +11,6 @@ $primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'read
 $tabMeta = [
     'cash_book' => ['tab' => 'cash', 'fallback_label' => 'Cash Account', 'icon' => '💵', 'class' => 'cash'],
     'bank_book' => ['tab' => 'bank', 'fallback_label' => 'Bank Account', 'icon' => '🏦', 'class' => 'bank'],
-    'gst_book' => ['tab' => 'gst', 'fallback_label' => 'GST Account', 'icon' => '📋', 'class' => 'gst'],
 ];
 $availableTabs = [];
 foreach ($tabMeta as $bookKey => $meta) {
@@ -85,11 +84,6 @@ $bookViewMoreUrl = match ($activeBookKey) {
         'to' => $accountLedgerToDate,
     ]),
     'bank_book' => 'reports/bankbook.php?' . http_build_query([
-        'account_id' => $activeAccountId,
-        'from' => $accountLedgerFromDate,
-        'to' => $accountLedgerToDate,
-    ]),
-    'gst_book' => 'reports/gst_book.php?' . http_build_query([
         'account_id' => $activeAccountId,
         'from' => $accountLedgerFromDate,
         'to' => $accountLedgerToDate,
@@ -173,9 +167,8 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
 
 <section class="dashboard-hero">
     <div>
-        <div class="dashboard-eyebrow">AutoBooks Pro Command Center</div>
-        <h1>Roz ni entry fast, clear ane mistake-proof.</h1>
-        <p>Manage cash, bank, GST, car expenses, partners, salary, loans, and large split bills from one New Entry flow.</p>
+        <div class="dashboard-eyebrow"><?= APP_NAME ?> Command Center</div>
+        <p>Manage cash, bank, car expenses, partners, salary, loans, and large split bills from one New Entry flow.</p>
         <div class="dashboard-hero-actions">
             <?php if ($canWritePrimaryBooks): ?>
                 <a href="transactions/new.php" class="btn btn-primary btn-lg"><i class="ri-add-circle-line"></i> New Entry</a>
@@ -214,7 +207,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
     </div>
 <?php else: ?>
     <div class="alert alert-info">
-        <i class="ri-information-line"></i> Your user account does not have any Cash, Bank, or GST book access yet.
+        <i class="ri-information-line"></i> Your user account does not have any Cash or Bank book access yet.
     </div>
 <?php endif; ?>
 

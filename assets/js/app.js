@@ -33,6 +33,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    document.addEventListener('click', async function(e) {
+        const shareButton = e.target.closest('[data-share-url]');
+        if (!shareButton) return;
+        const url = shareButton.dataset.shareUrl || '';
+        const title = shareButton.dataset.shareTitle || 'Attachment';
+        if (navigator.share) {
+            try {
+                await navigator.share({ title, url });
+                return;
+            } catch (error) {
+                if (error && error.name === 'AbortError') return;
+            }
+        }
+        if (navigator.clipboard && url) {
+            await navigator.clipboard.writeText(url);
+            showToast('Share link copied.');
+        } else if (url) {
+            window.open(url, '_blank', 'noopener');
+        }
+    });
+
     // Dynamic form fields based on transaction type
     const txnTypeSelect = document.getElementById('transaction_type');
     if (txnTypeSelect) {
@@ -43,10 +64,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Show relevant sections
             const sectionMap = {
-                'CAR_PURCHASE': ['gst-section', 'car-section', 'partner-funding-section'],
-                'CAR_SALE': ['gst-section', 'car-select-section', 'buyer-section'],
-                'CAR_EXPENSE': ['gst-section', 'car-select-section', 'category-section'],
-                'GENERAL_EXPENSE': ['gst-section', 'category-section'],
+                'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
+                'CAR_SALE': ['car-select-section', 'buyer-section'],
+                'CAR_EXPENSE': ['car-select-section', 'category-section'],
+                'GENERAL_EXPENSE': ['category-section'],
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
                 'PARTNER_WITHDRAW': ['partner-section'],
@@ -58,8 +79,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 'LOAN_TAKEN': ['party-name-section'],
                 'LOAN_REPAID': ['party-select-section'],
                 'CONTRA_TRANSFER': ['contra-section'],
-                'GST_PAYMENT': [],
-                'GST_UTILIZATION': [],
             };
 
             const sections = sectionMap[type] || [];
@@ -71,37 +90,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 syncPreselectedExpenseCarState(type);
             }
 
-            const gstLabel = document.querySelector('#gst-section .form-label');
-            const gstHint = document.querySelector('#gst-section .form-hint');
-            if (gstLabel && gstHint) {
-                if (type === 'CAR_SALE') {
-                    gstLabel.textContent = 'GST Output Included (₹)';
-                    gstHint.textContent = 'Optional. If entered, this GST will go to GST Payable and only the remaining amount will be treated as sale revenue.';
-                } else {
-                    gstLabel.textContent = 'GST Input Included (₹)';
-                    gstHint.textContent = 'Optional. If entered, this GST will go to Input Credit and the remaining amount will hit car cost or expense.';
-                }
-            }
-
             // Update payment account label
             const pLabel = document.getElementById('payment-account-label');
             const paymentAccountGroup = document.getElementById('payment-account-group');
-            const hiddenAccountTypes = ['GST_UTILIZATION'];
-            if (paymentAccountGroup) {
-                paymentAccountGroup.style.display = hiddenAccountTypes.includes(type) ? 'none' : '';
-            }
+            if (paymentAccountGroup) paymentAccountGroup.style.display = '';
             if (typeof filterPrimaryPaymentAccounts === 'function') {
                 filterPrimaryPaymentAccounts(type);
             }
             if (pLabel) {
                 const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED'];
-                if (type === 'GST_PAYMENT') {
-                    pLabel.textContent = 'GST Bank Account';
-                } else if (type === 'JOURNAL_VOUCHER') {
-                    pLabel.textContent = 'Cash / Bank / GST account';
+                if (type === 'JOURNAL_VOUCHER') {
+                    pLabel.textContent = 'Cash / Bank account';
+                } else if (type === 'CAR_SALE') {
+                    pLabel.textContent = 'Receiving Account';
                 } else {
                     pLabel.textContent = inTypes.includes(type) ? 'Receiving Account' : 'Payment Account';
                 }
+            }
+            if (typeof syncSaleAmountUi === 'function') {
+                syncSaleAmountUi();
             }
         });
 

@@ -13,6 +13,7 @@ file_put_contents($logFile, json_encode($logDataPre) . "\n", FILE_APPEND);
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $db = Database::getInstance();
 
@@ -32,6 +33,7 @@ Auth::requireAnyBookAccess(array_keys(BOOK_PERMISSIONS), 'read');
 header('Content-Type: application/json');
 
 $businessId = Auth::user('business_id');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $kind = strtolower(get('kind', ''));
 $query = trim(get('q', ''));
 $needle = '%' . $query . '%';
@@ -104,11 +106,20 @@ switch ($kind) {
         break;
 
     case 'partner':
+    case 'main_partner':
+    case 'car_partner':
+        $partnerTypeFilter = '';
+        if ($kind === 'main_partner') {
+            $partnerTypeFilter = " AND partner_type = 'MAIN'";
+        } elseif ($kind === 'car_partner') {
+            $partnerTypeFilter = " AND partner_type = 'CARWISE'";
+        }
         $rows = $db->fetchAll(
-            "SELECT id, name, phone, profit_share_pct
+            "SELECT id, name, phone, profit_share_pct, partner_type
              FROM partners
              WHERE business_id = ?
                AND is_active = 1
+               $partnerTypeFilter
                AND (
                    name LIKE ?
                    OR phone LIKE ?
@@ -121,7 +132,7 @@ switch ($kind) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
-                'meta' => 'Share ' . number_format((float) ($row['profit_share_pct'] ?? 0), 2) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
+                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Share ' . number_format((float) ($row['profit_share_pct'] ?? 0), 2) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
             ];
         }
         break;
