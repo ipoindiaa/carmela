@@ -170,7 +170,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
     <div class="dashboard-hero-main">
         <div class="dashboard-eyebrow"><?= APP_NAME ?> Command Center</div>
         <h1>Car business control, made clear and fast.</h1>
-        <p>Manage cash, bank, car expenses, partners, salary, loans, and large split bills from one New Entry flow.</p>
+        <p>Manage cash, bank, cars, partners, salary, and daily business entries from one simple flow.</p>
         <div class="dashboard-hero-pills">
             <span><i class="ri-car-line"></i> In Stock <?= intval($totalCars['cnt'] ?? 0) ?></span>
             <span><i class="ri-check-double-line"></i> Sold <?= intval($totalSold['cnt'] ?? 0) ?></span>
@@ -265,37 +265,6 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
         <i class="ri-information-line"></i> Your user account does not have any Cash or Bank book access yet.
     </div>
 <?php endif; ?>
-
-<div class="dashboard-stat-grid">
-    <div class="dashboard-mini-stat">
-        <div class="dashboard-mini-icon"><i class="ri-car-line"></i></div>
-        <div>
-            <div class="dashboard-mini-value"><?= $totalCars['cnt'] ?? 0 ?></div>
-            <div class="dashboard-mini-label">Cars In Stock</div>
-        </div>
-    </div>
-    <div class="dashboard-mini-stat">
-        <div class="dashboard-mini-icon" style="background: var(--accent-green-glow); color: var(--accent-green);"><i class="ri-check-double-line"></i></div>
-        <div>
-            <div class="dashboard-mini-value"><?= $totalSold['cnt'] ?? 0 ?></div>
-            <div class="dashboard-mini-label">Cars Sold</div>
-        </div>
-    </div>
-    <div class="dashboard-mini-stat">
-        <div class="dashboard-mini-icon" style="background: var(--accent-yellow-glow); color: var(--accent-yellow);"><i class="ri-group-line"></i></div>
-        <div>
-            <div class="dashboard-mini-value"><?= $totalPartners['cnt'] ?? 0 ?></div>
-            <div class="dashboard-mini-label">Partners</div>
-        </div>
-    </div>
-    <div class="dashboard-mini-stat">
-        <div class="dashboard-mini-icon" style="background: var(--accent-cyan); color: white;"><i class="ri-user-star-line"></i></div>
-        <div>
-            <div class="dashboard-mini-value"><?= $totalEmployees['cnt'] ?? 0 ?></div>
-            <div class="dashboard-mini-label">Employees</div>
-        </div>
-    </div>
-</div>
 
 <div class="dashboard-main-grid">
     <section class="dashboard-panel">
