@@ -148,6 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $entryId = null;
         $attachmentCarId = null;
 
+        if ($type === '') {
+            throw new Exception('Please select what kind of entry this is.');
+        }
+
         if ($paymentAccountId && !in_array($paymentAccountId, $writableAccountIds, true)) {
             throw new Exception('You do not have write access to that book/account.');
         }
@@ -375,7 +379,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-add-circle-line"></i> New Entry</h1>
-    <p class="text-muted">All entries from one screen: Receive/Jama, Payments, car entry, salary, loan, and one large bill split into many places.</p>
+    <div class="entry-header-actions">
+        <span><i class="ri-arrow-down-circle-line"></i> Jama</span>
+        <span><i class="ri-arrow-up-circle-line"></i> Payments</span>
+        <span><i class="ri-bill-line"></i> Split Bill</span>
+    </div>
 </div>
 
 <div class="simple-entry-switch">
@@ -396,15 +404,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </button>
 </div>
 
-<div class="card entry-card">
-    <div class="card-body">
-        <form method="POST" id="transaction-form" enctype="multipart/form-data">
-            <?= csrfField() ?>
+<section class="entry-workstation">
+    <form method="POST" id="transaction-form" class="entry-form" enctype="multipart/form-data">
+        <?= csrfField() ?>
 
+        <div class="entry-core-panel">
             <div class="form-row-3">
                 <div class="form-group">
                     <label class="form-label">What are you doing? *</label>
-                    <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>" required>
+                    <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>">
                         <option value="">— Select Transaction Type —</option>
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Receive / Jama or Payments Category" data-desc="Admin-defined category account.">Receive / Jama or Payments Category</option>
                         <optgroup label="Cars">
@@ -447,6 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="txn-type-list" id="txn-type-list" role="listbox"></div>
                         </div>
                     </div>
+                    <div class="form-error" id="txn-type-error" hidden>Please choose Receive/Jama, Payments, or Split Bill.</div>
                     <input type="hidden" name="dynamic_category_account_id" id="dynamic_category_account_id">
                     <input type="hidden" name="dynamic_category_direction" id="dynamic_category_direction">
                 </div>
@@ -475,6 +484,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" required>
                 </div>
             </div>
+        </div>
 
             <!-- CAR PURCHASE SECTION -->
             <div class="txn-section" id="car-section" style="display:none;">
@@ -824,22 +834,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="attachment-upload-panel">
-                <div>
-                    <label class="form-label"><i class="ri-attachment-2"></i> Physical Voucher / Bill Photos</label>
-                    <div class="form-hint">Optional. Upload bill photos or PDF voucher. You can open and share them from the transaction detail page.</div>
+                <div class="attachment-upload-copy">
+                    <label class="form-label"><i class="ri-attachment-2"></i> Voucher / Bill Photos</label>
+                    <div class="form-hint">Optional proof for this entry. Images and PDFs can be shared from transaction detail.</div>
                 </div>
-                <input type="file" name="vouchers[]" class="form-control" accept="image/*,application/pdf" multiple>
+                <label class="voucher-dropzone">
+                    <input type="file" name="vouchers[]" accept="image/*,application/pdf" multiple>
+                    <span class="voucher-dropzone-icon"><i class="ri-upload-cloud-2-line"></i></span>
+                    <span>
+                        <strong>Upload vouchers</strong>
+                        <small class="voucher-file-status">Images or PDF</small>
+                    </span>
+                </label>
             </div>
 
-            <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; gap: 12px;">
+            <div class="entry-form-actions">
                 <button type="submit" class="btn btn-primary btn-lg">
                     <i class="ri-save-line"></i> Save Entry
                 </button>
                 <a href="list.php" class="btn btn-outline btn-lg" data-smart-back="1">Cancel</a>
             </div>
-        </form>
-    </div>
-</div>
+    </form>
+</section>
 
 <div class="modal-overlay" id="split-entry-modal-legacy" style="display:none;">
     <div class="modal modal-wide">
@@ -963,7 +979,7 @@ let activeEntityPicker = null;
 const entityPickerConfig = {
     car: {
         title: 'Search Cars',
-        subtitle: 'Search by registration number, make, or model.',
+        subtitle: 'Search available cars by registration number, make, or model.',
         inputId: 'expense_car_select',
         mirrorInputId: 'sale_car_id',
         triggerId: 'car-picker-trigger',
@@ -1411,8 +1427,13 @@ function openEntityPicker(kind, button) {
     const title = document.querySelector('#entity-picker-modal h3');
     const subtitle = document.getElementById('entity-picker-subtitle');
     const search = document.getElementById('entity-picker-search');
+    const txnType = document.getElementById('transaction_type')?.value || '';
     if (title) title.innerHTML = `<i class="ri-search-eye-line"></i> ${config.title}`;
-    if (subtitle) subtitle.textContent = config.subtitle;
+    if (subtitle) {
+        subtitle.textContent = kind === 'car' && txnType === 'CAR_SALE'
+            ? 'Only in-stock cars are shown here. Already sold cars are hidden.'
+            : config.subtitle;
+    }
     if (search) search.value = '';
     renderEntityPickerResults('');
     openModal('entity-picker-modal');
@@ -1424,17 +1445,21 @@ async function renderEntityPickerResults(query) {
     if (!results || !activeEntityPicker?.kind) return;
     const kind = activeEntityPicker.kind;
     const searchQuery = (query || '').trim();
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    const contextParam = kind === 'car' ? `&context=${encodeURIComponent(txnType)}` : '';
     results.innerHTML = '<div class="picker-empty">Searching...</div>';
 
     try {
-        const response = await fetch(`search_entities.php?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(searchQuery)}`, {
+        const response = await fetch(`search_entities.php?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(searchQuery)}${contextParam}`, {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
         if (!response.ok) throw new Error('Search failed');
         const payload = await response.json();
         const matches = payload.results || [];
         if (!matches.length) {
-            results.innerHTML = '<div class="picker-empty">No match found.</div>';
+            results.innerHTML = kind === 'car' && txnType === 'CAR_SALE'
+                ? '<div class="picker-empty">No in-stock car found. Sold cars are hidden from sale entry.</div>'
+                : '<div class="picker-empty">No match found.</div>';
             return;
         }
 
@@ -1488,12 +1513,35 @@ function selectEntityPickerValue(kind, id, label) {
 document.addEventListener('DOMContentLoaded', function() {
     initTransactionTypePicker();
     syncPreselectedExpenseCarState(document.getElementById('transaction_type')?.value || '');
+    document.getElementById('transaction-form')?.addEventListener('submit', (event) => {
+        const select = document.getElementById('transaction_type');
+        const trigger = document.getElementById('txn-type-trigger');
+        const error = document.getElementById('txn-type-error');
+        if (select?.value) {
+            trigger?.classList.remove('is-invalid');
+            if (error) error.hidden = true;
+            return;
+        }
+        event.preventDefault();
+        trigger?.classList.add('is-invalid');
+        if (error) error.hidden = false;
+        trigger?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        trigger?.focus();
+    });
     document.getElementById('transaction_type')?.addEventListener('change', () => {
+        document.getElementById('txn-type-trigger')?.classList.remove('is-invalid');
+        const error = document.getElementById('txn-type-error');
+        if (error) error.hidden = true;
         setTimeout(syncDynamicCategoryEntryState, 0);
         setTimeout(syncSaleAmountUi, 0);
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
+    document.querySelector('input[name="vouchers[]"]')?.addEventListener('change', (event) => {
+        const status = document.querySelector('.voucher-file-status');
+        const count = event.target.files ? event.target.files.length : 0;
+        if (status) status.textContent = count ? `${count} file${count === 1 ? '' : 's'} selected` : 'Images or PDF';
+    });
     document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
         button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));
     });

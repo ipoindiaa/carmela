@@ -36,6 +36,7 @@ $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $kind = strtolower(get('kind', ''));
 $query = trim(get('q', ''));
+$context = strtoupper(trim(get('context', '')));
 $needle = '%' . $query . '%';
 $prefix = $query . '%';
 $limit = 25;
@@ -75,11 +76,15 @@ switch ($kind) {
         break;
 
     case 'car':
+        $statusFilterSql = "AND status <> 'CANCELLED'";
+        if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true)) {
+            $statusFilterSql = "AND status = 'IN_STOCK'";
+        }
         $rows = $db->fetchAll(
             "SELECT id, registration_no, make, model, year, status
              FROM cars
              WHERE business_id = ?
-               AND status <> 'CANCELLED'
+               $statusFilterSql
                AND (
                    registration_no LIKE ?
                    OR make LIKE ?

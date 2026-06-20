@@ -519,7 +519,7 @@ class AccountingEngine {
     public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0, $commissionAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
-        if ($car['status'] === 'SOLD') throw new Exception("Car is already sold");
+        if ($car['status'] !== 'IN_STOCK') throw new Exception("Only in-stock cars can be sold from this entry. Use debtor recovery for pending buyer payment.");
         if ($salePrice <= 0) throw new Exception("Sale price must be greater than zero.");
         $commissionAmount = round(floatval($commissionAmount), 2);
         if ($commissionAmount < 0) throw new Exception("Commission cannot be negative.");
