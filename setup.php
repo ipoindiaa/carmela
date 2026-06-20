@@ -81,6 +81,8 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Setup — <?= APP_NAME ?></title>
+    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="apple-touch-icon" href="logo.png">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
@@ -88,7 +90,9 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
 <div class="setup-container">
     <div class="setup-card animate-fade">
         <div class="login-logo">
-            <div class="logo-icon">A</div>
+            <div class="logo-icon">
+                <img src="logo.png" alt="<?= APP_NAME ?> logo">
+            </div>
             <h1><?= APP_NAME ?></h1>
             <p>Initial Setup Wizard</p>
         </div>

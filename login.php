@@ -41,6 +41,8 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login — <?= APP_NAME ?></title>
     <meta name="description" content="Login to <?= APP_NAME ?> — Car Trading Accounting System">
+    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="apple-touch-icon" href="logo.png">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
@@ -48,7 +50,9 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
 <div class="login-container">
     <div class="login-card animate-fade">
         <div class="login-logo">
-            <div class="logo-icon">A</div>
+            <div class="logo-icon">
+                <img src="logo.png" alt="<?= APP_NAME ?> logo">
+            </div>
             <h1><?= APP_NAME ?></h1>
             <p>Car Trading Accounting System</p>
         </div>

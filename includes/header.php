@@ -20,6 +20,8 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
+    <link rel="icon" type="image/png" href="<?= APP_URL ?>logo.png">
+    <link rel="apple-touch-icon" href="<?= APP_URL ?>logo.png">
     <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css?v=<?= $cssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
@@ -28,7 +30,9 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <div class="brand-icon">A</div>
+            <div class="brand-icon">
+                <img src="<?= APP_URL ?>logo.png" alt="<?= APP_NAME ?> logo">
+            </div>
             <div>
                 <div class="brand-text"><?= APP_NAME ?></div>
             </div>
