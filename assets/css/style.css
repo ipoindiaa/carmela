@@ -2416,14 +2416,14 @@ html.js .pagination.no-js-pagination { display: none; }
 .filter-bar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
+    gap: 8px;
+    margin-bottom: 12px;
     flex-wrap: wrap;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border: 1px solid rgba(199, 211, 224, 0.85);
-    border-radius: 14px;
+    border-radius: 12px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 251, 255, 0.9));
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.035);
 }
 
 .entry-menu-legend {
@@ -2505,12 +2505,18 @@ html.js .pagination.no-js-pagination { display: none; }
     display: flex;
     align-items: flex-end;
     flex-wrap: wrap;
-    gap: 10px;
-    width: 100%;
+    gap: 8px;
+    width: 100% !important;
 }
 
 .filter-bar form > div {
     min-width: 0;
+    flex: 0 1 180px;
+}
+
+.filter-bar form > .btn:first-of-type,
+.filter-bar form > a.btn:first-of-type {
+    margin-left: auto;
 }
 
 .filter-bar .form-label {
@@ -2523,33 +2529,34 @@ html.js .pagination.no-js-pagination { display: none; }
 }
 
 .filter-bar .form-control {
-    width: auto;
-    min-width: 140px;
-    min-height: 38px;
-    padding: 8px 12px;
-    border-radius: 11px;
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 7px 11px;
+    border-radius: 10px;
     font-size: 13px;
 }
 
 .filter-bar .btn {
-    min-height: 38px;
-    padding: 8px 14px;
-    border-radius: 11px;
+    min-height: 36px;
+    padding: 7px 13px;
+    border-radius: 10px;
+    white-space: nowrap;
 }
 
 .filter-main-field {
-    flex: 0 1 360px !important;
-    min-width: min(300px, 100%) !important;
-    max-width: 420px;
+    flex: 1 1 320px !important;
+    min-width: min(280px, 100%) !important;
+    max-width: none;
 }
 
 .filter-main-field.filter-main-field-wide {
-    flex-basis: 420px !important;
-    max-width: 520px;
+    flex-basis: 460px !important;
+    max-width: none;
 }
 
 .filter-bar.filter-bar-chipset {
-    padding: 8px 10px;
+    padding: 6px 8px;
     gap: 8px;
 }
 
@@ -2763,8 +2770,8 @@ html.js .pagination.no-js-pagination { display: none; }
     }
 
     .filter-bar {
-        padding: 12px;
-        gap: 10px;
+        padding: 8px 10px;
+        gap: 8px;
     }
 }
 
@@ -2983,6 +2990,10 @@ html.js .pagination.no-js-pagination { display: none; }
     .filter-bar form {
         align-items: stretch !important;
         width: 100%;
+    }
+    .filter-bar form > .btn:first-of-type,
+    .filter-bar form > a.btn:first-of-type {
+        margin-left: 0;
     }
     .filter-bar .form-control,
     .filter-bar .btn {
