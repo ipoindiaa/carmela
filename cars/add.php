@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Purchase Price (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" required>
+                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off" required>
                     </div>
                 </div>
             </div>
@@ -175,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-group">
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="text" name="partner_amounts[]" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                            <input type="text" name="partner_amounts[]" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                         </div>
                     </div>
                     <div class="form-group">

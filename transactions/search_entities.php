@@ -132,7 +132,7 @@ switch ($kind) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
-                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Share ' . number_format((float) ($row['profit_share_pct'] ?? 0), 2) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
+                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Share ' . formatPlainNumber($row['profit_share_pct'] ?? 0) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
             ];
         }
         break;

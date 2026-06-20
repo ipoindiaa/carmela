@@ -467,7 +467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Amount (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="amount" class="form-control amount-input currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off" required>
+                        <input type="text" name="amount" class="form-control amount-input currency-input" placeholder="0" inputmode="decimal" autocomplete="off" required>
                     </div>
                 </div>
                 <div class="form-group">
@@ -539,7 +539,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
 	                            <div class="form-group">
 	                                <label class="form-label">Amount (₹)</label>
-	                                <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+	                                <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
 	                            </div>
 	                            <div class="form-group">
 	                                <label class="form-label">Profit Share %</label>
@@ -582,7 +582,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">Sell Car Amount (₹) *</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="text" name="sale_price" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                            <input type="text" name="sale_price" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                         </div>
                         <div class="form-hint">This is the actual car selling amount.</div>
                     </div>
@@ -590,7 +590,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">Commission Income (₹)</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="text" name="sale_commission_amount" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                            <input type="text" name="sale_commission_amount" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                         </div>
                         <div class="form-hint">Business earning on this sold car.</div>
                     </div>
@@ -668,7 +668,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">Gross Salary (₹)</label>
-                        <input type="text" name="gross_salary" class="form-control currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="gross_salary" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Advance Deduction (₹)</label>
@@ -743,7 +743,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="split-entry-summary">
                         <span>Bill total</span>
-                        <strong id="split-total-display">₹0.00</strong>
+                        <strong id="split-total-display">₹0</strong>
                     </div>
                     <div class="split-entry-summary">
                         <span>Split rows</span>
@@ -781,15 +781,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="split-balance-card" id="split-balance-card">
                     <div>
                         <span>Total</span>
-                        <strong id="split-modal-total">₹0.00</strong>
+                        <strong id="split-modal-total">₹0</strong>
                     </div>
                     <div>
                         <span>Allocated</span>
-                        <strong id="split-allocated-total">₹0.00</strong>
+                        <strong id="split-allocated-total">₹0</strong>
                     </div>
                     <div>
                         <span>Remaining</span>
-                        <strong id="split-remaining-total">₹0.00</strong>
+                        <strong id="split-remaining-total">₹0</strong>
                     </div>
                 </div>
 
@@ -805,7 +805,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div>
                             <label class="form-label">Amount *</label>
-                            <input type="text" name="jv_amount[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                            <input type="text" name="jv_amount[]" class="form-control split-line-amount currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                         </div>
                         <div>
                             <label class="form-label">Short note</label>
@@ -880,15 +880,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="split-balance-card" id="split-balance-card-legacy">
                 <div>
                     <span>Total</span>
-                    <strong id="split-modal-total-legacy">₹0.00</strong>
+                    <strong id="split-modal-total-legacy">₹0</strong>
                 </div>
                 <div>
                     <span>Allocated</span>
-                    <strong id="split-allocated-total-legacy">₹0.00</strong>
+                    <strong id="split-allocated-total-legacy">₹0</strong>
                 </div>
                 <div>
                     <span>Remaining</span>
-                    <strong id="split-remaining-total-legacy">₹0.00</strong>
+                    <strong id="split-remaining-total-legacy">₹0</strong>
                 </div>
             </div>
 
@@ -904,7 +904,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div>
                         <label class="form-label">Amount *</label>
-                        <input type="text" name="jv_amount_modal[]" class="form-control split-line-amount currency-input" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="jv_amount_modal[]" class="form-control split-line-amount currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                     </div>
                     <div>
                         <label class="form-label">Note</label>

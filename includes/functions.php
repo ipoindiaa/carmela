@@ -2,25 +2,30 @@
 require_once __DIR__ . '/../config/app.php';
 
 /**
- * Format amount in Indian Rupee style (₹1,23,456.78)
+ * Format amount in Indian Rupee style without decimals (₹1,23,456)
  */
 function formatAmount($amount, $showSign = false) {
-    $amount = floatval($amount);
+    $amount = round(floatval($amount));
     $sign = '';
     if ($showSign && $amount > 0) $sign = '+';
     if ($amount < 0) { $sign = '-'; $amount = abs($amount); }
-    
-    $decimal = number_format($amount - floor($amount), 2);
-    $decimal = substr($decimal, 1); // remove leading 0
-    $whole = floor($amount);
-    
-    if ($whole < 1000) return $sign . APP_CURRENCY . number_format($whole, 0) . $decimal;
-    
+
+    $whole = (int) $amount;
+
+    if ($whole < 1000) return $sign . APP_CURRENCY . number_format($whole, 0);
+
     $lastThree = substr($whole, -3);
     $remaining = substr($whole, 0, -3);
     $remaining = preg_replace('/\B(?=(\d{2})+(?!\d))/', ',', $remaining);
-    
-    return $sign . APP_CURRENCY . $remaining . ',' . $lastThree . $decimal;
+
+    return $sign . APP_CURRENCY . $remaining . ',' . $lastThree;
+}
+
+/**
+ * Format plain numbers without decimals for general UI display.
+ */
+function formatPlainNumber($value) {
+    return number_format(round((float) $value), 0, '.', ',');
 }
 
 /**
@@ -317,26 +322,23 @@ function paginate($total, $perPage = 20, $currentPage = 1) {
 }
 
 /**
- * Format car registration number to GJ05ZX(1212) style.
+ * Format car registration number for display without bracketed suffix.
  */
 function formatRegistrationNo($value) {
     $val = trim((string) $value);
     if (empty($val)) return '';
-    if (preg_match('/^([A-Z]{2}[0-9]{2}[A-Z]{1,3})([0-9]{4})$/i', $val, $matches)) {
-        return strtoupper($matches[1]) . '(' . $matches[2] . ')';
-    }
     return strtoupper($val);
 }
 
 /**
- * Replaces any normalized registration number in a string with its formatted style.
+ * Replaces any normalized registration number in a string with plain uppercase display.
  */
 function formatAllRegistrationNosInString($str) {
     if (empty($str)) return '';
     return preg_replace_callback(
         '/([A-Z]{2}[0-9]{2}[A-Z]{1,3})([0-9]{4})\b/i',
         function ($matches) {
-            return strtoupper($matches[1]) . '(' . $matches[2] . ')';
+            return strtoupper($matches[1] . $matches[2]);
         },
         $str
     );

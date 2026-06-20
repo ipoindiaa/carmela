@@ -75,7 +75,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
             <table><thead><tr><th>Car</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date / Time</th></tr></thead>
                 <tbody>
                 <?php foreach ($carContribs as $c): ?>
-                <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean(formatRegistrationNo($c['registration_no'])) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= number_format((float) $c['funding_pct'], 2) ?>%</td><td class="text-right"><?= number_format((float) $c['profit_share_pct'], 2) ?>%</td><td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td></tr>
+                <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean(formatRegistrationNo($c['registration_no'])) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td><td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td><td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (empty($carContribs)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No contributions</td></tr><?php endif; ?>
                 </tbody>

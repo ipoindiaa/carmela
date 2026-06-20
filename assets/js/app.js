@@ -536,17 +536,16 @@ function showToast(message, type = 'success') {
 // Format number as Indian currency
 function formatINR(num) {
     num = parseFloat(num);
-    if (isNaN(num)) return '₹0.00';
+    if (isNaN(num)) return '₹0';
     const sign = num < 0 ? '-' : '';
-    num = Math.abs(num);
-    const dec = num.toFixed(2).split('.')[1];
-    let whole = Math.floor(num).toString();
+    num = Math.round(Math.abs(num));
+    let whole = num.toString();
     if (whole.length > 3) {
         const last3 = whole.slice(-3);
         const rest = whole.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
         whole = rest + ',' + last3;
     }
-    return sign + '₹' + whole + '.' + dec;
+    return sign + '₹' + whole;
 }
 
 // Print page

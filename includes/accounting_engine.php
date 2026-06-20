@@ -735,7 +735,7 @@ class AccountingEngine {
 
         if ($amount > $availableBalance) {
             throw new Exception(
-                "Withdrawal amount (₹" . number_format($amount, 2) . ") exceeds available partner funds (₹" . number_format($availableBalance, 2) . ")."
+                "Withdrawal amount (" . formatAmount($amount) . ") exceeds available partner funds (" . formatAmount($availableBalance) . ")."
             );
         }
 
@@ -766,7 +766,7 @@ class AccountingEngine {
                 throw new Exception("This partner has no pending payable balance to settle.");
             }
             if ($amount - $pendingPayable > 0.01) {
-                throw new Exception("Settlement amount cannot exceed pending payable balance of ₹" . number_format($pendingPayable, 2) . '.');
+                throw new Exception("Settlement amount cannot exceed pending payable balance of " . formatAmount($pendingPayable) . '.');
             }
             $this->validateCashAvailable($accountId, $amount);
             $lines = [
@@ -783,7 +783,7 @@ class AccountingEngine {
             throw new Exception("This partner has no pending receivable balance to settle.");
         }
         if ($amount - $pendingReceivable > 0.01) {
-            throw new Exception("Settlement amount cannot exceed pending receivable balance of ₹" . number_format($pendingReceivable, 2) . '.');
+            throw new Exception("Settlement amount cannot exceed pending receivable balance of " . formatAmount($pendingReceivable) . '.');
         }
         $lines = [
             ['account_id' => $accountId, 'amount' => $amount, 'type' => 'DR', 'narration' => "Settlement received from {$partner['name']}"],
@@ -827,7 +827,7 @@ class AccountingEngine {
                 throw new Exception("This employee has no advance outstanding to deduct.");
             }
             if ($advanceDeduction - $advanceOutstanding > 0.01) {
-                throw new Exception("Advance deduction cannot exceed current advance outstanding of ₹" . number_format($advanceOutstanding, 2) . '.');
+                throw new Exception("Advance deduction cannot exceed current advance outstanding of " . formatAmount($advanceOutstanding) . '.');
             }
         }
 
@@ -920,7 +920,7 @@ class AccountingEngine {
             throw new Exception("This employee has no advance balance available for write-off.");
         }
         if ($amount - $outstanding > 0.01) {
-            throw new Exception("Write-off amount cannot exceed current advance outstanding of ₹" . number_format($outstanding, 2) . '.');
+            throw new Exception("Write-off amount cannot exceed current advance outstanding of " . formatAmount($outstanding) . '.');
         }
 
         $expenseAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'ADV-WOFF'", [$this->businessId]);
@@ -973,7 +973,7 @@ class AccountingEngine {
             throw new Exception("This party has no debtor balance pending for recovery.");
         }
         if ($amount - $outstanding > 0.01) {
-            throw new Exception("Received amount cannot exceed current debtor outstanding of ₹" . number_format($outstanding, 2) . '.');
+            throw new Exception("Received amount cannot exceed current debtor outstanding of " . formatAmount($outstanding) . '.');
         }
 
         $lines = [
@@ -1024,7 +1024,7 @@ class AccountingEngine {
             throw new Exception("This party has no creditor balance pending for repayment.");
         }
         if ($amount - $outstanding > 0.01) {
-            throw new Exception("Repayment amount cannot exceed current creditor outstanding of ₹" . number_format($outstanding, 2) . '.');
+            throw new Exception("Repayment amount cannot exceed current creditor outstanding of " . formatAmount($outstanding) . '.');
         }
 
         $this->validateCashAvailable($paymentAccount, $amount);
@@ -1063,7 +1063,7 @@ class AccountingEngine {
             throw new Exception("This party has no debtor balance available for write-off.");
         }
         if ($amount - $outstanding > 0.01) {
-            throw new Exception("Write-off amount cannot exceed current outstanding balance of ₹" . number_format($outstanding, 2) . '.');
+            throw new Exception("Write-off amount cannot exceed current outstanding balance of " . formatAmount($outstanding) . '.');
         }
 
         $badDebtAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'BAD-DEBT'", [$this->businessId]);
@@ -1122,7 +1122,7 @@ class AccountingEngine {
             throw new Exception("There is no GST payable balance available for payment.");
         }
         if ($amount - $payableOutstanding > 0.01) {
-            throw new Exception("GST payment cannot exceed current GST payable balance of ₹" . number_format($payableOutstanding, 2) . '.');
+            throw new Exception("GST payment cannot exceed current GST payable balance of " . formatAmount($payableOutstanding) . '.');
         }
 
         $this->validateCashAvailable($gstBank['id'], $amount);
@@ -1153,7 +1153,7 @@ class AccountingEngine {
             throw new Exception("There is no matching GST payable and GST input credit available to utilize.");
         }
         if ($amount - $maxUtilization > 0.01) {
-            throw new Exception("GST utilization cannot exceed ₹" . number_format($maxUtilization, 2) . " based on current payable and input credit balances.");
+            throw new Exception("GST utilization cannot exceed " . formatAmount($maxUtilization) . " based on current payable and input credit balances.");
         }
 
         $lines = [
@@ -1622,14 +1622,14 @@ class AccountingEngine {
             $minBalance = floatval($business['min_cash_balance'] ?? 0);
 
             if (($availableBalance - $amount) < $minBalance) {
-                throw new Exception("Insufficient cash balance. Current: ₹" . number_format(max(0, $availableBalance), 2) . ", Required: ₹" . number_format($amount, 2) . ", Minimum: ₹" . number_format($minBalance, 2));
+                throw new Exception("Insufficient cash balance. Current: " . formatAmount(max(0, $availableBalance)) . ", Required: " . formatAmount($amount) . ", Minimum: " . formatAmount($minBalance));
             }
             return;
         }
 
         if (in_array($account['entity_type'], ['BANK', 'GST'], true) && ($availableBalance - $amount) < -0.009) {
             $bookLabel = $account['entity_type'] === 'GST' ? 'GST bank' : 'bank';
-            throw new Exception("Insufficient {$bookLabel} balance. Current: ₹" . number_format(max(0, $availableBalance), 2) . ", Required: ₹" . number_format($amount, 2) . '.');
+            throw new Exception("Insufficient {$bookLabel} balance. Current: " . formatAmount(max(0, $availableBalance)) . ", Required: " . formatAmount($amount) . '.');
         }
     }
 
@@ -2753,7 +2753,7 @@ class AccountingEngine {
             if (floatval($cashAccount['current_balance']) < $minCashBalance) {
                 $this->createAlert(
                     'CASH_LOW',
-                    ($cashAccount['name'] ?? 'Cash account') . " balance (₹" . number_format($cashAccount['current_balance'], 2) . ") is below minimum threshold",
+                    ($cashAccount['name'] ?? 'Cash account') . " balance (" . formatAmount($cashAccount['current_balance']) . ") is below minimum threshold",
                     'account',
                     $cashAccount['id']
                 );

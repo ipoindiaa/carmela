@@ -177,8 +177,8 @@ $contributions = $db->fetchAll(
                         <tr>
                             <td><?= clean($c['partner_name']) ?></td>
                             <td class="text-right amount"><?= formatAmount($c['amount']) ?></td>
-                            <td class="text-right"><?= number_format((float) $c['funding_pct'], 2) ?>%</td>
-                            <td class="text-right"><?= number_format((float) $c['profit_share_pct'], 2) ?>%</td>
+                            <td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td>
+                            <td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td>
                             <td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td>
                         </tr>
                     <?php endforeach; ?>
@@ -206,8 +206,8 @@ $contributions = $db->fetchAll(
                         ?>
                         <tr>
                             <td><?= clean($partnership['partner_name']) ?></td>
-                            <td class="text-right"><?= number_format((float) $partnership['funding_pct'], 2) ?>%</td>
-                            <td class="text-right"><?= number_format((float) $partnership['profit_share_pct'], 2) ?>%</td>
+                            <td class="text-right"><?= formatPlainNumber($partnership['funding_pct']) ?>%</td>
+                            <td class="text-right"><?= formatPlainNumber($partnership['profit_share_pct']) ?>%</td>
                             <td class="text-right amount"><?= formatAmount($pending) ?></td>
                             <td><?= clean($status) ?></td>
                         </tr>
