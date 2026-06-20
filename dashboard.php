@@ -166,100 +166,96 @@ $monthProfit = ($monthIncome['total'] ?? 0) - ($monthExpense['total'] ?? 0);
 $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 ?>
 
-<section class="dashboard-hero">
-    <div class="dashboard-hero-main">
-        <div class="dashboard-eyebrow"><?= APP_NAME ?> Command Center</div>
-        <h1>Car business control, made clear and fast.</h1>
-        <p>Manage cash, bank, cars, partners, salary, and daily business entries from one simple flow.</p>
-        <div class="dashboard-hero-pills">
-            <span><i class="ri-car-line"></i> In Stock <?= intval($totalCars['cnt'] ?? 0) ?></span>
-            <span><i class="ri-check-double-line"></i> Sold <?= intval($totalSold['cnt'] ?? 0) ?></span>
-            <span><i class="ri-bank-card-line"></i> Books <?= count($availableTabs) ?></span>
+<section class="dashboard-command">
+    <div class="dashboard-command-head">
+        <div>
+            <div class="dashboard-eyebrow"><?= APP_NAME ?></div>
+            <h1>Today’s control desk</h1>
+            <p>Start entries, check books, and catch pending work without leaving this screen.</p>
         </div>
-        <div class="dashboard-hero-actions">
+        <div class="dashboard-command-actions">
             <?php if ($canWritePrimaryBooks): ?>
-                <a href="transactions/new.php" class="btn btn-primary btn-lg"><i class="ri-add-circle-line"></i> New Entry</a>
-                <a href="transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-outline btn-lg"><i class="ri-bill-line"></i> Large Bill Split</a>
+                <a href="transactions/new.php" class="btn btn-primary"><i class="ri-add-circle-line"></i> New Entry</a>
+                <a href="transactions/new.php?type=JOURNAL_VOUCHER" class="btn btn-outline"><i class="ri-bill-line"></i> Split Bill</a>
             <?php endif; ?>
-            <a href="transactions/list.php" class="btn btn-outline btn-lg"><i class="ri-list-check-2"></i> View Entries</a>
+            <a href="transactions/list.php" class="btn btn-outline"><i class="ri-list-check-2"></i> All Entries</a>
         </div>
     </div>
-    <div class="dashboard-hero-visual">
-        <div class="dashboard-car-showcase">
-            <div class="dashboard-showcase-copy">
-                <div class="dashboard-showcase-label">Today’s Business View</div>
-                <div class="dashboard-showcase-grid">
-                    <div>
-                        <strong><?= intval($totalEmployees['cnt'] ?? 0) ?></strong>
-                        <span>Employees</span>
-                    </div>
-                    <div>
-                        <strong><?= intval($totalPartners['cnt'] ?? 0) ?></strong>
-                        <span>Partners</span>
-                    </div>
-                    <div>
-                        <strong><?= count($alerts) ?></strong>
-                        <span>Alerts</span>
-                    </div>
-                </div>
+
+    <div class="dashboard-kpi-grid">
+        <a href="cars/list.php?status=IN_STOCK" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon in"><i class="ri-car-line"></i></span>
+            <div>
+                <small>Ready Cars</small>
+                <strong><?= intval($totalCars['cnt'] ?? 0) ?></strong>
             </div>
-            <div class="dashboard-car-illustration" aria-hidden="true">
-                <div class="dashboard-road-line"></div>
-                <div class="dashboard-car-body">
-                    <div class="dashboard-car-roof"></div>
-                    <div class="dashboard-car-window dashboard-car-window-front"></div>
-                    <div class="dashboard-car-window dashboard-car-window-back"></div>
-                    <div class="dashboard-car-headlight"></div>
-                    <div class="dashboard-car-wheel dashboard-car-wheel-front"></div>
-                    <div class="dashboard-car-wheel dashboard-car-wheel-back"></div>
-                </div>
-                <div class="dashboard-floating-chip dashboard-chip-profit">
-                    <i class="ri-line-chart-line"></i>
-                    <span>P&amp;L</span>
-                </div>
-                <div class="dashboard-floating-chip dashboard-chip-stock">
-                    <i class="ri-stack-line"></i>
-                    <span>Cars</span>
-                </div>
+        </a>
+        <a href="cars/list.php?status=SOLD" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon neutral"><i class="ri-checkbox-circle-line"></i></span>
+            <div>
+                <small>Sold Cars</small>
+                <strong><?= intval($totalSold['cnt'] ?? 0) ?></strong>
             </div>
-        </div>
+        </a>
+        <a href="partners/list.php?type=MAIN" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon neutral"><i class="ri-team-line"></i></span>
+            <div>
+                <small>Partners</small>
+                <strong><?= intval($totalPartners['cnt'] ?? 0) ?></strong>
+            </div>
+        </a>
+        <a href="employees/list.php" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon neutral"><i class="ri-user-star-line"></i></span>
+            <div>
+                <small>Employees</small>
+                <strong><?= intval($totalEmployees['cnt'] ?? 0) ?></strong>
+            </div>
+        </a>
         <?php if (!isClientHiddenBook('profit_loss')): ?>
-        <div class="dashboard-focus-card">
-            <span>Current Month P&amp;L</span>
-            <strong class="amount <?= signedAmountColorClass($monthProfit, 'in') ?>"><?= formatAmount($monthProfit) ?></strong>
-            <div class="dashboard-focus-list">
-                <div class="flow-in"><i class="ri-arrow-down-circle-line"></i> Income: <?= formatAmount($monthIncome['total'] ?? 0) ?></div>
-                <div class="flow-out"><i class="ri-arrow-up-circle-line"></i> Expense: <?= formatAmount($monthExpense['total'] ?? 0) ?></div>
-                <div><i class="ri-notification-3-line"></i> Pending alerts: <?= count($alerts) ?></div>
-            </div>
-        </div>
+            <a href="reports/profit_loss.php" class="dashboard-kpi-card dashboard-kpi-wide">
+                <span class="dashboard-kpi-icon <?= $monthProfit >= 0 ? 'in' : 'out' ?>"><i class="ri-line-chart-line"></i></span>
+                <div>
+                    <small>Month P&amp;L</small>
+                    <strong class="<?= signedAmountColorClass($monthProfit, 'in') ?>"><?= formatAmount($monthProfit) ?></strong>
+                    <em>Income <?= formatAmount($monthIncome['total'] ?? 0) ?> · Expense <?= formatAmount($monthExpense['total'] ?? 0) ?></em>
+                </div>
+            </a>
         <?php endif; ?>
+        <a href="#alerts" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon <?= count($alerts) ? 'out' : 'in' ?>"><i class="ri-notification-3-line"></i></span>
+            <div>
+                <small>Alerts</small>
+                <strong><?= count($alerts) ?></strong>
+            </div>
+        </a>
     </div>
 </section>
 
 <?php if (!empty($availableTabs)): ?>
-    <div class="dashboard-book-grid">
+    <section class="dashboard-account-switcher">
+        <div class="dashboard-section-title">
+            <div>
+                <span>Books</span>
+                <strong>Select ledger to review</strong>
+            </div>
+            <a href="<?= clean($bookViewMoreUrl) ?>">Open full book <i class="ri-arrow-right-line"></i></a>
+        </div>
+        <div class="dashboard-account-rail">
         <?php foreach ($availableTabs as $tabKey => $tab): ?>
-            <a href="?tab=<?= clean($tabKey) ?>" class="dashboard-book-card <?= $activeTab === $tabKey ? 'active' : '' ?>">
-                <div class="dashboard-book-top">
-                    <div>
-                        <div class="dashboard-book-tag dashboard-book-tag-<?= clean($tab['class']) ?>"><?= clean($tab['book_label']) ?></div>
-                        <div class="dashboard-book-label"><?= clean($tab['label']) ?></div>
-                        <div class="dashboard-book-meta"><?= clean($tab['account']['code'] ?? '') ?><?php if (!empty($tab['account']['current_balance_type'])): ?> • <?= clean($tab['account']['current_balance_type']) ?><?php endif; ?></div>
-                        <div class="dashboard-book-balance"><?= formatAmount($tab['account']['current_balance'] ?? 0) ?></div>
-                    </div>
-                    <div class="dashboard-book-icon"><?= $tab['icon'] ?></div>
+            <a href="?tab=<?= clean($tabKey) ?>" class="dashboard-account-card <?= $activeTab === $tabKey ? 'active' : '' ?>">
+                <span class="dashboard-account-type dashboard-book-tag-<?= clean($tab['class']) ?>"><?= clean($tab['book_label']) ?></span>
+                <div class="dashboard-account-main">
+                    <div class="dashboard-account-name"><?= clean($tab['label']) ?></div>
+                    <div class="dashboard-account-meta"><?= clean($tab['account']['code'] ?? '') ?><?php if (!empty($tab['account']['current_balance_type'])): ?> · <?= clean($tab['account']['current_balance_type']) ?><?php endif; ?></div>
                 </div>
-                <div class="dashboard-book-foot">
-                    <span class="dashboard-book-state <?= $activeTab === $tabKey ? 'active' : '' ?>">
-                        <i class="<?= $activeTab === $tabKey ? 'ri-check-line' : 'ri-arrow-right-line' ?>"></i>
-                        <?= $activeTab === $tabKey ? 'Selected' : 'Open ledger' ?>
-                    </span>
-                    <span class="dashboard-book-link">Recent entries</span>
+                <div class="dashboard-account-side">
+                    <strong><?= formatAmount($tab['account']['current_balance'] ?? 0) ?></strong>
+                    <span><?= $activeTab === $tabKey ? 'Selected' : 'View' ?> <i class="<?= $activeTab === $tabKey ? 'ri-check-line' : 'ri-arrow-right-line' ?>"></i></span>
                 </div>
             </a>
         <?php endforeach; ?>
-    </div>
+        </div>
+    </section>
 <?php else: ?>
     <div class="alert alert-info">
         <i class="ri-information-line"></i> Your user account does not have any Cash or Bank book access yet.
