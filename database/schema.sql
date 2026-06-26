@@ -84,7 +84,7 @@ CREATE TABLE `journal_entries` (
     `entry_date` DATE NOT NULL,
     `reference_no` VARCHAR(50) NOT NULL,
     `narration` TEXT DEFAULT NULL,
-    `transaction_type` ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
+    `transaction_type` ENUM('CAR_PURCHASE','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
     `is_reversal` TINYINT(1) NOT NULL DEFAULT 0,
     `reversed_by` CHAR(36) DEFAULT NULL,
     `original_entry_id` CHAR(36) DEFAULT NULL,
@@ -135,6 +135,7 @@ CREATE TABLE `cars` (
     `color` VARCHAR(50) DEFAULT NULL,
     `purchase_date` DATE NOT NULL,
     `purchase_price` DECIMAL(15,2) NOT NULL,
+    `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `status` ENUM('IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED') NOT NULL DEFAULT 'IN_STOCK',
     `account_id` CHAR(36) DEFAULT NULL,
     `sold_date` DATE DEFAULT NULL,
@@ -143,6 +144,9 @@ CREATE TABLE `cars` (
     `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `buyer_name` VARCHAR(200) DEFAULT NULL,
     `buyer_contact` VARCHAR(20) DEFAULT NULL,
+    `buyer_party_id` CHAR(36) DEFAULT NULL,
+    `seller_party_id` CHAR(36) DEFAULT NULL,
+    `has_second_key` TINYINT(1) NOT NULL DEFAULT 0,
     `notes` TEXT DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -390,9 +394,9 @@ CREATE TABLE `alerts` (
 CREATE TABLE `attachments` (
     `id` CHAR(36) NOT NULL,
     `business_id` CHAR(36) NOT NULL,
-    `entity_type` ENUM('CAR','JOURNAL_ENTRY') NOT NULL,
+    `entity_type` VARCHAR(50) NOT NULL,
     `entity_id` CHAR(36) NOT NULL,
-    `attachment_type` ENUM('BUYER','SELLER','VOUCHER') NOT NULL,
+    `attachment_type` VARCHAR(50) NOT NULL,
     `original_name` VARCHAR(255) NOT NULL,
     `stored_name` VARCHAR(255) NOT NULL,
     `relative_path` VARCHAR(500) NOT NULL,
@@ -405,6 +409,79 @@ CREATE TABLE `attachments` (
     KEY `idx_attachment_uploaded_by` (`uploaded_by`),
     CONSTRAINT `fk_attachments_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
     CONSTRAINT `fk_attachments_user` FOREIGN KEY (`uploaded_by`) REFERENCES `users`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: rto_records
+-- ============================================================
+CREATE TABLE `rto_records` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `car_id` CHAR(36) NOT NULL,
+    `rto_type` VARCHAR(120) NOT NULL,
+    `status` ENUM('PENDING','IN_PROGRESS','COMPLETED','CANCELLED') NOT NULL DEFAULT 'PENDING',
+    `party_name` VARCHAR(200) DEFAULT NULL,
+    `rto_office` VARCHAR(160) DEFAULT NULL,
+    `agent_name` VARCHAR(160) DEFAULT NULL,
+    `application_no` VARCHAR(120) DEFAULT NULL,
+    `receipt_no` VARCHAR(120) DEFAULT NULL,
+    `expense_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `recovered_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `is_recoverable` TINYINT(1) NOT NULL DEFAULT 1,
+    `due_date` DATE DEFAULT NULL,
+    `submitted_date` DATE DEFAULT NULL,
+    `completed_date` DATE DEFAULT NULL,
+    `narration` TEXT DEFAULT NULL,
+    `expense_entry_id` CHAR(36) DEFAULT NULL,
+    `last_recovery_entry_id` CHAR(36) DEFAULT NULL,
+    `created_by` CHAR(36) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_rto_business_status` (`business_id`, `status`),
+    KEY `idx_rto_car` (`car_id`),
+    CONSTRAINT `fk_rto_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
+    CONSTRAINT `fk_rto_car` FOREIGN KEY (`car_id`) REFERENCES `cars`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: rto_recoveries
+-- ============================================================
+CREATE TABLE `rto_recoveries` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `rto_record_id` CHAR(36) NOT NULL,
+    `car_id` CHAR(36) NOT NULL,
+    `journal_entry_id` CHAR(36) NOT NULL,
+    `received_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `narration` VARCHAR(500) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_rto_recovery_record` (`rto_record_id`),
+    KEY `idx_rto_recovery_car` (`car_id`),
+    CONSTRAINT `fk_rr_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
+    CONSTRAINT `fk_rr_record` FOREIGN KEY (`rto_record_id`) REFERENCES `rto_records`(`id`),
+    CONSTRAINT `fk_rr_car` FOREIGN KEY (`car_id`) REFERENCES `cars`(`id`),
+    CONSTRAINT `fk_rr_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: car_second_key_events
+-- ============================================================
+CREATE TABLE `car_second_key_events` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `car_id` CHAR(36) NOT NULL,
+    `event_type` ENUM('RECEIVED','GIVEN') NOT NULL,
+    `event_date` DATE NOT NULL,
+    `narration` VARCHAR(500) DEFAULT NULL,
+    `created_by` CHAR(36) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_second_key_car` (`car_id`, `event_date`),
+    CONSTRAINT `fk_ske_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
+    CONSTRAINT `fk_ske_car` FOREIGN KEY (`car_id`) REFERENCES `cars`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

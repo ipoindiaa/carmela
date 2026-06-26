@@ -5,13 +5,17 @@ $isLazyRequest = ($_GET['lazy'] ?? '') === '1';
 if ($isLazyRequest) {
     require_once __DIR__ . '/../includes/auth.php';
     require_once __DIR__ . '/../includes/functions.php';
+    require_once __DIR__ . '/../includes/accounting_engine.php';
     Auth::check();
     $db = Database::getInstance();
 } else {
     require_once __DIR__ . '/../includes/header.php';
+    require_once __DIR__ . '/../includes/accounting_engine.php';
 }
 
 $businessId = Auth::user('business_id');
+new AccountingEngine($businessId, Auth::user('user_id'));
+
 $filter = get('status', '');
 $search = trim((string) get('q', ''));
 $page = max(1, intval(get('page', 1)));
@@ -36,6 +40,9 @@ function renderCarRows($cars) {
             $netSalePrice = max(0, (float) ($car['sale_price'] ?? 0) - (float) ($car['sale_gst_amount'] ?? 0));
             $commissionAmount = (float) ($car['sale_commission_amount'] ?? 0);
             $profit = $car['status'] === 'SOLD' ? (($netSalePrice + $commissionAmount) - $totalCost) : null;
+            $buyerOutstanding = (($car['buyer_balance_type'] ?? '') === 'DR') ? (float) ($car['buyer_balance'] ?? 0) : 0.0;
+            $sellerOutstanding = (($car['seller_balance_type'] ?? '') === 'CR') ? (float) ($car['seller_balance'] ?? 0) : 0.0;
+            $rtoPending = (float) ($car['rto_pending'] ?? 0);
         ?>
         <tr>
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
@@ -58,9 +65,22 @@ function renderCarRows($cars) {
             <td class="text-center">
                 <?php $statusBadges = ['IN_STOCK' => 'badge-blue', 'SOLD' => 'badge-green', 'PENDING_PAYMENT' => 'badge-yellow', 'CANCELLED' => 'badge-gray']; ?>
                 <span class="badge <?= $statusBadges[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
+                <div class="compact-pending-stack">
+                    <?php if ($buyerOutstanding > 0): ?><span class="mini-pill mini-pill-in">Sale pending <?= formatAmount($buyerOutstanding) ?></span><?php endif; ?>
+                    <?php if ($sellerOutstanding > 0): ?><span class="mini-pill mini-pill-out">Purchase pending <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?>
+                    <?php if ($rtoPending > 0): ?><span class="mini-pill mini-pill-warn">RTO pending <?= formatAmount($rtoPending) ?></span><?php endif; ?>
+                </div>
             </td>
             <td class="text-center">
-                <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
+                <div class="table-action-stack">
+                    <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
+                    <?php if ($buyerOutstanding > 0 && !empty($car['buyer_party_id'])): ?>
+                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $car['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
+                    <?php endif; ?>
+                    <?php if ($sellerOutstanding > 0 && !empty($car['seller_party_id'])): ?>
+                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $car['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-outline">Pay</a>
+                    <?php endif; ?>
+                </div>
             </td>
         </tr>
         <?php endforeach; ?>
@@ -90,11 +110,25 @@ $total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost FROM cars c 
-     LEFT JOIN accounts a ON a.id = c.account_id 
+    "SELECT c.*, a.current_balance as total_cost,
+            ba.current_balance AS buyer_balance, ba.current_balance_type AS buyer_balance_type,
+            sa.current_balance AS seller_balance, sa.current_balance_type AS seller_balance_type,
+            COALESCE(rto.rto_pending, 0) AS rto_pending
+     FROM cars c
+     LEFT JOIN accounts a ON a.id = c.account_id
+     LEFT JOIN debtors_creditors bp ON bp.id = c.buyer_party_id
+     LEFT JOIN accounts ba ON ba.id = bp.account_id
+     LEFT JOIN debtors_creditors sp ON sp.id = c.seller_party_id
+     LEFT JOIN accounts sa ON sa.id = sp.account_id
+     LEFT JOIN (
+        SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
+        FROM rto_records
+        WHERE business_id = ? AND is_recoverable = 1 AND status <> 'CANCELLED'
+        GROUP BY car_id
+     ) rto ON rto.car_id = c.id
      $where ORDER BY c.created_at DESC
      LIMIT ? OFFSET ?",
-    array_merge($params, [$perPage, $pagination['offset']])
+    array_merge([$businessId], $params, [$perPage, $pagination['offset']])
 );
 
 if ($isLazyRequest) {

@@ -13,9 +13,9 @@ function ensureAttachmentSchema() {
         "CREATE TABLE IF NOT EXISTS `attachments` (
             `id` CHAR(36) NOT NULL,
             `business_id` CHAR(36) NOT NULL,
-            `entity_type` ENUM('CAR','JOURNAL_ENTRY') NOT NULL,
+            `entity_type` VARCHAR(50) NOT NULL,
             `entity_id` CHAR(36) NOT NULL,
-            `attachment_type` ENUM('BUYER','SELLER','VOUCHER') NOT NULL,
+            `attachment_type` VARCHAR(50) NOT NULL,
             `original_name` VARCHAR(255) NOT NULL,
             `stored_name` VARCHAR(255) NOT NULL,
             `relative_path` VARCHAR(500) NOT NULL,
@@ -28,6 +28,13 @@ function ensureAttachmentSchema() {
             KEY `idx_attachment_uploaded_by` (`uploaded_by`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    try {
+        $db->query("ALTER TABLE `attachments` MODIFY COLUMN `entity_type` VARCHAR(50) NOT NULL");
+        $db->query("ALTER TABLE `attachments` MODIFY COLUMN `attachment_type` VARCHAR(50) NOT NULL");
+    } catch (\Throwable $e) {
+        // Older MySQL permissions may block ALTER; existing CAR/JOURNAL_ENTRY uploads still work.
+    }
 
     $ensured = true;
 }

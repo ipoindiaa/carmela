@@ -67,6 +67,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
                 'CAR_SALE': ['car-select-section', 'buyer-section'],
                 'CAR_EXPENSE': ['car-select-section', 'category-section'],
+                'RTO_EXPENSE': ['rto-section'],
+                'RTO_RECOVERY': ['rto-section'],
                 'GENERAL_EXPENSE': ['category-section'],
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],

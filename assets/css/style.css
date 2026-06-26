@@ -2947,6 +2947,11 @@ html.js .pagination.no-js-pagination { display: none; }
     flex: 0 1 180px;
 }
 
+.filter-bar form > .form-control {
+    flex: 0 1 210px;
+    width: auto;
+}
+
 .filter-bar form > .btn:first-of-type,
 .filter-bar form > a.btn:first-of-type {
     margin-left: auto;
@@ -2997,6 +3002,68 @@ html.js .pagination.no-js-pagination { display: none; }
     min-height: 34px;
     padding: 6px 12px;
     border-radius: 10px;
+}
+
+.entries-page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 14px;
+    margin-bottom: 10px;
+}
+
+.entries-page-header .entries-page-copy {
+    display: block;
+    min-width: 0;
+}
+
+.entries-page-header .entries-page-copy h1 {
+    display: none !important;
+}
+
+.entries-page-header .entries-page-copy .text-muted {
+    max-width: 720px;
+    margin-top: 0;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    line-height: 1.45;
+}
+
+.entries-page-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.entries-filter-bar {
+    padding: 10px;
+    border-radius: 14px;
+}
+
+.entries-filter-form {
+    display: grid !important;
+    grid-template-columns: minmax(260px, 1.35fr) minmax(150px, 0.65fr) minmax(150px, 0.65fr) auto;
+    align-items: end !important;
+    gap: 10px !important;
+    width: 100%;
+}
+
+.entries-filter-field {
+    min-width: 0;
+}
+
+.entries-filter-actions {
+    display: flex;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+}
+
+.entries-filter-actions .btn {
+    min-width: 78px;
 }
 .top-entry-btn { box-shadow: var(--shadow-sm); }
 
@@ -3216,6 +3283,10 @@ html.js .pagination.no-js-pagination { display: none; }
     .filter-bar {
         padding: 8px 10px;
         gap: 8px;
+    }
+
+    .entries-filter-form {
+        grid-template-columns: minmax(240px, 1fr) minmax(140px, 0.58fr) minmax(140px, 0.58fr) auto;
     }
 
     .dashboard-kpi-grid {
@@ -3551,6 +3622,27 @@ html.js .pagination.no-js-pagination { display: none; }
         align-items: stretch !important;
         width: 100%;
     }
+    .entries-page-header {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+    .entries-page-actions {
+        justify-content: stretch;
+        white-space: normal;
+    }
+    .entries-page-actions .btn {
+        flex: 1 1 150px;
+    }
+    .entries-filter-form {
+        grid-template-columns: 1fr;
+    }
+    .entries-filter-actions {
+        justify-content: stretch;
+    }
+    .entries-filter-actions .btn {
+        flex: 1 1 0;
+        width: auto;
+    }
     .filter-bar form > .btn:first-of-type,
     .filter-bar form > a.btn:first-of-type {
         margin-left: 0;
@@ -3558,6 +3650,9 @@ html.js .pagination.no-js-pagination { display: none; }
     .filter-bar .form-control,
     .filter-bar .btn {
         width: 100%;
+    }
+    .entries-filter-actions .btn {
+        width: auto;
     }
     .card-body[style*="display:flex"] {
         flex-direction: column !important;
@@ -3600,4 +3695,121 @@ html.js .pagination.no-js-pagination { display: none; }
     .table-container { border: 1px solid #ddd; }
     th { background: #f5f5f5 !important; color: #333 !important; }
     td { color: #333 !important; border-color: #ddd !important; }
+}
+
+/* Operational compact UI additions */
+.compact-operational-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 12px 0 18px;
+}
+.compact-operational-grid .stat-card {
+    min-height: auto;
+    padding: 14px 16px;
+}
+.compact-operational-grid .stat-value {
+    font-size: 21px;
+    line-height: 1.15;
+}
+.compact-pending-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    align-items: center;
+}
+.mini-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.mini-pill-in { background: rgba(22, 163, 74, .1); color: #15803d; }
+.mini-pill-out { background: rgba(220, 38, 38, .09); color: #dc2626; }
+.mini-pill-warn { background: rgba(217, 119, 6, .12); color: #b45309; }
+.mini-pill-neutral { background: rgba(100, 116, 139, .12); color: #475569; }
+.table-action-stack {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.inline-entry-form {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(140px, .7fr) minmax(180px, 1.3fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+.rto-entry-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.rto-span-2 { grid-column: span 2; }
+.rto-actions { align-self: end; }
+.compact-filter-form {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.2fr) minmax(150px, .7fr) minmax(140px, .7fr) auto auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+}
+.row-actions-details summary {
+    cursor: pointer;
+    color: var(--accent-blue);
+    font-weight: 800;
+    font-size: 12px;
+}
+.mini-post-form {
+    display: grid;
+    grid-template-columns: 128px 120px minmax(160px, 1fr);
+    gap: 6px;
+    min-width: 420px;
+    margin: 8px 0;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-soft);
+}
+.mini-post-form .btn,
+.mini-post-form input[type="file"],
+.mini-post-form input[name="narration"] {
+    grid-column: span 3;
+}
+.dashboard-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+@media (max-width: 1100px) {
+    .rto-entry-grid,
+    .inline-entry-form,
+    .compact-filter-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .rto-span-2,
+    .mini-post-form .btn,
+    .mini-post-form input[type="file"],
+    .mini-post-form input[name="narration"] {
+        grid-column: span 2;
+    }
+    .mini-post-form { min-width: 320px; grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 700px) {
+    .rto-entry-grid,
+    .inline-entry-form,
+    .compact-filter-form,
+    .mini-post-form {
+        grid-template-columns: 1fr;
+        min-width: 0;
+    }
+    .rto-span-2,
+    .mini-post-form .btn,
+    .mini-post-form input[type="file"],
+    .mini-post-form input[name="narration"] {
+        grid-column: span 1;
+    }
 }

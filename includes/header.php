@@ -66,6 +66,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-car-line"></i></span>
                     Cars
                 </a>
+                <?php if (Auth::hasBookAccess('rto_book', 'read')): ?>
+                <a href="<?= APP_URL ?>rto/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'rto/') !== false ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-file-shield-2-line"></i></span>
+                    RTO Book
+                </a>
+                <?php endif; ?>
                 <a href="<?= APP_URL ?>partners/list.php?type=MAIN" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'partners/') !== false && (($_GET['type'] ?? '') !== 'CARWISE') ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-group-line"></i></span>
                     Main Partners

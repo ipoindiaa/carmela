@@ -80,6 +80,7 @@ class AccountingEngine {
         try {
             $this->ensureJournalEntryTypeEnum();
             $this->ensureCarStatusEnum();
+            $this->ensureCarOperationsSchema();
 
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_vouchers` (
@@ -188,6 +189,18 @@ class AccountingEngine {
             if (!$this->columnExists('cars', 'sale_commission_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
             }
+            if (!$this->columnExists('cars', 'buyer_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `buyer_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_contact`");
+            }
+            if (!$this->columnExists('cars', 'seller_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `seller_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_party_id`");
+            }
+            if (!$this->columnExists('cars', 'purchase_paid_amount')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `purchase_price`");
+            }
+            if (!$this->columnExists('cars', 'has_second_key')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `has_second_key` TINYINT(1) NOT NULL DEFAULT 0 AFTER `seller_party_id`");
+            }
             if (!$this->columnExists('partners', 'partner_type')) {
                 $this->db->query("ALTER TABLE `partners` ADD COLUMN `partner_type` ENUM('MAIN','CARWISE') NOT NULL DEFAULT 'MAIN' AFTER `name`");
             }
@@ -219,7 +232,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION'];
+        $required = ['JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION', 'RTO_EXPENSE', 'RTO_RECOVERY'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -233,10 +246,74 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','CAR_SALE','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
+                 ENUM('CAR_PURCHASE','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
                  NOT NULL"
             );
         }
+    }
+
+    private function ensureCarOperationsSchema() {
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `rto_records` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `car_id` CHAR(36) NOT NULL,
+                `rto_type` VARCHAR(120) NOT NULL,
+                `status` ENUM('PENDING','IN_PROGRESS','COMPLETED','CANCELLED') NOT NULL DEFAULT 'PENDING',
+                `party_name` VARCHAR(200) DEFAULT NULL,
+                `rto_office` VARCHAR(160) DEFAULT NULL,
+                `agent_name` VARCHAR(160) DEFAULT NULL,
+                `application_no` VARCHAR(120) DEFAULT NULL,
+                `receipt_no` VARCHAR(120) DEFAULT NULL,
+                `expense_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `recovered_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `is_recoverable` TINYINT(1) NOT NULL DEFAULT 1,
+                `due_date` DATE DEFAULT NULL,
+                `submitted_date` DATE DEFAULT NULL,
+                `completed_date` DATE DEFAULT NULL,
+                `narration` TEXT DEFAULT NULL,
+                `expense_entry_id` CHAR(36) DEFAULT NULL,
+                `last_recovery_entry_id` CHAR(36) DEFAULT NULL,
+                `created_by` CHAR(36) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_rto_business_status` (`business_id`, `status`),
+                KEY `idx_rto_car` (`car_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `rto_recoveries` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `rto_record_id` CHAR(36) NOT NULL,
+                `car_id` CHAR(36) NOT NULL,
+                `journal_entry_id` CHAR(36) NOT NULL,
+                `received_date` DATE NOT NULL,
+                `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `narration` VARCHAR(500) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_rto_recovery_record` (`rto_record_id`),
+                KEY `idx_rto_recovery_car` (`car_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `car_second_key_events` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `car_id` CHAR(36) NOT NULL,
+                `event_type` ENUM('RECEIVED','GIVEN') NOT NULL,
+                `event_date` DATE NOT NULL,
+                `narration` VARCHAR(500) DEFAULT NULL,
+                `created_by` CHAR(36) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_second_key_car` (`car_id`, `event_date`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
     }
 
     private function ensureCarStatusEnum() {
@@ -409,7 +486,7 @@ class AccountingEngine {
     /**
      * CAR PURCHASE — Business funds
      */
-    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0) {
+    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -429,9 +506,18 @@ class AccountingEngine {
             throw new Exception("Partner funding cannot exceed the car purchase amount.");
         }
 
+        $paidNow = $paidNow === null ? $businessAmount : round(floatval($paidNow), 2);
+        if ($paidNow < 0) throw new Exception("Paid now cannot be negative.");
+        if ($paidNow - $businessAmount > 0.01) throw new Exception("Paid now cannot exceed business-funded purchase amount.");
+        $sellerOutstanding = round($businessAmount - $paidNow, 2);
+        if ($sellerOutstanding > 0.009 && trim((string) $sellerName) === '') {
+            throw new Exception("Seller name is required when purchase payment is pending.");
+        }
+
         if ($businessAmount > 0) {
-            // Validate: check payment account balance
-            $this->validateCashAvailable($paymentAccount, $businessAmount);
+            if ($paidNow > 0) {
+                $this->validateCashAvailable($paymentAccount, $paidNow);
+            }
 
             $businessGst = $grossAmount > 0 ? round(($gstAmount * $businessAmount) / $grossAmount, 2) : 0.0;
             $businessBase = round($businessAmount - $businessGst, 2);
@@ -441,7 +527,14 @@ class AccountingEngine {
             if ($businessGst > 0 && !empty($gstInputAccount['id'])) {
                 $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $businessGst, 'type' => 'DR', 'narration' => 'GST input on car purchase'];
             }
-            $lines[] = ['account_id' => $paymentAccount, 'amount' => $businessAmount, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
+            if ($paidNow > 0) {
+                $lines[] = ['account_id' => $paymentAccount, 'amount' => $paidNow, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
+            }
+            if ($sellerOutstanding > 0) {
+                $sellerPartyId = $this->getOrCreateParty($sellerName, 'SELLER');
+                $sellerParty = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$sellerPartyId]);
+                $lines[] = ['account_id' => $sellerParty['account_id'], 'amount' => $sellerOutstanding, 'type' => 'CR', 'narration' => "Pending purchase payment to $sellerName"];
+            }
         }
 
         $entryId = null;
@@ -510,6 +603,11 @@ class AccountingEngine {
             }
         }
 
+        $this->db->query(
+            "UPDATE cars SET purchase_paid_amount = ?, seller_party_id = COALESCE(?, seller_party_id) WHERE id = ? AND business_id = ?",
+            [$paidNow, $sellerPartyId ?? null, $carId, $this->businessId]
+        );
+
         return $entryId;
     }
 
@@ -538,7 +636,9 @@ class AccountingEngine {
         $profit = ($netSalePrice + $commissionAmount) - $totalCost;
 
         $lines = [];
-        $lines[] = ['account_id' => $receivingAccount, 'amount' => $received, 'type' => 'DR', 'narration' => 'Buyer amount received'];
+        if ($received > 0) {
+            $lines[] = ['account_id' => $receivingAccount, 'amount' => $received, 'type' => 'DR', 'narration' => 'Buyer amount received'];
+        }
         
         if ($outstanding > 0 && $buyerName) {
             // Create debtor for outstanding amount
@@ -573,12 +673,79 @@ class AccountingEngine {
 
         // Update car status
         $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
-        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, sale_gst_amount = ?, buyer_name = ? WHERE id = ?",
-            [$status, $date, $grossSalePrice, $commissionAmount, $gstAmount, $buyerName, $carId]);
+        $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, sale_gst_amount = ?, buyer_name = ?, buyer_party_id = ? WHERE id = ?",
+            [$status, $date, $grossSalePrice, $commissionAmount, $gstAmount, $buyerName, $partyId ?? null, $carId]);
 
         $this->recordPartnerProfitDistribution($carId, $profit, $date);
 
         return $entryId;
+    }
+
+    public function getPartyOutstandingAmount($partyId) {
+        $party = $this->db->fetch(
+            "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?",
+            [$partyId, $this->businessId]
+        );
+        if (!$party) return 0.0;
+        $naturalType = in_array($party['type'], ['DEBTOR', 'BUYER'], true) ? 'DR' : 'CR';
+        $openItems = $this->buildOutstandingItemsFromLedger($party['account_id'], $naturalType);
+        return round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+    }
+
+    public function refreshPendingCarSaleStatusesForParty($partyId) {
+        if (!$partyId) return;
+        $outstanding = $this->getPartyOutstandingAmount($partyId);
+        if ($outstanding > 0.009) return;
+        $this->db->query(
+            "UPDATE cars
+             SET status = 'SOLD'
+             WHERE business_id = ?
+               AND buyer_party_id = ?
+               AND status = 'PENDING_PAYMENT'",
+            [$this->businessId, $partyId]
+        );
+    }
+
+    public function returnSoldCar($carId, $reason) {
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception("Car not found.");
+        if (!in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)) {
+            throw new Exception("Only sold or pending-payment cars can be returned.");
+        }
+
+        $saleEntry = $this->db->fetch(
+            "SELECT *
+             FROM journal_entries
+             WHERE business_id = ?
+               AND car_id = ?
+               AND transaction_type = 'CAR_SALE'
+               AND status = 'POSTED'
+               AND is_reversal = 0
+               AND narration NOT LIKE 'Close car account %'
+             ORDER BY entry_date DESC, created_at DESC
+             LIMIT 1",
+            [$this->businessId, $carId]
+        );
+        if (!$saleEntry) throw new Exception("Original sale entry was not found.");
+
+        if (!empty($car['buyer_party_id'])) {
+            $laterReceipts = $this->db->fetch(
+                "SELECT COUNT(*) AS cnt
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND party_id = ?
+                   AND transaction_type IN ('LOAN_RECEIVED','BAD_DEBT')
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                   AND created_at > ?",
+                [$this->businessId, $car['buyer_party_id'], $saleEntry['created_at']]
+            );
+            if (($laterReceipts['cnt'] ?? 0) > 0) {
+                throw new Exception("Reverse later buyer payment/write-off entries before returning this car.");
+            }
+        }
+
+        return $this->reverseEntry($saleEntry['id'], $reason ?: "Car returned: {$car['registration_no']}");
     }
 
     /**
@@ -620,6 +787,93 @@ class AccountingEngine {
             $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, ['car_id' => $carId]);
         }
         return $entryId;
+    }
+
+    public function rtoExpense($rtoId, $carId, $amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
+        $rto = $this->db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $this->businessId]);
+        if (!$rto) throw new Exception("RTO record not found.");
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception("Car not found.");
+        if ($car['status'] === 'SOLD') throw new Exception("Cannot add RTO expense to a fully sold car.");
+
+        $this->validateCashAvailable($paymentAccount, $amount);
+        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $expenseAccountId = $this->getOrCreateExpenseAccount('RTO - ' . $rto['rto_type'] . ' - ' . $car['registration_no'], 'CAR_SPECIFIC');
+        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
+
+        $lines = [];
+        if ($baseAmount > 0) $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
+        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => 'GST input for RTO'];
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => 'Paid RTO expense'];
+        $entryId = $this->postJournalEntry('RTO_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
+
+        if ($baseAmount > 0) {
+            $this->postJournalEntry('RTO_EXPENSE', $date, "Allocate RTO to {$car['registration_no']}", [
+                ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "RTO {$rto['rto_type']}"],
+                ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => 'RTO allocated to car'],
+            ], ['car_id' => $carId]);
+        }
+
+        $this->db->query(
+            "UPDATE rto_records
+             SET expense_amount = expense_amount + ?, expense_entry_id = ?, status = IF(status = 'PENDING', 'IN_PROGRESS', status)
+             WHERE id = ? AND business_id = ?",
+            [$grossAmount, $entryId, $rtoId, $this->businessId]
+        );
+        return $entryId;
+    }
+
+    public function rtoRecovery($rtoId, $amount, $date, $receivingAccount, $narration) {
+        $rto = $this->db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $this->businessId]);
+        if (!$rto) throw new Exception("RTO record not found.");
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) throw new Exception("Recovery amount must be greater than zero.");
+        $pending = round(floatval($rto['expense_amount']) - floatval($rto['recovered_amount']), 2);
+        if (!empty($rto['is_recoverable']) && $pending > 0 && $amount - $pending > 0.01) {
+            throw new Exception("RTO recovery cannot exceed pending recovery of " . formatAmount($pending) . ".");
+        }
+
+        $income = $this->getOrCreateSystemAccount('RTO-REC', 'RTO Recovery Income', 'INCOME', 'Direct Income');
+        $entryId = $this->postJournalEntry('RTO_RECOVERY', $date, $narration, [
+            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => 'RTO recovery received'],
+            ['account_id' => $income['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'RTO recovery income'],
+        ], ['car_id' => $rto['car_id']]);
+
+        $this->db->insert('rto_recoveries', [
+            'id' => Database::uuid(),
+            'business_id' => $this->businessId,
+            'rto_record_id' => $rtoId,
+            'car_id' => $rto['car_id'],
+            'journal_entry_id' => $entryId,
+            'received_date' => $date,
+            'amount' => $amount,
+            'narration' => $narration,
+        ]);
+        $this->db->query(
+            "UPDATE rto_records SET recovered_amount = recovered_amount + ?, last_recovery_entry_id = ? WHERE id = ? AND business_id = ?",
+            [$amount, $entryId, $rtoId, $this->businessId]
+        );
+        return $entryId;
+    }
+
+    public function recordSecondKeyEvent($carId, $eventType, $date, $narration) {
+        $eventType = strtoupper((string) $eventType);
+        if (!in_array($eventType, ['RECEIVED', 'GIVEN'], true)) throw new Exception("Invalid second key event.");
+        $car = $this->db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception("Car not found.");
+        $this->db->insert('car_second_key_events', [
+            'id' => Database::uuid(),
+            'business_id' => $this->businessId,
+            'car_id' => $carId,
+            'event_type' => $eventType,
+            'event_date' => $date,
+            'narration' => $narration,
+            'created_by' => $this->userId,
+        ]);
+        $this->db->query(
+            "UPDATE cars SET has_second_key = ? WHERE id = ? AND business_id = ?",
+            [$eventType === 'RECEIVED' ? 1 : 0, $carId, $this->businessId]
+        );
     }
 
     /**
@@ -981,7 +1235,9 @@ class AccountingEngine {
             ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid by {$party['name']}"],
         ];
 
-        return $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, ['party_id' => $partyId]);
+        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, ['party_id' => $partyId]);
+        $this->refreshPendingCarSaleStatusesForParty($partyId);
+        return $entryId;
     }
 
     /**
@@ -1420,7 +1676,8 @@ class AccountingEngine {
                              sale_price = NULL,
                              sale_commission_amount = 0,
                              sale_gst_amount = 0,
-                             buyer_name = NULL
+                             buyer_name = NULL,
+                             buyer_party_id = NULL
                          WHERE id = ? AND business_id = ?",
                         [$entry['car_id'], $this->businessId]
                     );
@@ -1690,7 +1947,12 @@ class AccountingEngine {
         $saleGstAmount = floatval($car['sale_gst_amount'] ?? 0);
         $netSalePrice = max(0, $salePrice - $saleGstAmount);
         $totalSaleRealisation = $salePrice + $saleCommissionAmount;
-        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount;
+        $rtoRecovery = $this->db->fetch(
+            "SELECT COALESCE(SUM(recovered_amount), 0) AS total FROM rto_records WHERE business_id = ? AND car_id = ? AND status <> 'CANCELLED'",
+            [$this->businessId, $carId]
+        );
+        $rtoRecovered = floatval($rtoRecovery['total'] ?? 0);
+        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered;
         $profit = $netBusinessRevenue - $totalCost;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
@@ -1712,6 +1974,7 @@ class AccountingEngine {
             'sale_gst_amount' => $saleGstAmount,
             'net_sale_price' => $netSalePrice,
             'total_sale_realisation' => $totalSaleRealisation,
+            'rto_recovered' => $rtoRecovered,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
             'status' => $car['status'],

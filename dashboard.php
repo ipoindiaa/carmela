@@ -94,8 +94,6 @@ $bookViewMoreUrl = match ($activeBookKey) {
 
 $totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'IN_STOCK'", [$businessId]);
 $totalSold = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'SOLD'", [$businessId]);
-$totalPartners = $db->fetch("SELECT COUNT(*) as cnt FROM partners WHERE business_id = ? AND is_active = 1", [$businessId]);
-$totalEmployees = $db->fetch("SELECT COUNT(*) as cnt FROM employees WHERE business_id = ? AND is_active = 1", [$businessId]);
 
 $recentTxns = [];
 if (!empty($accessibleAccountIds)) {
@@ -195,20 +193,6 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <div>
                 <small>Sold Cars</small>
                 <strong><?= intval($totalSold['cnt'] ?? 0) ?></strong>
-            </div>
-        </a>
-        <a href="partners/list.php?type=MAIN" class="dashboard-kpi-card">
-            <span class="dashboard-kpi-icon neutral"><i class="ri-team-line"></i></span>
-            <div>
-                <small>Partners</small>
-                <strong><?= intval($totalPartners['cnt'] ?? 0) ?></strong>
-            </div>
-        </a>
-        <a href="employees/list.php" class="dashboard-kpi-card">
-            <span class="dashboard-kpi-icon neutral"><i class="ri-user-star-line"></i></span>
-            <div>
-                <small>Employees</small>
-                <strong><?= intval($totalEmployees['cnt'] ?? 0) ?></strong>
             </div>
         </a>
         <?php if (!isClientHiddenBook('profit_loss')): ?>

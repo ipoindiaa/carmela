@@ -22,7 +22,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th><th>Partner Settlements</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -33,6 +33,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             $commissionAmount = $carProfitability['sale_commission_amount'] ?? ($car['sale_commission_amount'] ?? 0);
             $saleGstAmount = $carProfitability['sale_gst_amount'] ?? ($car['sale_gst_amount'] ?? 0);
             $totalSaleRealisation = $carProfitability['total_sale_realisation'] ?? ($grossSalePrice + $commissionAmount);
+            $rtoRecovered = $carProfitability['rto_recovered'] ?? 0;
             $settlementSummary = [];
             foreach ($carProfitability['settlements'] as $settlement) {
                 $settlementSummary[] = $settlement['partner_name'] . ': ' . $settlement['status'];
@@ -57,6 +58,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
                     -
                 <?php endif; ?>
             </td>
+            <td class="text-right amount flow-in"><?= $rtoRecovered > 0 ? formatAmount($rtoRecovered) : '-' ?></td>
             <td class="text-right amount <?= $profit !== null ? ($profit >= 0 ? 'positive' : 'negative') : '' ?>">
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?></td>
             <td style="font-size:12px;"><?= !empty($settlementSummary) ? clean(implode(' | ', $settlementSummary)) : '<span class="text-muted">Business only</span>' ?></td>
@@ -68,6 +70,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
                 <td colspan="6">Grand Total (Sold Cars)</td>
                 <td class="text-right amount"><?= formatAmount($grandTotalCost) ?></td>
                 <td class="text-right amount"><?= formatAmount($grandTotalSale) ?></td>
+                <td></td>
                 <td class="text-right amount <?= $grandProfit >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($grandProfit, true) ?></td>
                 <td></td>
             </tr>

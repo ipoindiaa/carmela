@@ -74,6 +74,10 @@ define('BOOK_PERMISSIONS', [
         'label' => 'JV Register',
         'description' => 'View journal vouchers, drafts, and posted JV entries',
     ],
+    'rto_book' => [
+        'label' => 'RTO Book',
+        'description' => 'Manage car-wise RTO work, expenses, and recoveries',
+    ],
 ]);
 
 define('PRIMARY_BOOK_ACCOUNT_TYPES', [
@@ -87,6 +91,8 @@ define('CLIENT_DEMO_HIDDEN_BOOKS', []);
 define('TXN_TYPES', [
     'CAR_PURCHASE' => 'Bought a Car',
     'CAR_SALE' => 'Sold a Car',
+    'RTO_EXPENSE' => 'RTO Expense',
+    'RTO_RECOVERY' => 'RTO Recovery Received',
     'CAR_EXPENSE' => 'Car Repair / Service',
     'GENERAL_EXPENSE' => 'Office / Business Expense',
     'JOURNAL_VOUCHER' => 'Large Bill Split',

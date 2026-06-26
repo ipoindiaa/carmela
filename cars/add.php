@@ -31,6 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gstAmount = 0.0;
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
+        $purchasePaidNow = parseDecimalInput(post('purchase_paid_now', $purchasePrice));
+        $sellerName = post('seller_name');
         if (!in_array($paymentAccount, $paymentAccountIds, true)) {
             throw new Exception('You do not have write access to that payment account.');
         }
@@ -50,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'color' => post('color'),
             'purchase_date' => $purchaseDate,
             'purchase_price' => max(0, $purchasePrice - $gstAmount),
+            'purchase_paid_amount' => $purchasePaidNow,
+            'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
             'account_id' => $carAccountId,
             'notes' => post('notes'),
         ]);
@@ -70,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
-        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount);
+        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
         $uploadWarning = '';
         try {
             uploadEntityAttachments($businessId, 'CAR', $carId, 'SELLER', 'seller_images', Auth::user('user_id'), 'images');
@@ -141,6 +145,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="form-row">
                 <div class="form-group">
+                    <label class="form-label">Seller Name</label>
+                    <input type="text" name="seller_name" class="form-control" placeholder="Seller's full name">
+                    <div class="form-hint">Required if purchase payment will remain pending.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Amount Paid Now (₹)</label>
+                    <div class="input-group">
+                        <span class="input-prefix">₹</span>
+                        <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
                     <label class="form-label">Pay From *</label>
                     <select name="payment_account" class="form-control" required>
                         <?php foreach ($paymentAccounts as $account): ?>
@@ -149,6 +167,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php endforeach; ?>
                     </select>
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Second Key Available?</label>
+                <select name="has_second_key" class="form-control">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                </select>
             </div>
 
             <div class="form-group">

@@ -143,12 +143,12 @@ $nextUrl = $page < $pagination['total_pages']
     : '';
 ?>
 
-<div class="page-header">
-    <div>
+<div class="page-header entries-page-header">
+    <div class="entries-page-copy">
         <h1><i class="ri-exchange-line"></i> All Entries</h1>
-        <div class="text-muted" style="margin-top:4px;">See every business entry clearly: Receive/Jama, Payments, cash-bank transfers, and large bill splits.</div>
+        <div class="text-muted">Receive/Jama, Payments, cash-bank transfers, and split bills in latest-first order.</div>
     </div>
-    <div style="display:flex; gap:12px;">
+    <div class="entries-page-actions">
         <?php if (Auth::hasBookAccess('jv_register', 'write')): ?>
             <a href="new.php?type=JOURNAL_VOUCHER" class="btn btn-outline"><i class="ri-bill-line"></i> Large Bill Split</a>
         <?php endif; ?>
@@ -163,22 +163,33 @@ $nextUrl = $page < $pagination['total_pages']
     <span><i class="ri-bill-line"></i> Large Bill Split</span>
 </div>
 
-<div class="filter-bar">
-    <form method="GET" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
-        <select name="type" class="form-control">
-            <option value="">All Types</option>
-            <?php foreach (TXN_TYPES as $key => $label): ?>
-                <option value="<?= $key ?>" <?= $filterType === $key ? 'selected' : '' ?>><?= $label ?></option>
-            <?php endforeach; ?>
-        </select>
-        <input type="date" name="date" class="form-control" value="<?= clean($filterDate) ?>" placeholder="Date">
-        <select name="status" class="form-control">
-            <option value="">All Status</option>
-            <option value="POSTED" <?= $filterStatus === 'POSTED' ? 'selected' : '' ?>>Posted</option>
-            <option value="REVERSED" <?= $filterStatus === 'REVERSED' ? 'selected' : '' ?>>Reversed</option>
-        </select>
-        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Filter</button>
-        <a href="list.php" class="btn btn-outline btn-sm">Clear</a>
+<div class="filter-bar entries-filter-bar">
+    <form method="GET" class="entries-filter-form">
+        <div class="entries-filter-field entries-filter-type">
+            <label class="form-label">Entry Type</label>
+            <select name="type" class="form-control">
+                <option value="">All Types</option>
+                <?php foreach (TXN_TYPES as $key => $label): ?>
+                    <option value="<?= $key ?>" <?= $filterType === $key ? 'selected' : '' ?>><?= $label ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="entries-filter-field entries-filter-date">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" class="form-control" value="<?= clean($filterDate) ?>">
+        </div>
+        <div class="entries-filter-field entries-filter-status">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-control">
+                <option value="">All Status</option>
+                <option value="POSTED" <?= $filterStatus === 'POSTED' ? 'selected' : '' ?>>Posted</option>
+                <option value="REVERSED" <?= $filterStatus === 'REVERSED' ? 'selected' : '' ?>>Reversed</option>
+            </select>
+        </div>
+        <div class="entries-filter-actions">
+            <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Filter</button>
+            <a href="list.php" class="btn btn-outline btn-sm">Clear</a>
+        </div>
     </form>
 </div>
 

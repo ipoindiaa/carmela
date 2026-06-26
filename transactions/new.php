@@ -65,6 +65,11 @@ $preselectedType = get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
 $preselectedCarId = get('car_id', '');
 $preselectedCar = null;
+$preselectedPartyId = get('party_id', '');
+$preselectedParty = null;
+$preselectedAmount = get('amount', '');
+$preselectedNarration = get('narration', '');
+$preselectedRtoId = get('rto_id', '');
 $entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
 $entryCategories = $db->fetchAll(
     "SELECT id, code, name, group_name, sub_group
@@ -134,6 +139,26 @@ if ($preselectedCarId !== '') {
     }
 }
 
+if ($preselectedPartyId !== '') {
+    $preselectedParty = $db->fetch(
+        "SELECT id, name, type FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
+        [$preselectedPartyId, $businessId]
+    );
+    if (!$preselectedParty) {
+        $preselectedPartyId = '';
+    }
+}
+
+$rtoOptions = $db->fetchAll(
+    "SELECT r.id, r.rto_type, r.expense_amount, r.recovered_amount, r.is_recoverable, c.registration_no, c.make, c.model
+     FROM rto_records r
+     JOIN cars c ON c.id = r.car_id
+     WHERE r.business_id = ? AND r.status <> 'CANCELLED'
+     ORDER BY r.created_at DESC
+     LIMIT 200",
+    [$businessId]
+);
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -185,6 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'color' => post('car_color'),
                         'purchase_date' => $date,
                         'purchase_price' => $amount,
+                        'purchase_paid_amount' => parseDecimalInput(post('purchase_paid_now', $amount)),
+                        'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
                         'account_id' => $carAccountId,
                     ]);
                 }
@@ -210,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($carId && $gstAmount > 0) {
                     $db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [max(0, $amount - $gstAmount), $carId, $businessId]);
                 }
-                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount);
+                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount, post('seller_name'), parseDecimalInput(post('purchase_paid_now', $amount)));
                 $attachmentCarId = $carId;
                 break;
 
@@ -283,6 +310,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'LOAN_REPAID':
                 $partyId = post('creditor_id');
                 $entryId = $engine->loanRepaid($partyId, $amount, $date, $paymentAccountId, $narration);
+                break;
+
+            case 'RTO_EXPENSE':
+                $rtoId = post('rto_id');
+                $rto = $db->fetch("SELECT car_id FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
+                if (!$rto) throw new Exception('Select a valid RTO record.');
+                $entryId = $engine->rtoExpense($rtoId, $rto['car_id'], $amount, $date, $paymentAccountId, $narration);
+                break;
+
+            case 'RTO_RECOVERY':
+                $rtoId = post('rto_id');
+                $entryId = $engine->rtoRecovery($rtoId, $amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'CONTRA_TRANSFER':
@@ -419,6 +458,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
+                            <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO work linked to a car from RTO Book.">RTO Expense</option>
+                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Recovery Received" data-desc="Receive RTO money back from owner/customer.">RTO Recovery Received</option>
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
@@ -476,12 +517,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Amount (₹) *</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="amount" class="form-control amount-input currency-input" placeholder="0" inputmode="decimal" autocomplete="off" required>
+                        <input type="text" name="amount" class="form-control amount-input currency-input" placeholder="0" inputmode="decimal" autocomplete="off" value="<?= clean($preselectedAmount) ?>" required>
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Narration / Description *</label>
-                    <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" required>
+                    <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" value="<?= clean($preselectedNarration) ?>" required>
                 </div>
             </div>
         </div>
@@ -520,6 +561,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" name="car_id" value="new">
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Seller Name</label>
+                        <input type="text" name="seller_name" class="form-control" placeholder="Seller's full name">
+                        <div class="form-hint">Required if you are not paying full purchase amount now.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Amount Paid Now (₹)</label>
+                        <div class="input-group">
+                            <span class="input-prefix">₹</span>
+                            <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Second Key Available?</label>
+                    <select name="has_second_key" class="form-control searchable-select">
+                        <option value="0">No</option>
+                        <option value="1">Yes</option>
+                    </select>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">Seller Images</label>
                     <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
@@ -710,19 +773,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="party-select-section" style="display:none;">
                 <div class="form-group" id="debtor-select-wrapper">
                     <label class="form-label">Select Debtor *</label>
-                    <input type="hidden" name="debtor_id" id="debtor_id">
+                    <input type="hidden" name="debtor_id" id="debtor_id" value="<?= clean($preselectedType === 'LOAN_RECEIVED' ? $preselectedPartyId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="debtor-picker-trigger" onclick="openEntityPicker('debtor', this)">
-                        <span>Select debtor / buyer</span>
+                        <span><?= $preselectedType === 'LOAN_RECEIVED' && $preselectedParty ? clean($preselectedParty['name']) : 'Select debtor / buyer' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
                 </div>
                 <div class="form-group" id="creditor-select-wrapper">
                     <label class="form-label">Select Creditor *</label>
-                    <input type="hidden" name="creditor_id" id="creditor_id">
+                    <input type="hidden" name="creditor_id" id="creditor_id" value="<?= clean($preselectedType === 'LOAN_REPAID' ? $preselectedPartyId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="creditor-picker-trigger" onclick="openEntityPicker('creditor', this)">
-                        <span>Select creditor / seller</span>
+                        <span><?= $preselectedType === 'LOAN_REPAID' && $preselectedParty ? clean($preselectedParty['name']) : 'Select creditor / seller' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
+                </div>
+            </div>
+
+            <!-- RTO SECTION -->
+            <div class="txn-section" id="rto-section" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label">RTO Record *</label>
+                    <select name="rto_id" class="form-control searchable-select">
+                        <option value="">Select RTO work</option>
+                        <?php foreach ($rtoOptions as $rto): ?>
+                            <?php $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?>
+                            <option value="<?= clean($rto['id']) ?>" <?= $preselectedRtoId === $rto['id'] ? 'selected' : '' ?>>
+                                <?= clean(formatRegistrationNo($rto['registration_no']) . ' - ' . $rto['rto_type'] . ($pending > 0 ? ' | Pending ' . formatAmount($pending) : '')) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-hint">Create detailed RTO work from RTO Book. Use this only to post expense or recovery against an existing RTO record.</div>
                 </div>
             </div>
 
