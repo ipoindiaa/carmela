@@ -37,11 +37,12 @@ function renderCarRows($cars, $engine) {
         <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
+            $carPending = $engine->getCarPendingAmounts($car['id']);
             $extraCost = max(0, (float) ($carProfitability['total_expenses'] ?? 0));
             $totalSaleRealisation = (float) ($carProfitability['total_sale_realisation'] ?? 0);
             $profit = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) ? (float) ($carProfitability['profit'] ?? 0) : null;
-            $buyerOutstanding = (($car['buyer_balance_type'] ?? '') === 'DR') ? (float) ($car['buyer_balance'] ?? 0) : 0.0;
-            $sellerOutstanding = (($car['seller_balance_type'] ?? '') === 'CR') ? (float) ($car['seller_balance'] ?? 0) : 0.0;
+            $buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
+            $sellerOutstanding = (float) ($carPending['purchase_pending'] ?? 0);
             $rtoPending = (float) ($car['rto_pending'] ?? 0);
         ?>
         <tr>
@@ -74,11 +75,11 @@ function renderCarRows($cars, $engine) {
             <td class="text-center">
                 <div class="table-action-stack">
                     <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
-                    <?php if ($buyerOutstanding > 0 && !empty($car['buyer_party_id'])): ?>
-                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $car['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
+                    <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
+                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
                     <?php endif; ?>
-                    <?php if ($sellerOutstanding > 0 && !empty($car['seller_party_id'])): ?>
-                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $car['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-outline">Pay</a>
+                    <?php if ($sellerOutstanding > 0 && !empty($carPending['seller_party_id'])): ?>
+                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-outline">Pay</a>
                     <?php endif; ?>
                 </div>
             </td>
@@ -111,15 +112,9 @@ $pagination = paginate($total['cnt'], $perPage, $page);
 
 $cars = $db->fetchAll(
     "SELECT c.*, a.current_balance as total_cost,
-            ba.current_balance AS buyer_balance, ba.current_balance_type AS buyer_balance_type,
-            sa.current_balance AS seller_balance, sa.current_balance_type AS seller_balance_type,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN debtors_creditors bp ON bp.id = c.buyer_party_id
-     LEFT JOIN accounts ba ON ba.id = bp.account_id
-     LEFT JOIN debtors_creditors sp ON sp.id = c.seller_party_id
-     LEFT JOIN accounts sa ON sa.id = sp.account_id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records
@@ -142,15 +137,9 @@ foreach ($cars as $carRow) {
 
 $cars = $db->fetchAll(
     "SELECT c.*, a.current_balance as total_cost,
-            ba.current_balance AS buyer_balance, ba.current_balance_type AS buyer_balance_type,
-            sa.current_balance AS seller_balance, sa.current_balance_type AS seller_balance_type,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN debtors_creditors bp ON bp.id = c.buyer_party_id
-     LEFT JOIN accounts ba ON ba.id = bp.account_id
-     LEFT JOIN debtors_creditors sp ON sp.id = c.seller_party_id
-     LEFT JOIN accounts sa ON sa.id = sp.account_id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records

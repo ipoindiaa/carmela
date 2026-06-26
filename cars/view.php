@@ -46,8 +46,9 @@ $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
 $buyerParty = !empty($car['buyer_party_id']) ? $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$car['buyer_party_id'], $businessId]) : null;
 $sellerParty = !empty($car['seller_party_id']) ? $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$car['seller_party_id'], $businessId]) : null;
-$buyerOutstanding = $buyerParty ? $engine->getPartyOutstandingAmount($buyerParty['id']) : 0.0;
-$sellerOutstanding = $sellerParty ? $engine->getPartyOutstandingAmount($sellerParty['id']) : 0.0;
+$carPending = $engine->getCarPendingAmounts($id);
+$buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
+$sellerOutstanding = (float) ($carPending['purchase_pending'] ?? 0);
 $buyerHistory = $buyerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
@@ -94,11 +95,11 @@ $contributions = $db->fetchAll(
 <div class="page-header">
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div style="display: flex; gap: 10px;">
-        <?php if ($buyerOutstanding > 0 && $buyerParty): ?>
-            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $buyerParty['id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
+        <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
+            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
-        <?php if ($sellerOutstanding > 0 && $sellerParty): ?>
-            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $sellerParty['id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-up-circle-line"></i> Pay Seller</a>
+        <?php if ($sellerOutstanding > 0 && !empty($carPending['seller_party_id'])): ?>
+            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-up-circle-line"></i> Pay Seller</a>
         <?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>

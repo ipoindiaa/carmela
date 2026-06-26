@@ -692,6 +692,87 @@ class AccountingEngine {
         return round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
     }
 
+    private function getCarLinkedOutstandingAmount($carId, $accountId, $normalType, array $entryTypes) {
+        if (!$carId || !$accountId || empty($entryTypes)) {
+            return 0.0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($entryTypes), '?'));
+        $row = $this->db->fetch(
+            "SELECT
+                COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS total_dr,
+                COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS total_cr
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ?
+               AND je.business_id = ?
+               AND je.car_id = ?
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND je.transaction_type IN ($placeholders)",
+            array_merge([$accountId, $this->businessId, $carId], $entryTypes)
+        );
+
+        $dr = floatval($row['total_dr'] ?? 0);
+        $cr = floatval($row['total_cr'] ?? 0);
+        $outstanding = strtoupper($normalType) === 'CR' ? ($cr - $dr) : ($dr - $cr);
+        return round(max(0, $outstanding), 2);
+    }
+
+    public function getCarPendingAmounts($carId) {
+        $car = $this->db->fetch(
+            "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+            [$carId, $this->businessId]
+        );
+        if (!$car) {
+            return [
+                'sale_pending' => 0.0,
+                'purchase_pending' => 0.0,
+                'buyer_party_id' => null,
+                'seller_party_id' => null,
+            ];
+        }
+
+        $salePending = 0.0;
+        if (!empty($car['buyer_party_id'])) {
+            $buyer = $this->db->fetch(
+                "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
+                [$car['buyer_party_id'], $this->businessId]
+            );
+            if (!empty($buyer['account_id'])) {
+                $salePending = $this->getCarLinkedOutstandingAmount(
+                    $carId,
+                    $buyer['account_id'],
+                    'DR',
+                    ['CAR_SALE', 'LOAN_RECEIVED', 'BAD_DEBT']
+                );
+            }
+        }
+
+        $purchasePending = 0.0;
+        if (!empty($car['seller_party_id'])) {
+            $seller = $this->db->fetch(
+                "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
+                [$car['seller_party_id'], $this->businessId]
+            );
+            if (!empty($seller['account_id'])) {
+                $purchasePending = $this->getCarLinkedOutstandingAmount(
+                    $carId,
+                    $seller['account_id'],
+                    'CR',
+                    ['CAR_PURCHASE', 'LOAN_REPAID']
+                );
+            }
+        }
+
+        return [
+            'sale_pending' => $salePending,
+            'purchase_pending' => $purchasePending,
+            'buyer_party_id' => $car['buyer_party_id'] ?: null,
+            'seller_party_id' => $car['seller_party_id'] ?: null,
+        ];
+    }
+
     public function refreshPendingCarSaleStatusesForParty($partyId) {
         if (!$partyId) return;
         $outstanding = $this->getPartyOutstandingAmount($partyId);
