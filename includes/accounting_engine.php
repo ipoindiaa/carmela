@@ -719,6 +719,79 @@ class AccountingEngine {
         return round(max(0, $outstanding), 2);
     }
 
+    private function getCarSalePendingFromSalePrice(array $car) {
+        $salePrice = round(floatval($car['sale_price'] ?? 0), 2);
+        if ($salePrice <= 0) {
+            return 0.0;
+        }
+
+        $saleEntry = $this->db->fetch(
+            "SELECT je.id, je.entry_date, je.created_at
+             FROM journal_entries je
+             WHERE je.business_id = ?
+               AND je.car_id = ?
+               AND je.transaction_type = 'CAR_SALE'
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND je.narration NOT LIKE 'Close car account %'
+             ORDER BY je.entry_date DESC, je.created_at DESC
+             LIMIT 1",
+            [$this->businessId, $car['id']]
+        );
+
+        if (!$saleEntry) {
+            return 0.0;
+        }
+
+        $initialReceived = $this->db->fetch(
+            "SELECT COALESCE(SUM(jl.amount), 0) AS total
+             FROM journal_lines jl
+             JOIN accounts a ON a.id = jl.account_id
+             WHERE jl.journal_entry_id = ?
+               AND jl.entry_type = 'DR'
+               AND a.entity_type IN ('CASH', 'BANK')",
+            [$saleEntry['id']]
+        );
+        $settledAgainstSale = min($salePrice, floatval($initialReceived['total'] ?? 0));
+
+        if (!empty($car['buyer_party_id'])) {
+            $buyer = $this->db->fetch(
+                "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
+                [$car['buyer_party_id'], $this->businessId]
+            );
+
+            if (!empty($buyer['account_id'])) {
+                $laterCredits = $this->db->fetch(
+                    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+                     FROM journal_lines jl
+                     JOIN journal_entries je ON je.id = jl.journal_entry_id
+                     WHERE jl.account_id = ?
+                       AND jl.entry_type = 'CR'
+                       AND je.business_id = ?
+                       AND je.car_id = ?
+                       AND je.status = 'POSTED'
+                       AND je.is_reversal = 0
+                       AND je.transaction_type IN ('LOAN_RECEIVED', 'BAD_DEBT')
+                       AND (
+                           je.entry_date > ?
+                           OR (je.entry_date = ? AND je.created_at >= ?)
+                       )",
+                    [
+                        $buyer['account_id'],
+                        $this->businessId,
+                        $car['id'],
+                        $saleEntry['entry_date'],
+                        $saleEntry['entry_date'],
+                        $saleEntry['created_at'],
+                    ]
+                );
+                $settledAgainstSale += floatval($laterCredits['total'] ?? 0);
+            }
+        }
+
+        return round(max(0, $salePrice - min($salePrice, $settledAgainstSale)), 2);
+    }
+
     public function getCarPendingAmounts($carId) {
         $car = $this->db->fetch(
             "SELECT * FROM cars WHERE id = ? AND business_id = ?",
@@ -733,19 +806,14 @@ class AccountingEngine {
             ];
         }
 
-        $salePending = 0.0;
+        $salePending = $this->getCarSalePendingFromSalePrice($car);
         if (!empty($car['buyer_party_id'])) {
             $buyer = $this->db->fetch(
                 "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
                 [$car['buyer_party_id'], $this->businessId]
             );
-            if (!empty($buyer['account_id'])) {
-                $salePending = $this->getCarLinkedOutstandingAmount(
-                    $carId,
-                    $buyer['account_id'],
-                    'DR',
-                    ['CAR_SALE', 'LOAN_RECEIVED', 'BAD_DEBT']
-                );
+            if (!$buyer) {
+                $salePending = 0.0;
             }
         }
 

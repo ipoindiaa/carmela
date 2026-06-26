@@ -198,7 +198,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th>Year</th>
                 <th>Purchase Date / Time</th>
                 <th class="text-right">Purchase Price</th>
-                <th class="text-right">Total Cost</th>
+                <th class="text-right">Extra Cost</th>
                 <th class="text-right">Sale Price</th>
                 <th class="text-right">Profit/Loss</th>
                 <th class="text-center">Status</th>
