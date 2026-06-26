@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $profitability = $engine->getCarProfitability($id);
 $profit = $profitability['status'] === 'SOLD' ? $profitability['profit'] : null;
 $expenses = $profitability['total_expenses'];
+$carTotalCost = $profitability['total_cost'] ?? $car['purchase_price'];
 $partnerships = $profitability['partnerships'];
 $settlements = $profitability['settlements'];
 $buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
@@ -50,17 +51,17 @@ $buyerHistory = $buyerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.account_id = ?
-     WHERE je.business_id = ? AND je.status = 'POSTED'
+     WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
      ORDER BY je.entry_date DESC, je.created_at DESC LIMIT 12",
-    [$buyerParty['account_id'], $businessId]
+    [$buyerParty['account_id'], $businessId, $id]
 ) : [];
 $sellerHistory = $sellerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.account_id = ?
-     WHERE je.business_id = ? AND je.status = 'POSTED'
+     WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
      ORDER BY je.entry_date DESC, je.created_at DESC LIMIT 12",
-    [$sellerParty['account_id'], $businessId]
+    [$sellerParty['account_id'], $businessId, $id]
 ) : [];
 $rtoRecords = $db->fetchAll(
     "SELECT * FROM rto_records WHERE business_id = ? AND car_id = ? ORDER BY created_at DESC",
@@ -121,7 +122,7 @@ $contributions = $db->fetchAll(
     </div>
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon" style="background: var(--accent-purple-glow); color: var(--accent-purple);"><i class="ri-calculator-line"></i></div></div>
-        <div class="stat-value flow-out"><?= formatAmount($car['total_cost']) ?></div>
+        <div class="stat-value flow-out"><?= formatAmount($carTotalCost) ?></div>
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="stat-card">

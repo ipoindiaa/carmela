@@ -1209,11 +1209,20 @@ class AccountingEngine {
     /**
      * LOAN RECEIVED (money back from debtor)
      */
-    public function loanReceived($partyId, $amount, $date, $receivingAccount, $narration) {
+    public function loanReceived($partyId, $amount, $date, $receivingAccount, $narration, $carId = null) {
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$partyId]);
         if (!$party) throw new Exception("Party not found");
         if (!in_array($party['type'], ['DEBTOR', 'BUYER'], true)) {
             throw new Exception("Money can be received back only from a debtor or buyer account.");
+        }
+        if ($carId) {
+            $car = $this->db->fetch("SELECT id, buyer_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            if (!$car) {
+                throw new Exception("Linked car not found.");
+            }
+            if (!empty($car['buyer_party_id']) && $car['buyer_party_id'] !== $partyId) {
+                throw new Exception("Selected buyer does not match the linked car buyer.");
+            }
         }
 
         $amount = round(floatval($amount), 2);
@@ -1235,7 +1244,7 @@ class AccountingEngine {
             ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid by {$party['name']}"],
         ];
 
-        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, ['party_id' => $partyId]);
+        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
         $this->refreshPendingCarSaleStatusesForParty($partyId);
         return $entryId;
     }
@@ -1262,11 +1271,20 @@ class AccountingEngine {
     /**
      * LOAN REPAID (paid back to creditor)
      */
-    public function loanRepaid($partyId, $amount, $date, $paymentAccount, $narration) {
+    public function loanRepaid($partyId, $amount, $date, $paymentAccount, $narration, $carId = null) {
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ?", [$partyId]);
         if (!$party) throw new Exception("Party not found");
         if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
             throw new Exception("Loan repayment is allowed only against creditor or seller balances.");
+        }
+        if ($carId) {
+            $car = $this->db->fetch("SELECT id, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            if (!$car) {
+                throw new Exception("Linked car not found.");
+            }
+            if (!empty($car['seller_party_id']) && $car['seller_party_id'] !== $partyId) {
+                throw new Exception("Selected seller does not match the linked car seller.");
+            }
         }
 
         $amount = round(floatval($amount), 2);
@@ -1290,7 +1308,7 @@ class AccountingEngine {
             ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid to {$party['name']}"],
         ];
 
-        return $this->postJournalEntry('LOAN_REPAID', $date, $narration, $lines, ['party_id' => $partyId]);
+        return $this->postJournalEntry('LOAN_REPAID', $date, $narration, $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
     }
 
     /**

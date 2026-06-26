@@ -29,17 +29,17 @@ function carsListUrl($page, $filter, $search, $lazy = false) {
     return 'list.php?' . http_build_query($query);
 }
 
-function renderCarRows($cars) {
+function renderCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
         <tr><td colspan="10" class="text-center text-muted" style="padding: 40px;">No cars found. <a href="add.php">Add your first car</a></td></tr>
         <?php else: ?>
         <?php foreach ($cars as $car):
-            $totalCost = $car['total_cost'] ?? $car['purchase_price'];
-            $netSalePrice = max(0, (float) ($car['sale_price'] ?? 0) - (float) ($car['sale_gst_amount'] ?? 0));
-            $commissionAmount = (float) ($car['sale_commission_amount'] ?? 0);
-            $profit = $car['status'] === 'SOLD' ? (($netSalePrice + $commissionAmount) - $totalCost) : null;
+            $carProfitability = $engine->getCarProfitability($car['id']);
+            $extraCost = max(0, (float) ($carProfitability['total_expenses'] ?? 0));
+            $totalSaleRealisation = (float) ($carProfitability['total_sale_realisation'] ?? 0);
+            $profit = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) ? (float) ($carProfitability['profit'] ?? 0) : null;
             $buyerOutstanding = (($car['buyer_balance_type'] ?? '') === 'DR') ? (float) ($car['buyer_balance'] ?? 0) : 0.0;
             $sellerOutstanding = (($car['seller_balance_type'] ?? '') === 'CR') ? (float) ($car['seller_balance'] ?? 0) : 0.0;
             $rtoPending = (float) ($car['rto_pending'] ?? 0);
@@ -50,11 +50,11 @@ function renderCarRows($cars) {
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($car['purchase_price']) ?></td>
-            <td class="text-right amount flow-out"><?= formatAmount($totalCost) ?></td>
+            <td class="text-right amount flow-out"><?= formatAmount($extraCost) ?></td>
             <td class="text-right amount flow-in">
                 <?php if ($car['sale_price']): ?>
-                    <?= formatAmount($car['sale_price']) ?>
-                    <?php if ($commissionAmount > 0): ?><div class="flow-in" style="font-size:11px;">+ Comm <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
+                    <?= formatAmount($totalSaleRealisation) ?>
+                    <?php if (!empty($carProfitability['sale_commission_amount'])): ?><div class="flow-in" style="font-size:11px;">+ Comm <?= formatAmount($carProfitability['sale_commission_amount']) ?></div><?php endif; ?>
                 <?php else: ?>
                     -
                 <?php endif; ?>
@@ -135,7 +135,7 @@ if ($isLazyRequest) {
     header('Content-Type: application/json');
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
-        'html' => renderCarRows($cars),
+        'html' => renderCarRows($cars, new AccountingEngine($businessId, Auth::user('user_id'))),
         'next_url' => $nextPage ? carsListUrl($nextPage, $filter, $search, true) : '',
     ]);
     exit;
@@ -186,7 +186,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
             </tr>
         </thead>
         <tbody>
-            <?= renderCarRows($cars) ?>
+            <?= renderCarRows($cars, new AccountingEngine($businessId, Auth::user('user_id'))) ?>
         </tbody>
     </table>
     <?php if ($nextUrl): ?>

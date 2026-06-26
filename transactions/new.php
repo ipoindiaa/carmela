@@ -299,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'LOAN_RECEIVED':
                 $partyId = post('debtor_id');
-                $entryId = $engine->loanReceived($partyId, $amount, $date, $paymentAccountId, $narration);
+                $entryId = $engine->loanReceived($partyId, $amount, $date, $paymentAccountId, $narration, post('linked_car_id'));
                 break;
 
             case 'LOAN_TAKEN':
@@ -309,7 +309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'LOAN_REPAID':
                 $partyId = post('creditor_id');
-                $entryId = $engine->loanRepaid($partyId, $amount, $date, $paymentAccountId, $narration);
+                $entryId = $engine->loanRepaid($partyId, $amount, $date, $paymentAccountId, $narration, post('linked_car_id'));
                 break;
 
             case 'RTO_EXPENSE':
@@ -787,6 +787,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="ri-search-line"></i>
                     </button>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Linked Car</label>
+                    <input type="hidden" name="linked_car_id" id="linked_car_id" value="<?= clean(in_array($preselectedType, ['LOAN_RECEIVED', 'LOAN_REPAID'], true) ? $preselectedCarId : '') ?>">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="payment-car-picker-trigger" onclick="openEntityPicker('payment_car', this)">
+                        <span><?= $preselectedCar && in_array($preselectedType, ['LOAN_RECEIVED', 'LOAN_REPAID'], true) ? clean($preselectedCar['registration_no']) : 'Select car if this payment belongs to one car' ?></span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-hint">Use this when buyer or seller chunk payment belongs to a specific car.</div>
+                </div>
             </div>
 
             <!-- RTO SECTION -->
@@ -1057,6 +1066,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 let activeSplitRow = null;
 let activeEntityPicker = null;
 const entityPickerConfig = {
+    payment_car: {
+        title: 'Search Cars',
+        subtitle: 'Search the car linked to this buyer or seller payment.',
+        inputId: 'linked_car_id',
+        triggerId: 'payment-car-picker-trigger',
+        emptyLabel: 'Select car if this payment belongs to one car',
+    },
     car: {
         title: 'Search Cars',
         subtitle: 'Search available cars by registration number, make, or model.',
