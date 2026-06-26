@@ -268,7 +268,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                             <i class="<?= $line['entry_type'] === 'DR' ? 'ri-arrow-down-line' : 'ri-arrow-up-line' ?>"></i>
                         </div>
                         <div class="activity-info">
-                            <strong><?= TXN_TYPES[$line['transaction_type']] ?? clean($line['transaction_type']) ?></strong>
+                            <strong><?= clean(transactionTypeLabel($line['transaction_type'], $line)) ?></strong>
                             <span><?= clean(mb_substr($line['narration'] ?? '', 0, 70)) ?></span>
                         </div>
                         <div class="activity-side">
@@ -314,7 +314,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
                     <a href="transactions/view.php?id=<?= $txn['id'] ?>" class="dashboard-activity-row">
                         <div class="activity-dot"><i class="ri-exchange-line"></i></div>
                         <div class="activity-info">
-                            <strong><?= TXN_TYPES[$txn['transaction_type']] ?? clean($txn['transaction_type']) ?></strong>
+                            <strong><?= clean(transactionTypeLabel($txn['transaction_type'], $txn)) ?></strong>
                             <span><?= clean(mb_substr($txn['narration'] ?? '', 0, 55)) ?></span>
                         </div>
                         <div class="activity-side">

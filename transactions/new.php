@@ -400,14 +400,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'images');
                 }
             } catch (Exception $uploadError) {
-                $uploadWarning = (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
+                $uploadWarning = transactionTypeLabel($type, ['car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select')]) . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
             }
         }
 
         if ($uploadWarning !== '') {
             setFlash('warning', $uploadWarning);
         } else {
-            setFlash('success', (TXN_TYPES[$type] ?? 'Category') . ' entry posted successfully!');
+            setFlash('success', transactionTypeLabel($type, ['car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select')]) . ' entry posted successfully!');
         }
         redirect('list.php');
     } catch (Exception $e) {
@@ -477,9 +477,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </optgroup>
                         <optgroup label="Loans & Debts">
                             <option value="LOAN_GIVEN" data-flow="out" data-icon="ri-arrow-up-circle-line" data-title="Lent Money to Someone" data-desc="Business gave money to debtor.">Lent Money to Someone</option>
-                            <option value="LOAN_RECEIVED" data-flow="in" data-icon="ri-arrow-down-circle-line" data-title="Received Money Back" data-desc="Business got money back from debtor.">Received Money Back</option>
+                            <option value="LOAN_RECEIVED" data-flow="in" data-icon="ri-arrow-down-circle-line" data-title="Car Payment Clearing" data-desc="Buyer or debtor paid a pending amount. Use this for later car-payment chunks too.">Car Payment Clearing</option>
                             <option value="LOAN_TAKEN" data-flow="in" data-icon="ri-download-cloud-2-line" data-title="Borrowed Money" data-desc="Business received loan from creditor.">Borrowed Money</option>
-                            <option value="LOAN_REPAID" data-flow="out" data-icon="ri-upload-cloud-2-line" data-title="Repaid a Loan" data-desc="Business repaid money to creditor.">Repaid a Loan</option>
+                            <option value="LOAN_REPAID" data-flow="out" data-icon="ri-upload-cloud-2-line" data-title="Seller Payment Clearing" data-desc="Business cleared a pending seller or creditor amount, including car purchase chunks.">Seller Payment Clearing</option>
                         </optgroup>
                     </select>
                     <div class="txn-type-picker" id="txn-type-picker">
@@ -772,7 +772,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <!-- PARTY SELECT SECTION (existing debtor/creditor) -->
             <div class="txn-section" id="party-select-section" style="display:none;">
                 <div class="form-group" id="debtor-select-wrapper">
-                    <label class="form-label">Select Debtor *</label>
+                    <label class="form-label" id="debtor-label">Select Debtor *</label>
                     <input type="hidden" name="debtor_id" id="debtor_id" value="<?= clean($preselectedType === 'LOAN_RECEIVED' ? $preselectedPartyId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="debtor-picker-trigger" onclick="openEntityPicker('debtor', this)">
                         <span><?= $preselectedType === 'LOAN_RECEIVED' && $preselectedParty ? clean($preselectedParty['name']) : 'Select debtor / buyer' ?></span>
@@ -780,7 +780,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </button>
                 </div>
                 <div class="form-group" id="creditor-select-wrapper">
-                    <label class="form-label">Select Creditor *</label>
+                    <label class="form-label" id="creditor-label">Select Creditor *</label>
                     <input type="hidden" name="creditor_id" id="creditor_id" value="<?= clean($preselectedType === 'LOAN_REPAID' ? $preselectedPartyId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="creditor-picker-trigger" onclick="openEntityPicker('creditor', this)">
                         <span><?= $preselectedType === 'LOAN_REPAID' && $preselectedParty ? clean($preselectedParty['name']) : 'Select creditor / seller' ?></span>
@@ -788,13 +788,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </button>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Linked Car</label>
+                    <label class="form-label" id="linked-car-label">Linked Car</label>
                     <input type="hidden" name="linked_car_id" id="linked_car_id" value="<?= clean(in_array($preselectedType, ['LOAN_RECEIVED', 'LOAN_REPAID'], true) ? $preselectedCarId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="payment-car-picker-trigger" onclick="openEntityPicker('payment_car', this)">
                         <span><?= $preselectedCar && in_array($preselectedType, ['LOAN_RECEIVED', 'LOAN_REPAID'], true) ? clean($preselectedCar['registration_no']) : 'Select car if this payment belongs to one car' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
-                    <div class="form-hint">Use this when buyer or seller chunk payment belongs to a specific car.</div>
+                    <div class="form-hint" id="linked-car-hint">Use this when buyer or seller chunk payment belongs to a specific car.</div>
                 </div>
             </div>
 
@@ -1542,7 +1542,7 @@ async function renderEntityPickerResults(query) {
     const kind = activeEntityPicker.kind;
     const searchQuery = (query || '').trim();
     const txnType = document.getElementById('transaction_type')?.value || '';
-    const contextParam = kind === 'car' ? `&context=${encodeURIComponent(txnType)}` : '';
+    const contextParam = (kind === 'car' || kind === 'payment_car') ? `&context=${encodeURIComponent(txnType)}` : '';
     results.innerHTML = '<div class="picker-empty">Searching...</div>';
 
     try {
@@ -1560,7 +1560,7 @@ async function renderEntityPickerResults(query) {
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}">
+            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>
@@ -1570,7 +1570,13 @@ async function renderEntityPickerResults(query) {
 
         results.querySelectorAll('.picker-result').forEach((button) => {
             button.addEventListener('click', function() {
-                selectEntityPickerValue(kind, this.dataset.entityId, decodeURIComponent(this.dataset.entityLabel || ''));
+                selectEntityPickerValue(
+                    kind,
+                    this.dataset.entityId,
+                    decodeURIComponent(this.dataset.entityLabel || ''),
+                    this.dataset.linkedPartyId || '',
+                    decodeURIComponent(this.dataset.linkedPartyLabel || '')
+                );
             });
         });
     } catch (error) {
@@ -1578,7 +1584,24 @@ async function renderEntityPickerResults(query) {
     }
 }
 
-function selectEntityPickerValue(kind, id, label) {
+function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    if (kind !== 'payment_car' || !linkedPartyId) return;
+
+    if (txnType === 'LOAN_RECEIVED') {
+        const input = document.getElementById('debtor_id');
+        const trigger = document.getElementById('debtor-picker-trigger');
+        if (input) input.value = linkedPartyId;
+        if (trigger?.querySelector('span')) trigger.querySelector('span').textContent = linkedPartyLabel || 'Select debtor / buyer';
+    } else if (txnType === 'LOAN_REPAID') {
+        const input = document.getElementById('creditor_id');
+        const trigger = document.getElementById('creditor-picker-trigger');
+        if (input) input.value = linkedPartyId;
+        if (trigger?.querySelector('span')) trigger.querySelector('span').textContent = linkedPartyLabel || 'Select creditor / seller';
+    }
+}
+
+function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '') {
     const triggerButton = activeEntityPicker?.button || null;
     if ((kind === 'partner' || kind === 'car_partner') && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
@@ -1603,7 +1626,38 @@ function selectEntityPickerValue(kind, id, label) {
         const span = trigger.querySelector('span');
         if (span) span.textContent = label || config.emptyLabel;
     }
+    applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel);
     closeModal('entity-picker-modal');
+}
+
+function syncCarClearingUi() {
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    const debtorLabel = document.getElementById('debtor-label');
+    const creditorLabel = document.getElementById('creditor-label');
+    const linkedCarLabel = document.getElementById('linked-car-label');
+    const linkedCarHint = document.getElementById('linked-car-hint');
+    const paymentCarTrigger = document.getElementById('payment-car-picker-trigger');
+    const paymentCarInput = document.getElementById('linked_car_id');
+
+    if (debtorLabel) debtorLabel.textContent = txnType === 'LOAN_RECEIVED' ? 'Buyer / Debtor *' : 'Select Debtor *';
+    if (creditorLabel) creditorLabel.textContent = txnType === 'LOAN_REPAID' ? 'Seller / Creditor *' : 'Select Creditor *';
+    if (linkedCarLabel) linkedCarLabel.textContent = (txnType === 'LOAN_RECEIVED' || txnType === 'LOAN_REPAID') ? 'Car for this clearing' : 'Linked Car';
+
+    if (linkedCarHint) {
+        linkedCarHint.textContent = txnType === 'LOAN_RECEIVED'
+            ? 'Select the sold car when buyer pays later in chunks. The buyer will auto-fill when available.'
+            : (txnType === 'LOAN_REPAID'
+                ? 'Select the purchased car when seller is paid later in chunks. The seller will auto-fill when available.'
+                : 'Use this when buyer or seller chunk payment belongs to a specific car.');
+    }
+
+    if (paymentCarTrigger?.querySelector('span') && !paymentCarInput?.value) {
+        paymentCarTrigger.querySelector('span').textContent = txnType === 'LOAN_RECEIVED'
+            ? 'Select sold car for buyer payment clearing'
+            : (txnType === 'LOAN_REPAID'
+                ? 'Select purchased car for seller clearing'
+                : 'Select car if this payment belongs to one car');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -1630,6 +1684,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (error) error.hidden = true;
         setTimeout(syncDynamicCategoryEntryState, 0);
         setTimeout(syncSaleAmountUi, 0);
+        setTimeout(syncCarClearingUi, 0);
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
@@ -1643,6 +1698,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     filterPrimaryPaymentAccounts(document.getElementById('transaction_type')?.value || '');
     syncSaleAmountUi();
+    syncCarClearingUi();
 });
 
 async function renderAccountPickerResults(query) {

@@ -28,6 +28,17 @@ function formatPlainNumber($value) {
     return number_format(round((float) $value), 0, '.', ',');
 }
 
+function transactionTypeLabel($transactionType, array $context = []) {
+    $transactionType = strtoupper((string) $transactionType);
+    $hasCarLink = !empty($context['car_id']) || !empty($context['car_reg']);
+
+    return match ($transactionType) {
+        'LOAN_RECEIVED' => $hasCarLink ? 'Car Payment Clearing' : 'Payment Clearing Received',
+        'LOAN_REPAID' => $hasCarLink ? 'Seller Payment Clearing' : 'Payment Clearing Paid',
+        default => TXN_TYPES[$transactionType] ?? $transactionType,
+    };
+}
+
 /**
  * Transaction flow from business perspective.
  */

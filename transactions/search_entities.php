@@ -76,36 +76,58 @@ switch ($kind) {
         break;
 
     case 'car':
+    case 'payment_car':
         $statusFilterSql = "AND status <> 'CANCELLED'";
         if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true)) {
             $statusFilterSql = "AND status = 'IN_STOCK'";
+        } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED') {
+            $statusFilterSql = "AND status IN ('SOLD', 'PENDING_PAYMENT')";
+        } elseif ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
+            $statusFilterSql = "AND status IN ('IN_STOCK', 'PENDING_PAYMENT', 'SOLD')";
         }
         $rows = $db->fetchAll(
-            "SELECT id, registration_no, make, model, year, status
-             FROM cars
-             WHERE business_id = ?
+            "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,
+                    buyer.id AS buyer_party_id, buyer.name AS buyer_name,
+                    seller.id AS seller_party_id, seller.name AS seller_name
+             FROM cars c
+             LEFT JOIN debtors_creditors buyer ON buyer.id = c.buyer_party_id AND buyer.business_id = c.business_id
+             LEFT JOIN debtors_creditors seller ON seller.id = c.seller_party_id AND seller.business_id = c.business_id
+             WHERE c.business_id = ?
                $statusFilterSql
                AND (
-                   registration_no LIKE ?
-                   OR make LIKE ?
-                   OR model LIKE ?
-                   OR CONCAT(COALESCE(make, ''), ' ', COALESCE(model, '')) LIKE ?
+                   c.registration_no LIKE ?
+                   OR c.make LIKE ?
+                   OR c.model LIKE ?
+                   OR CONCAT(COALESCE(c.make, ''), ' ', COALESCE(c.model, '')) LIKE ?
                )
              ORDER BY
                CASE
-                 WHEN registration_no LIKE ? THEN 0
-                 WHEN make LIKE ? THEN 1
+                 WHEN c.registration_no LIKE ? THEN 0
+                 WHEN c.make LIKE ? THEN 1
                  ELSE 2
                END,
-               registration_no
+               c.registration_no
              LIMIT $limit",
             [$businessId, $needle, $needle, $needle, $needle, $prefix, $prefix]
         );
         foreach ($rows as $row) {
+            $linkedPartyId = null;
+            $linkedPartyLabel = '';
+            if ($kind === 'payment_car') {
+                if ($context === 'LOAN_RECEIVED') {
+                    $linkedPartyId = $row['buyer_party_id'] ?? null;
+                    $linkedPartyLabel = $row['buyer_name'] ?? '';
+                } elseif ($context === 'LOAN_REPAID') {
+                    $linkedPartyId = $row['seller_party_id'] ?? null;
+                    $linkedPartyLabel = $row['seller_name'] ?? '';
+                }
+            }
             $results[] = [
                 'id' => $row['id'],
                 'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? ''))),
                 'meta' => trim(($row['year'] ?: '') . ' ' . ($row['status'] ?? '')),
+                'linked_party_id' => $linkedPartyId,
+                'linked_party_label' => $linkedPartyLabel,
             ];
         }
         break;

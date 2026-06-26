@@ -58,7 +58,7 @@ function renderTransactionRows($entries) {
             <td><a href="view.php?id=<?= $entry['id'] ?>" class="text-bold"><?= $entry['reference_no'] ?></a></td>
             <td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td>
             <td>
-                <span class="badge badge-blue"><?= TXN_TYPES[$entry['transaction_type']] ?? $entry['transaction_type'] ?></span>
+                <span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span>
                 <div class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type']) ?>"><?= clean(transactionContextLabel($entry['transaction_type'])) ?></div>
             </td>
             <td style="max-width: 250px;">

@@ -52,7 +52,7 @@ $ledger = $db->fetchAll(
                 <tr>
                     <td><?= renderDateTimeStack($item['entry_date'], $item['created_at'] ?? null) ?></td>
                     <td><?= clean($item['reference_no']) ?></td>
-                    <td><span class="badge badge-blue"><?= TXN_TYPES[$item['transaction_type']] ?? $item['transaction_type'] ?></span></td>
+                    <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($item['transaction_type'], $item)) ?></span></td>
                     <td><?= clean(mb_substr($item['narration'] ?? '', 0, 60)) ?></td>
                     <td class="text-right amount <?= in_array($party['type'], ['DEBTOR', 'BUYER'], true) ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($item['outstanding_amount']) ?></td>
                     <td class="text-right"><?= $days ?> days</td>

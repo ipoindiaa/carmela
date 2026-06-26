@@ -1365,7 +1365,7 @@ class AccountingEngine {
             throw new Exception("Money can be received back only from a debtor or buyer account.");
         }
         if ($carId) {
-            $car = $this->db->fetch("SELECT id, buyer_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            $car = $this->db->fetch("SELECT id, registration_no, buyer_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             if (!$car) {
                 throw new Exception("Linked car not found.");
             }
@@ -1389,11 +1389,11 @@ class AccountingEngine {
         }
 
         $lines = [
-            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => "Received from {$party['name']}"],
-            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid by {$party['name']}"],
+            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => $carId ? "Car payment clearing received from {$party['name']}" : "Received from {$party['name']}"],
+            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Buyer payment cleared for {$party['name']}" : "Loan repaid by {$party['name']}"],
         ];
 
-        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
+        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: ($carId ? 'Car payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
         $this->refreshPendingCarSaleStatusesForParty($partyId);
         return $entryId;
     }
@@ -1427,7 +1427,7 @@ class AccountingEngine {
             throw new Exception("Loan repayment is allowed only against creditor or seller balances.");
         }
         if ($carId) {
-            $car = $this->db->fetch("SELECT id, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            $car = $this->db->fetch("SELECT id, registration_no, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             if (!$car) {
                 throw new Exception("Linked car not found.");
             }
@@ -1453,11 +1453,11 @@ class AccountingEngine {
         $this->validateCashAvailable($paymentAccount, $amount);
 
         $lines = [
-            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Repaid to {$party['name']}"],
-            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid to {$party['name']}"],
+            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => $carId ? "Seller payment cleared for {$party['name']}" : "Repaid to {$party['name']}"],
+            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Seller payment clearing paid to {$party['name']}" : "Loan repaid to {$party['name']}"],
         ];
 
-        return $this->postJournalEntry('LOAN_REPAID', $date, $narration, $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
+        return $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: ($carId ? 'Seller payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
     }
 
     /**

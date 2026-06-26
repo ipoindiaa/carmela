@@ -77,11 +77,29 @@ $keyEvents = $db->fetchAll(
     [$businessId, $id]
 );
 
-// Car ledger entries
+// Full car timeline, including payment-clearing entries linked to this car.
 $ledger = $db->fetchAll(
-    "SELECT je.id as entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
-     FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$car['account_id']]);
+    "SELECT
+        je.id AS entry_id,
+        je.entry_date,
+        je.created_at,
+        je.reference_no,
+        je.narration,
+        je.transaction_type,
+        MAX(CASE WHEN jl.account_id = ? THEN jl.amount END) AS car_line_amount,
+        MAX(CASE WHEN jl.account_id = ? THEN jl.entry_type END) AS car_line_type,
+        COALESCE(SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS cash_in_amount,
+        COALESCE(SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cash_out_amount
+     FROM journal_entries je
+     JOIN journal_lines jl ON jl.journal_entry_id = je.id
+     JOIN accounts a ON a.id = jl.account_id
+     WHERE je.business_id = ?
+       AND je.status = 'POSTED'
+       AND je.car_id = ?
+     GROUP BY je.id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type
+     ORDER BY je.entry_date DESC, je.created_at DESC",
+    [$car['account_id'], $car['account_id'], $businessId, $id]
+);
 
 // Partner contributions
 $contributions = $db->fetchAll(
@@ -96,10 +114,10 @@ $contributions = $db->fetchAll(
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div style="display: flex; gap: 10px;">
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
-            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
+            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
         <?php if ($sellerOutstanding > 0 && !empty($carPending['seller_party_id'])): ?>
-            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-up-circle-line"></i> Pay Seller</a>
+            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Seller payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-up-circle-line"></i> Pay Seller</a>
         <?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
@@ -339,24 +357,42 @@ $contributions = $db->fetchAll(
 </div>
 <?php endif; ?>
 
-<!-- Car Ledger -->
+<!-- Car Timeline -->
 <div class="card" style="margin-top: 24px;">
-    <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Ledger</h3></div>
+    <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Timeline</h3></div>
     <div class="card-body" style="padding: 0;">
         <table>
-            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Money In / Debit</th><th class="text-right credit-amount">Money Out / Credit</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
                     <tr><td colspan="6" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
                 <?php else: ?>
-                    <?php foreach ($ledger as $l): ?>
+                    <?php foreach ($ledger as $l):
+                        $displayDebit = '';
+                        $displayCredit = '';
+                        if (!empty($l['car_line_type'])) {
+                            if ($l['car_line_type'] === 'DR') {
+                                $displayDebit = formatAmount($l['car_line_amount']);
+                            } else {
+                                $displayCredit = formatAmount($l['car_line_amount']);
+                            }
+                        } elseif (in_array($l['transaction_type'], ['LOAN_RECEIVED', 'RTO_RECOVERY'], true) && (float) $l['cash_in_amount'] > 0) {
+                            $displayDebit = formatAmount($l['cash_in_amount']);
+                        } elseif (in_array($l['transaction_type'], ['LOAN_REPAID'], true) && (float) $l['cash_out_amount'] > 0) {
+                            $displayCredit = formatAmount($l['cash_out_amount']);
+                        } elseif ((float) $l['cash_in_amount'] > 0) {
+                            $displayDebit = formatAmount($l['cash_in_amount']);
+                        } elseif ((float) $l['cash_out_amount'] > 0) {
+                            $displayCredit = formatAmount($l['cash_out_amount']);
+                        }
+                    ?>
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= $l['entry_id'] ?>"><?= $l['reference_no'] ?></a></td>
-                        <td><span class="badge badge-blue" style="font-size: 10px;"><?= TXN_TYPES[$l['transaction_type']] ?? $l['transaction_type'] ?></span></td>
+                        <td><span class="badge badge-blue" style="font-size: 10px;"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
                         <td><?= clean(mb_substr($l['narration'] ?? '', 0, 50)) ?></td>
-                        <td class="text-right amount debit-amount"><?= $l['entry_type'] === 'DR' ? formatAmount($l['amount']) : '' ?></td>
-                        <td class="text-right amount credit-amount"><?= $l['entry_type'] === 'CR' ? formatAmount($l['amount']) : '' ?></td>
+                        <td class="text-right amount debit-amount"><?= $displayDebit ?></td>
+                        <td class="text-right amount credit-amount"><?= $displayCredit ?></td>
                     </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
