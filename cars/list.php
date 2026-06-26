@@ -14,7 +14,7 @@ if ($isLazyRequest) {
 }
 
 $businessId = Auth::user('business_id');
-new AccountingEngine($businessId, Auth::user('user_id'));
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 
 $filter = get('status', '');
 $search = trim((string) get('q', ''));
@@ -131,11 +131,42 @@ $cars = $db->fetchAll(
     array_merge([$businessId], $params, [$perPage, $pagination['offset']])
 );
 
+foreach ($cars as $carRow) {
+    if (
+        (empty($carRow['buyer_party_id']) && !empty($carRow['buyer_name']))
+        || empty($carRow['seller_party_id'])
+    ) {
+        $engine->syncCarPartyLinks($carRow['id']);
+    }
+}
+
+$cars = $db->fetchAll(
+    "SELECT c.*, a.current_balance as total_cost,
+            ba.current_balance AS buyer_balance, ba.current_balance_type AS buyer_balance_type,
+            sa.current_balance AS seller_balance, sa.current_balance_type AS seller_balance_type,
+            COALESCE(rto.rto_pending, 0) AS rto_pending
+     FROM cars c
+     LEFT JOIN accounts a ON a.id = c.account_id
+     LEFT JOIN debtors_creditors bp ON bp.id = c.buyer_party_id
+     LEFT JOIN accounts ba ON ba.id = bp.account_id
+     LEFT JOIN debtors_creditors sp ON sp.id = c.seller_party_id
+     LEFT JOIN accounts sa ON sa.id = sp.account_id
+     LEFT JOIN (
+        SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
+        FROM rto_records
+        WHERE business_id = ? AND is_recoverable = 1 AND status <> 'CANCELLED'
+        GROUP BY car_id
+     ) rto ON rto.car_id = c.id
+     $where ORDER BY c.created_at DESC
+     LIMIT ? OFFSET ?",
+    array_merge([$businessId], $params, [$perPage, $pagination['offset']])
+);
+
 if ($isLazyRequest) {
     header('Content-Type: application/json');
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
-        'html' => renderCarRows($cars, new AccountingEngine($businessId, Auth::user('user_id'))),
+        'html' => renderCarRows($cars, $engine),
         'next_url' => $nextPage ? carsListUrl($nextPage, $filter, $search, true) : '',
     ]);
     exit;
@@ -186,7 +217,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
             </tr>
         </thead>
         <tbody>
-            <?= renderCarRows($cars, new AccountingEngine($businessId, Auth::user('user_id'))) ?>
+            <?= renderCarRows($cars, $engine) ?>
         </tbody>
     </table>
     <?php if ($nextUrl): ?>

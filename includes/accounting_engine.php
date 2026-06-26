@@ -1950,9 +1950,91 @@ class AccountingEngine {
     public function getCarTotalCost($carId) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
         if (!$car) return 0;
+        $total = $this->db->fetch(
+            "SELECT COALESCE(SUM(jl.amount), 0) AS total_cost
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE jl.account_id = ?
+               AND jl.entry_type = 'DR'
+               AND je.business_id = ?
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0",
+            [$car['account_id'], $this->businessId]
+        );
+        return floatval($total['total_cost'] ?? 0);
+    }
 
-        $account = $this->db->fetch("SELECT current_balance FROM accounts WHERE id = ?", [$car['account_id']]);
-        return $account['current_balance'] ?? 0;
+    public function syncCarPartyLinks($carId) {
+        $car = $this->db->fetch(
+            "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+            [$carId, $this->businessId]
+        );
+        if (!$car) {
+            return;
+        }
+
+        if (empty($car['buyer_party_id']) && !empty($car['buyer_name'])) {
+            $saleEntry = $this->db->fetch(
+                "SELECT party_id
+                 FROM journal_entries
+                 WHERE business_id = ?
+                   AND car_id = ?
+                   AND transaction_type = 'CAR_SALE'
+                   AND status = 'POSTED'
+                   AND is_reversal = 0
+                   AND party_id IS NOT NULL
+                 ORDER BY entry_date DESC, created_at DESC
+                 LIMIT 1",
+                [$this->businessId, $carId]
+            );
+
+            $buyerPartyId = $saleEntry['party_id'] ?? null;
+            if (!$buyerPartyId) {
+                $buyer = $this->db->fetch(
+                    "SELECT id
+                     FROM debtors_creditors
+                     WHERE business_id = ?
+                       AND type IN ('BUYER', 'DEBTOR')
+                       AND name = ?
+                     ORDER BY created_at DESC
+                     LIMIT 1",
+                    [$this->businessId, $car['buyer_name']]
+                );
+                $buyerPartyId = $buyer['id'] ?? null;
+            }
+
+            if ($buyerPartyId) {
+                $this->db->query(
+                    "UPDATE cars SET buyer_party_id = ? WHERE id = ? AND business_id = ?",
+                    [$buyerPartyId, $carId, $this->businessId]
+                );
+            }
+        }
+
+        if (empty($car['seller_party_id'])) {
+            $seller = $this->db->fetch(
+                "SELECT dc.id
+                 FROM journal_entries je
+                 JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.entry_type = 'CR'
+                 JOIN debtors_creditors dc ON dc.account_id = jl.account_id
+                 WHERE je.business_id = ?
+                   AND je.car_id = ?
+                   AND je.transaction_type = 'CAR_PURCHASE'
+                   AND je.status = 'POSTED'
+                   AND je.is_reversal = 0
+                   AND dc.type IN ('SELLER', 'CREDITOR')
+                 ORDER BY je.entry_date DESC, je.created_at DESC
+                 LIMIT 1",
+                [$this->businessId, $carId]
+            );
+
+            if (!empty($seller['id'])) {
+                $this->db->query(
+                    "UPDATE cars SET seller_party_id = ? WHERE id = ? AND business_id = ?",
+                    [$seller['id'], $carId, $this->businessId]
+                );
+            }
+        }
     }
 
     public function getCarProfitability($carId) {

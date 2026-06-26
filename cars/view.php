@@ -8,6 +8,7 @@ require_once __DIR__ . '/../includes/attachments.php';
 $id = get('id');
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$engine->syncCarPartyLinks($id);
 
 $car = $db->fetch("SELECT c.*, a.current_balance as total_cost FROM cars c LEFT JOIN accounts a ON a.id = c.account_id WHERE c.id = ? AND c.business_id = ?", [$id, $businessId]);
 if (!$car) { setFlash('error', 'Car not found.'); redirect('list.php'); }
