@@ -943,7 +943,6 @@ class AccountingEngine {
         if (!$rto) throw new Exception("RTO record not found.");
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found.");
-        if ($car['status'] === 'SOLD') throw new Exception("Cannot add RTO expense to a fully sold car.");
 
         $this->validateCashAvailable($paymentAccount, $amount);
         [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
