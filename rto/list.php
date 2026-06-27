@@ -16,34 +16,12 @@ $paymentAccountIds = array_values(array_filter(array_map(static fn($account) => 
 $selectedCarId = get('car_id', '');
 
 $resolveRtoCase = function () use ($db, $businessId, $userId) {
-    $rtoId = trim((string) post('rto_id'));
     $carId = trim((string) post('car_id'));
     $rtoType = trim((string) post('rto_type'));
     $partyName = trim((string) post('party_name'));
     $agentName = trim((string) post('agent_name'));
     $isRecoverable = post('is_recoverable', '1') === '0' ? 0 : 1;
-    $status = post('status', 'IN_PROGRESS');
     $narration = trim((string) post('narration'));
-
-    if ($rtoId !== '') {
-        $existing = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-        if (!$existing) {
-            throw new Exception('Select a valid RTO case.');
-        }
-        $updates = [];
-        if ($carId !== '') $updates['car_id'] = $carId;
-        if ($rtoType !== '') $updates['rto_type'] = $rtoType;
-        if ($partyName !== '') $updates['party_name'] = $partyName;
-        if ($agentName !== '') $updates['agent_name'] = $agentName;
-        if ($narration !== '') $updates['narration'] = $narration;
-        $updates['is_recoverable'] = $isRecoverable;
-        $updates['status'] = $status;
-        if (!empty($updates)) {
-            $db->update('rto_records', $updates, 'id = ? AND business_id = ?', [$rtoId, $businessId]);
-            $existing = array_merge($existing, $updates);
-        }
-        return $existing;
-    }
 
     if ($carId === '') throw new Exception('Select car for RTO entry.');
     $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
@@ -55,7 +33,7 @@ $resolveRtoCase = function () use ($db, $businessId, $userId) {
         'business_id' => $businessId,
         'car_id' => $carId,
         'rto_type' => $rtoType,
-        'status' => $status,
+        'status' => 'IN_PROGRESS',
         'party_name' => $partyName,
         'agent_name' => $agentName,
         'narration' => $narration,
@@ -169,14 +147,14 @@ $rtoEntries = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-file-shield-2-line"></i> RTO Book</h1>
-    <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Entry</a><?php endif; ?>
+    <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Money</a><?php endif; ?>
 </div>
 
 <div class="stats-grid compact-operational-grid">
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($stats['recovered'] ?? 0) ?></div><div class="stat-label">RTO Received From Buyer</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['spent'] ?? 0) ?></div><div class="stat-label">RTO Paid To Agent / Office</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['pending_recovery'] ?? 0) ?></div><div class="stat-label">Still To Receive</div></div>
-    <div class="stat-card"><div class="stat-value"><?= intval($stats['total_cases'] ?? 0) ?></div><div class="stat-label">RTO Cases</div></div>
+    <div class="stat-card"><div class="stat-value"><?= intval($stats['total_cases'] ?? 0) ?></div><div class="stat-label">RTO Entries</div></div>
 </div>
 
 <div class="entry-menu-legend" style="margin-bottom:12px;">
@@ -201,7 +179,7 @@ $rtoEntries = $db->fetchAll(
 
 <?php if ($canWriteRto): ?>
 <div class="card" id="rto-form" style="margin-bottom:16px;">
-    <div class="card-header"><h3><i class="ri-add-box-line"></i> Add RTO Entry</h3></div>
+    <div class="card-header"><h3><i class="ri-add-box-line"></i> Add RTO Money</h3></div>
     <div class="card-body">
         <div class="entry-menu-legend" style="margin:0 0 14px;">
             <span><i class="ri-arrow-down-circle-line"></i> Receive = buyer/customer gave RTO money</span>
@@ -211,7 +189,7 @@ $rtoEntries = $db->fetchAll(
             <?= csrfField() ?>
             <input type="hidden" name="action" value="save_rto_entry">
             <div class="form-group">
-                <label class="form-label">Entry Type *</label>
+                <label class="form-label">Money Type *</label>
                 <select name="entry_mode" class="form-control searchable-select">
                     <option value="RECEIVE">RTO Money Received</option>
                     <option value="EXPENSE">RTO Expense Paid</option>
@@ -258,30 +236,10 @@ $rtoEntries = $db->fetchAll(
                 <input name="agent_name" class="form-control" placeholder="Who receives expense payment">
             </div>
             <div class="form-group">
-                <label class="form-label">Existing RTO Case</label>
-                <select name="rto_id" class="form-control searchable-select">
-                    <option value="">Create new / no old case selected</option>
-                    <?php foreach ($records as $record): ?>
-                        <option value="<?= clean($record['id']) ?>">
-                            <?= clean(formatRegistrationNo($record['registration_no']) . ' - ' . $record['rto_type']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-group">
                 <label class="form-label">Recovery Type</label>
                 <select name="is_recoverable" class="form-control searchable-select">
                     <option value="1">Buyer will pay</option>
                     <option value="0">Business cost only</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Case Status</label>
-                <select name="status" class="form-control searchable-select">
-                    <option value="IN_PROGRESS">In Progress</option>
-                    <option value="PENDING">Open</option>
-                    <option value="COMPLETED">Done</option>
-                    <option value="CANCELLED">Cancelled</option>
                 </select>
             </div>
             <div class="form-group rto-span-2">
@@ -293,30 +251,30 @@ $rtoEntries = $db->fetchAll(
                 <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
                 <div class="form-hint">Upload receipt photos, slips, transfer papers, or proof documents.</div>
             </div>
-            <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Entry</button></div>
+            <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Money</button></div>
         </form>
     </div>
 </div>
 <?php endif; ?>
 
 <div class="card" style="margin-bottom:16px;">
-    <div class="card-header"><h3><i class="ri-list-check-3"></i> RTO Cases</h3></div>
+    <div class="card-header"><h3><i class="ri-list-check-3"></i> RTO Money History</h3></div>
     <div class="card-body" style="padding:0;">
         <table>
             <thead>
                 <tr>
                     <th>Car / Work</th>
                     <th>Buyer / Agent</th>
-                    <th>Recovery Type</th>
+                    <th>Type</th>
                     <th class="text-right">Received</th>
                     <th class="text-right">Spent</th>
                     <th class="text-right">Pending</th>
-                    <th>History / Files</th>
+                    <th>Files</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($records)): ?>
-                    <tr><td colspan="7" class="text-center text-muted" style="padding:28px;">No RTO cases found.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($records as $record):
                     $pending = !empty($record['is_recoverable']) ? max(0, (float) $record['expense_amount'] - (float) $record['recovered_amount']) : 0;
@@ -332,16 +290,15 @@ $rtoEntries = $db->fetchAll(
                         <div class="text-muted"><?= clean($record['agent_name'] ?: '-') ?></div>
                     </td>
                     <td>
-                        <span class="badge <?= !empty($record['is_recoverable']) ? 'badge-green' : 'badge-gray' ?>">
-                            <?= !empty($record['is_recoverable']) ? 'Buyer Pays' : 'Business Cost' ?>
+                        <span class="badge <?= (float) $record['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>">
+                            <?= (float) $record['recovered_amount'] > 0 ? 'Received' : 'Expense' ?>
                         </span>
-                        <div class="text-muted" style="margin-top:4px;"><?= clean(str_replace('_', ' ', $record['status'])) ?></div>
+                        <div class="text-muted" style="margin-top:4px;"><?= !empty($record['is_recoverable']) ? 'Buyer Pays' : 'Business Cost' ?></div>
                     </td>
                     <td class="text-right amount flow-in"><?= formatAmount($record['recovered_amount']) ?></td>
                     <td class="text-right amount flow-out"><?= formatAmount($record['expense_amount']) ?></td>
                     <td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
                     <td>
-                        <a href="#rto-form" class="mini-pill mini-pill-neutral"><i class="ri-edit-line"></i> Continue</a>
                         <?php foreach ($attachments as $attachment):
                             $url = attachmentUrl($attachment);
                             $shareUrl = attachmentUrl($attachment, true);

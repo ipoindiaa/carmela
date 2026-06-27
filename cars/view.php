@@ -332,12 +332,12 @@ $contributions = $db->fetchAll(
 </div>
 
 <div class="card" style="margin-top:24px;">
-    <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Records</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
+    <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
     <div class="card-body" style="padding:0;">
-        <table><thead><tr><th>Type</th><th>Status</th><th>Agent</th><th class="text-right">Spent</th><th class="text-right">Recovered</th><th class="text-right">Pending</th></tr></thead><tbody>
-            <?php if (empty($rtoRecords)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:24px;">No RTO work for this car.</td></tr><?php else: ?>
+        <table><thead><tr><th>Work</th><th>Buyer / Agent</th><th>Type</th><th class="text-right">Received</th><th class="text-right">Spent</th><th class="text-right">Pending</th></tr></thead><tbody>
+            <?php if (empty($rtoRecords)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
             <?php foreach ($rtoRecords as $rto): $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?><tr>
-                <td><?= clean($rto['rto_type']) ?></td><td><span class="badge badge-blue"><?= clean($rto['status']) ?></span></td><td><?= clean($rto['agent_name'] ?: '-') ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['expense_amount']) ?></td><td class="text-right amount flow-in"><?= formatAmount($rto['recovered_amount']) ?></td><td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
+                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= (float)$rto['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>"><?= (float)$rto['recovered_amount'] > 0 ? 'Received' : 'Expense' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['recovered_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['expense_amount']) ?></td><td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
             </tr><?php endforeach; ?><?php endif; ?>
         </tbody></table>
     </div>

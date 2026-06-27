@@ -69,7 +69,6 @@ $preselectedPartyId = get('party_id', '');
 $preselectedParty = null;
 $preselectedAmount = get('amount', '');
 $preselectedNarration = get('narration', '');
-$preselectedRtoId = get('rto_id', '');
 $entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
 $entryCategories = $db->fetchAll(
     "SELECT id, code, name, group_name, sub_group
@@ -149,43 +148,13 @@ if ($preselectedPartyId !== '') {
     }
 }
 
-$rtoOptions = $db->fetchAll(
-    "SELECT r.id, r.rto_type, r.expense_amount, r.recovered_amount, r.is_recoverable, c.registration_no, c.make, c.model
-     FROM rto_records r
-     JOIN cars c ON c.id = r.car_id
-     WHERE r.business_id = ? AND r.status <> 'CANCELLED'
-     ORDER BY r.created_at DESC
-    LIMIT 200",
-    [$businessId]
-);
-
 $resolveRtoRecord = function () use ($db, $businessId, $userId) {
-    $rtoId = trim((string) post('rto_id'));
     $rtoType = trim((string) post('rto_type_name'));
     $carId = trim((string) post('rto_car_id'));
     $partyName = trim((string) post('rto_party_name'));
     $agentName = trim((string) post('rto_agent_name'));
     $isRecoverable = post('rto_is_recoverable', '1') === '0' ? 0 : 1;
     $narration = trim((string) post('narration'));
-
-    if ($rtoId !== '') {
-        $existing = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-        if (!$existing) {
-            throw new Exception('Select a valid RTO case.');
-        }
-
-        $updates = [];
-        if ($rtoType !== '') $updates['rto_type'] = $rtoType;
-        if ($partyName !== '') $updates['party_name'] = $partyName;
-        if ($agentName !== '') $updates['agent_name'] = $agentName;
-        if ($narration !== '') $updates['narration'] = $narration;
-        $updates['is_recoverable'] = $isRecoverable;
-        if (!empty($updates)) {
-            $db->update('rto_records', $updates, 'id = ? AND business_id = ?', [$rtoId, $businessId]);
-            $existing = array_merge($existing, $updates);
-        }
-        return $existing;
-    }
 
     if ($carId === '') {
         throw new Exception('Select car for this RTO entry.');
@@ -227,6 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $entryId = null;
         $attachmentCarId = null;
+        $rtoRecord = null;
 
         if ($type === '') {
             throw new Exception('Please select what kind of entry this is.');
@@ -883,27 +853,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="text" name="rto_agent_name" class="form-control" placeholder="Who is receiving RTO payment">
                     </div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Existing RTO Case</label>
-                        <select name="rto_id" class="form-control searchable-select">
-                            <option value="">Create new / no old case selected</option>
-                            <?php foreach ($rtoOptions as $rto): ?>
-                                <?php $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?>
-                                <option value="<?= clean($rto['id']) ?>" <?= $preselectedRtoId === $rto['id'] ? 'selected' : '' ?>>
-                                    <?= clean(formatRegistrationNo($rto['registration_no']) . ' - ' . $rto['rto_type'] . ($pending > 0 ? ' | Pending ' . formatAmount($pending) : '')) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="form-hint">Select old case only if this entry belongs to an existing RTO history.</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Recovery Type</label>
-                        <select name="rto_is_recoverable" class="form-control searchable-select">
-                            <option value="1">Buyer will pay RTO</option>
-                            <option value="0">Business cost only</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label class="form-label">Recovery Type</label>
+                    <select name="rto_is_recoverable" class="form-control searchable-select">
+                        <option value="1">Buyer will pay RTO</option>
+                        <option value="0">Business cost only</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">RTO Images / Vouchers</label>
