@@ -11,7 +11,10 @@ $debtors = $engine->getDebtorAgeingReport();
 if ($search !== '') {
     $needle = mb_strtolower($search);
     $debtors = array_values(array_filter($debtors, static function ($debtor) use ($needle) {
-        $haystack = mb_strtolower(($debtor['name'] ?? '') . ' ' . ($debtor['phone'] ?? '') . ' ' . ($debtor['type'] ?? ''));
+        $carText = implode(' ', array_map(static function ($item) {
+            return trim(($item['registration_no'] ?? '') . ' ' . ($item['make'] ?? '') . ' ' . ($item['model'] ?? ''));
+        }, $debtor['car_pending_items'] ?? []));
+        $haystack = mb_strtolower(($debtor['name'] ?? '') . ' ' . ($debtor['phone'] ?? '') . ' ' . ($debtor['type'] ?? '') . ' ' . $carText);
         return mb_strpos($haystack, $needle) !== false;
     }));
 }
@@ -37,7 +40,7 @@ $grandTotal = 0;
 
 <div class="table-container table-container-fill table-total-room">
     <table>
-        <thead><tr><th>Debtor</th><th>Type</th><th>Phone</th><th class="text-right">Outstanding</th><th class="text-right">Open Items</th><th>Bad Debt</th><th>Oldest Open</th><th class="text-right">Since</th></tr></thead>
+        <thead><tr><th>Debtor</th><th>Type</th><th>Phone</th><th>Car-wise Pending</th><th class="text-right">Outstanding</th><th class="text-right">Open Items</th><th>Bad Debt</th><th>Oldest Open</th><th class="text-right">Since</th></tr></thead>
         <tbody>
         <?php foreach ($debtors as $d): $grandTotal += $d['outstanding'];
             $daysPending = (int) ($d['days_pending'] ?? 0);
@@ -46,6 +49,23 @@ $grandTotal = 0;
             <td><a href="../parties/view.php?id=<?= $d['id'] ?>" class="text-bold"><?= clean($d['name']) ?></a></td>
             <td><span class="badge badge-blue"><?= $d['type'] ?></span></td>
             <td><?= clean($d['phone'] ?: '-') ?></td>
+            <td>
+                <?php if (!empty($d['car_pending_items'])): ?>
+                    <div class="compact-pending-stack">
+                        <?php foreach ($d['car_pending_items'] as $carPending): ?>
+                            <a href="../cars/view.php?id=<?= clean($carPending['car_id']) ?>" class="mini-pill mini-pill-in" style="display:inline-flex; margin:0 8px 8px 0; text-decoration:none;">
+                                <?= clean(formatRegistrationNo($carPending['registration_no'] ?: 'Car')) ?>
+                                <?php if (!empty(trim(($carPending['make'] ?? '') . ' ' . ($carPending['model'] ?? '')))): ?>
+                                    — <?= clean(trim(($carPending['make'] ?? '') . ' ' . ($carPending['model'] ?? ''))) ?>
+                                <?php endif; ?>
+                                : <?= formatAmount($carPending['amount']) ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <span class="text-muted">General debtor</span>
+                <?php endif; ?>
+            </td>
             <td class="text-right amount text-red"><?= formatAmount($d['outstanding']) ?></td>
             <td class="text-right"><?= (int) ($d['open_item_count'] ?? 0) ?></td>
             <td><?= $d['is_bad_debt'] ? '<span class="badge badge-red">Yes</span>' : '-' ?></td>
@@ -57,11 +77,11 @@ $grandTotal = 0;
             </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($debtors)): ?><tr><td colspan="8" class="text-center text-muted" style="padding:40px;">No outstanding debtors.</td></tr><?php endif; ?>
+        <?php if (empty($debtors)): ?><tr><td colspan="9" class="text-center text-muted" style="padding:40px;">No outstanding debtors.</td></tr><?php endif; ?>
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="3">Total Outstanding</td>
+                <td colspan="4">Total Outstanding</td>
                 <td class="text-right amount text-red"><?= formatAmount($grandTotal) ?></td>
                 <td colspan="4"></td>
             </tr>

@@ -2514,12 +2514,97 @@ class AccountingEngine {
         $report = [];
         foreach ($rows as $row) {
             $openItems = $this->buildOutstandingItemsFromLedger($row['account_id'], 'DR');
-            $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
+            $carPendingMap = [];
+            $generalOutstanding = 0.0;
+            foreach ($openItems as $item) {
+                $carId = $item['car_id'] ?? null;
+                if (!$carId) {
+                    $generalOutstanding += round(floatval($item['outstanding_amount'] ?? 0), 2);
+                    continue;
+                }
+
+                if (!isset($carPendingMap[$carId])) {
+                    $carPendingMap[$carId] = [
+                        'car_id' => $carId,
+                        'registration_no' => $item['car_registration_no'] ?? '',
+                        'make' => $item['car_make'] ?? '',
+                        'model' => $item['car_model'] ?? '',
+                        'amount' => 0.0,
+                        'oldest_open_date' => $item['entry_date'] ?? null,
+                        'open_item_count' => 0,
+                    ];
+                }
+
+                $carPendingMap[$carId]['amount'] += round(floatval($item['outstanding_amount'] ?? 0), 2);
+                $carPendingMap[$carId]['open_item_count']++;
+                $itemDate = $item['entry_date'] ?? null;
+                if ($itemDate && (
+                    empty($carPendingMap[$carId]['oldest_open_date'])
+                    || strtotime($itemDate) < strtotime((string) $carPendingMap[$carId]['oldest_open_date'])
+                )) {
+                    $carPendingMap[$carId]['oldest_open_date'] = $itemDate;
+                }
+            }
+
+            $linkedCars = $this->db->fetchAll(
+                "SELECT id, registration_no, make, model, sold_date
+                 FROM cars
+                 WHERE business_id = ?
+                   AND buyer_party_id = ?
+                 ORDER BY sold_date DESC, created_at DESC",
+                [$this->businessId, $row['id']]
+            );
+            foreach ($linkedCars as $car) {
+                $pending = $this->getCarPendingAmounts($car['id']);
+                $salePending = round(floatval($pending['sale_pending'] ?? 0), 2);
+                if ($salePending <= 0.009) {
+                    continue;
+                }
+
+                if (!isset($carPendingMap[$car['id']])) {
+                    $carPendingMap[$car['id']] = [
+                        'car_id' => $car['id'],
+                        'registration_no' => $car['registration_no'] ?? '',
+                        'make' => $car['make'] ?? '',
+                        'model' => $car['model'] ?? '',
+                        'amount' => $salePending,
+                        'oldest_open_date' => $car['sold_date'] ?? null,
+                        'open_item_count' => 1,
+                    ];
+                    continue;
+                }
+
+                if ($salePending > round(floatval($carPendingMap[$car['id']]['amount'] ?? 0), 2)) {
+                    $carPendingMap[$car['id']]['amount'] = $salePending;
+                }
+                if (empty($carPendingMap[$car['id']]['oldest_open_date']) && !empty($car['sold_date'])) {
+                    $carPendingMap[$car['id']]['oldest_open_date'] = $car['sold_date'];
+                }
+            }
+
+            $carPendingItems = array_values(array_map(static function (array $item): array {
+                $item['amount'] = round(floatval($item['amount']), 2);
+                return $item;
+            }, $carPendingMap));
+            usort($carPendingItems, static function (array $a, array $b): int {
+                return ($b['amount'] <=> $a['amount'])
+                    ?: strcmp((string) ($a['registration_no'] ?? ''), (string) ($b['registration_no'] ?? ''));
+            });
+
+            $outstanding = round($generalOutstanding + array_sum(array_column($carPendingItems, 'amount')), 2);
             if ($outstanding <= 0.009) {
                 continue;
             }
 
             $oldestDate = !empty($openItems) ? min(array_column($openItems, 'entry_date')) : null;
+            foreach ($carPendingItems as $carPendingItem) {
+                if (empty($carPendingItem['oldest_open_date'])) {
+                    continue;
+                }
+                if (!$oldestDate || strtotime((string) $carPendingItem['oldest_open_date']) < strtotime($oldestDate)) {
+                    $oldestDate = $carPendingItem['oldest_open_date'];
+                }
+            }
             $daysPending = $oldestDate ? max(0, (int) floor((time() - strtotime($oldestDate)) / 86400)) : 0;
             $report[] = [
                 'id' => $row['id'],
@@ -2532,7 +2617,8 @@ class AccountingEngine {
                 'outstanding' => round($outstanding, 2),
                 'oldest_open_date' => $oldestDate,
                 'days_pending' => $daysPending,
-                'open_item_count' => count($openItems),
+                'open_item_count' => count($openItems) + max(0, count($carPendingItems) - count(array_filter($openItems, static fn(array $item): bool => !empty($item['car_id'])))),
+                'car_pending_items' => $carPendingItems,
                 'open_items' => $openItems,
             ];
         }
@@ -3352,6 +3438,7 @@ class AccountingEngine {
                     je.original_entry_id,
                     je.reference_no,
                     je.transaction_type,
+                    je.car_id,
                     je.narration AS entry_narration,
                     je.entry_date,
                     je.is_reversal,
@@ -3359,9 +3446,13 @@ class AccountingEngine {
                     jl.id AS journal_line_id,
                     jl.entry_type,
                     jl.amount,
-                    jl.narration AS line_narration
+                    jl.narration AS line_narration,
+                    c.registration_no AS car_registration_no,
+                    c.make AS car_make,
+                    c.model AS car_model
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
+             LEFT JOIN cars c ON c.id = je.car_id
              WHERE jl.account_id = ?
                AND je.status = 'POSTED'
              ORDER BY je.entry_date, je.created_at, jl.id",
@@ -3407,6 +3498,10 @@ class AccountingEngine {
                         'journal_entry_id' => $row['journal_entry_id'],
                         'reference_no' => $row['reference_no'],
                         'transaction_type' => $row['transaction_type'],
+                        'car_id' => $row['car_id'] ?? null,
+                        'car_registration_no' => $row['car_registration_no'] ?? null,
+                        'car_make' => $row['car_make'] ?? null,
+                        'car_model' => $row['car_model'] ?? null,
                         'entry_date' => $row['entry_date'],
                         'created_at' => $row['created_at'],
                         'narration' => trim((string) ($row['line_narration'] ?: $row['entry_narration'] ?: '')),
