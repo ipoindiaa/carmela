@@ -844,6 +844,51 @@ body.sidebar-collapsed .main-content {
     gap: 18px;
 }
 
+.car-detail-stats-grid {
+    margin-bottom: 12px;
+}
+
+.car-detail-stats-grid .stat-card {
+    padding: 18px 20px;
+}
+
+.car-detail-pending-grid {
+    margin: 0 0 20px;
+}
+
+.car-detail-main-grid {
+    margin-top: 0;
+    align-items: start;
+}
+
+.car-images-card .card-body {
+    padding: 16px 20px 20px;
+}
+
+.car-images-upload-panel {
+    grid-template-columns: minmax(190px, 240px) minmax(280px, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+    padding: 14px;
+}
+
+.car-images-upload-panel .form-group {
+    margin-bottom: 0;
+}
+
+.car-images-upload-panel .btn {
+    min-width: 132px;
+}
+
+.car-images-columns {
+    margin-top: 14px;
+    gap: 14px;
+}
+
+.car-images-columns .empty-state.compact {
+    min-height: 64px;
+}
+
 .attachment-group-title {
     margin: 0 0 10px;
     font-size: 14px;

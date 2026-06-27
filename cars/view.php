@@ -129,7 +129,7 @@ $contributions = $db->fetchAll(
 </div>
 
 <!-- Car Summary Cards -->
-<div class="stats-grid">
+<div class="stats-grid car-detail-stats-grid">
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon" style="background: var(--accent-blue-glow); color: var(--accent-blue);"><i class="ri-shopping-cart-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($car['purchase_price']) ?></div>
@@ -152,69 +152,14 @@ $contributions = $db->fetchAll(
     </div>
 </div>
 
-<div class="stats-grid compact-operational-grid">
+<div class="stats-grid compact-operational-grid car-detail-pending-grid">
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($buyerOutstanding) ?></div><div class="stat-label">Sale Pending</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($sellerOutstanding) ?></div><div class="stat-label">Purchase Pending</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($rtoSpent) ?></div><div class="stat-label">RTO Spent</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($rtoRecovered) ?></div><div class="stat-label">RTO Recovered</div></div>
 </div>
 
-<div class="card" style="margin-top: 24px;">
-    <div class="card-header">
-        <h3><i class="ri-image-add-line"></i> Car Images</h3>
-    </div>
-    <div class="card-body">
-        <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="upload_car_images">
-            <div class="form-group">
-                <label class="form-label">Image Type</label>
-                <select name="image_type" class="form-control searchable-select">
-                    <option value="SELLER">From Seller</option>
-                    <option value="BUYER">From Buyer</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Upload Images</label>
-                <input type="file" name="car_images[]" class="form-control" accept="image/*" multiple>
-                <div class="form-hint">Upload RC, delivery, car condition, or party photos. Each image can be opened or shared on mobile.</div>
-            </div>
-            <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload</button>
-        </form>
-
-        <div class="attachment-columns">
-            <?php foreach ([['title' => 'From Seller', 'items' => $sellerImages], ['title' => 'From Buyer', 'items' => $buyerImages]] as $group): ?>
-                <div>
-                    <h4 class="attachment-group-title"><?= clean($group['title']) ?></h4>
-                    <?php if (empty($group['items'])): ?>
-                        <div class="empty-state compact">No images uploaded.</div>
-                    <?php else: ?>
-                        <div class="attachment-grid">
-                            <?php foreach ($group['items'] as $attachment): ?>
-                                <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); ?>
-                                <div class="attachment-card">
-                                    <a href="<?= clean($url) ?>" target="_blank" rel="noopener">
-                                        <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
-                                    </a>
-                                    <div class="attachment-meta">
-                                        <strong><?= clean($attachment['original_name']) ?></strong>
-                                        <span><?= formatDate($attachment['created_at'], 'd M Y, h:i A') ?></span>
-                                    </div>
-                                    <div class="attachment-actions">
-                                        <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
-                                        <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-
-<div class="grid-2">
+<div class="grid-2 car-detail-main-grid">
     <!-- Car Details -->
     <div class="card">
         <div class="card-header"><h3><i class="ri-car-line"></i> Car Details</h3></div>
@@ -294,6 +239,61 @@ $contributions = $db->fetchAll(
                 <?php endif; ?>
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="card car-images-card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3><i class="ri-image-add-line"></i> Car Images</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel car-images-upload-panel">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="upload_car_images">
+            <div class="form-group">
+                <label class="form-label">Image Type</label>
+                <select name="image_type" class="form-control searchable-select">
+                    <option value="SELLER">From Seller</option>
+                    <option value="BUYER">From Buyer</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Upload Images</label>
+                <input type="file" name="car_images[]" class="form-control" accept="image/*" multiple>
+                <div class="form-hint">Upload RC, delivery, car condition, or party photos. Each image can be opened or shared on mobile.</div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload</button>
+        </form>
+
+        <div class="attachment-columns car-images-columns">
+            <?php foreach ([['title' => 'From Seller', 'items' => $sellerImages], ['title' => 'From Buyer', 'items' => $buyerImages]] as $group): ?>
+                <div>
+                    <h4 class="attachment-group-title"><?= clean($group['title']) ?></h4>
+                    <?php if (empty($group['items'])): ?>
+                        <div class="empty-state compact">No images uploaded.</div>
+                    <?php else: ?>
+                        <div class="attachment-grid">
+                            <?php foreach ($group['items'] as $attachment): ?>
+                                <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); ?>
+                                <div class="attachment-card">
+                                    <a href="<?= clean($url) ?>" target="_blank" rel="noopener">
+                                        <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
+                                    </a>
+                                    <div class="attachment-meta">
+                                        <strong><?= clean($attachment['original_name']) ?></strong>
+                                        <span><?= formatDate($attachment['created_at'], 'd M Y, h:i A') ?></span>
+                                    </div>
+                                    <div class="attachment-actions">
+                                        <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
+                                        <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
     </div>
 </div>
 
