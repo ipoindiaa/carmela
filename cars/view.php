@@ -40,7 +40,6 @@ $profit = $profitability['status'] === 'SOLD' ? $profitability['profit'] : null;
 $expenses = $profitability['total_expenses'];
 $carTotalCost = $profitability['total_cost'] ?? $car['purchase_price'];
 $partnerships = $profitability['partnerships'];
-$settlements = $profitability['settlements'];
 $buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
 $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
@@ -210,35 +209,6 @@ $contributions = $db->fetchAll(
                 </table>
             <?php endif; ?>
         </div>
-    </div>
-</div>
-
-<div class="card" style="margin-top: 24px;">
-    <div class="card-header"><h3><i class="ri-scales-2-line"></i> Partner Settlement Status</h3></div>
-    <div class="card-body" style="padding: 0;">
-        <table>
-            <thead><tr><th>Partner</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th class="text-right">Outstanding</th><th>Status</th></tr></thead>
-            <tbody>
-                <?php if (empty($partnerships)): ?>
-                    <tr><td colspan="5" class="text-center text-muted" style="padding: 24px;">No partner participation on this car.</td></tr>
-                <?php else: ?>
-                    <?php foreach ($partnerships as $partnership): ?>
-                        <?php
-                        $partnerSettlement = array_values(array_filter($settlements, static fn($row) => $row['partner_id'] === $partnership['partner_id']));
-                        $pending = array_sum(array_map(static fn($row) => (float) $row['outstanding_amount'], $partnerSettlement));
-                        $status = empty($partnerSettlement) ? 'Not distributed yet' : implode(', ', array_unique(array_column($partnerSettlement, 'status')));
-                        ?>
-                        <tr>
-                            <td><?= clean($partnership['partner_name']) ?></td>
-                            <td class="text-right"><?= formatPlainNumber($partnership['funding_pct']) ?>%</td>
-                            <td class="text-right"><?= formatPlainNumber($partnership['profit_share_pct']) ?>%</td>
-                            <td class="text-right amount"><?= formatAmount($pending) ?></td>
-                            <td><?= clean($status) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
     </div>
 </div>
 

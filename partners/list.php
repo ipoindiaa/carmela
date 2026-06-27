@@ -70,7 +70,7 @@ $pageHeading = $requestedType === 'CARWISE' ? 'Car-wise Partners' : ($requestedT
 $pageDescription = $requestedType === 'CARWISE'
     ? 'Deal-specific partners for individual cars and changing profit percentages.'
     : ($requestedType === 'MAIN'
-        ? 'Core business partners for capital, withdrawals, and settlement tracking.'
+        ? 'Core business partners for capital, withdrawals, and overall business funding.'
         : 'Manage both main business partners and car-wise deal partners.');
 ?>
 

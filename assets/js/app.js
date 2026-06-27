@@ -73,7 +73,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
                 'PARTNER_WITHDRAW': ['partner-section'],
-                'PARTNER_SETTLEMENT': ['partner-section', 'partner-settlement-section'],
                 'SALARY_PAYMENT': ['employee-section', 'salary-section'],
                 'EMPLOYEE_ADVANCE': ['employee-section'],
                 'LOAN_GIVEN': ['party-name-section'],

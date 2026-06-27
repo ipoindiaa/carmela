@@ -298,10 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'PARTNER_SETTLEMENT':
-                $partnerId = post('partner_id');
-                $settlementDirection = post('settlement_direction');
-                $entryId = $engine->partnerSettlement($partnerId, $amount, $date, $paymentAccountId, $settlementDirection, $narration);
-                break;
+                throw new Exception('Partner settlement entry is no longer available.');
 
             case 'SALARY_PAYMENT':
                 $employeeId = post('employee_id');
@@ -495,7 +492,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <optgroup label="Partners">
                             <option value="PARTNER_INVEST" data-flow="in" data-icon="ri-briefcase-4-line" data-title="Partner Added Money" data-desc="Business received money from partner.">Partner Added Money</option>
                             <option value="PARTNER_WITHDRAW" data-flow="out" data-icon="ri-hand-coin-line" data-title="Partner Took Money" data-desc="Business paid money to partner.">Partner Took Money</option>
-                            <option value="PARTNER_SETTLEMENT" data-flow="both" data-icon="ri-shake-hands-line" data-title="Partner Settlement" data-desc="Pay partner or receive from partner.">Partner Settlement</option>
                         </optgroup>
                         <optgroup label="Employees">
                             <option value="SALARY_PAYMENT" data-flow="out" data-icon="ri-wallet-3-line" data-title="Paid Salary" data-desc="Business paid salary to employee.">Paid Salary</option>
@@ -740,15 +736,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="txn-section" id="partner-settlement-section" style="display:none;">
-                <div class="form-group">
-                    <label class="form-label">Settlement Direction *</label>
-                    <select name="settlement_direction" class="form-control searchable-select">
-                        <option value="PAY">Pay partner from business</option>
-                        <option value="RECEIVE">Receive from partner</option>
-                    </select>
-                </div>
-            </div>
 
             <!-- EMPLOYEE SECTION -->
             <div class="txn-section" id="employee-section" style="display:none;">

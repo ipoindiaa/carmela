@@ -21,14 +21,6 @@ $currentLedger = $db->fetchAll(
      WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['current_account_id']]);
 
 $carContribs = $db->fetchAll("SELECT cpc.*, c.registration_no FROM car_partner_contributions cpc JOIN cars c ON c.id = cpc.car_id WHERE cpc.partner_id = ? ORDER BY cpc.contribution_date DESC, cpc.created_at DESC", [$id]);
-$settlements = $db->fetchAll(
-    "SELECT pps.*, c.registration_no
-     FROM partner_profit_settlements pps
-     JOIN cars c ON c.id = pps.car_id
-     WHERE pps.business_id = ? AND pps.partner_id = ?
-     ORDER BY pps.settlement_date DESC, pps.created_at DESC, pps.status",
-    [$businessId, $id]
-);
 $totalInvested = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'CR' AND je.status='POSTED'", [$partner['capital_account_id']]);
 $totalWithdrawn = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'DR' AND je.status='POSTED'", [$partner['capital_account_id']]);
 $capitalBalance = floatval($position['capital_balance'] ?? 0);
@@ -50,7 +42,6 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
     <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
     <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></div><div class="stat-label"><?= clean($currentLabel) ?></div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
-    <div class="stat-card"><div class="stat-value <?= (($position['pending_payable'] ?? 0) > ($position['pending_receivable'] ?? 0)) ? 'flow-out' : 'flow-in' ?>"><?= formatAmount(($position['pending_payable'] ?? 0) + ($position['pending_receivable'] ?? 0)) ?></div><div class="stat-label">Pending Settlements</div></div>
 </div>
 
 <div class="grid-2">
@@ -84,40 +75,19 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
     </div>
 </div>
 
-<div class="grid-2" style="margin-top:24px;">
-    <div class="card">
-        <div class="card-header"><h3>Current Account Ledger</h3></div>
-        <div class="card-body" style="padding:0;">
-            <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
-                <tbody>
-                <?php foreach ($currentLedger as $l): ?>
-                <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
-                    <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                    <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
-                <?php endforeach; ?>
-                <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No entries</td></tr><?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-header"><h3>Profit Settlements</h3></div>
-        <div class="card-body" style="padding:0;">
-            <table><thead><tr><th>Car</th><th>Direction</th><th class="text-right">Profit</th><th class="text-right">Outstanding</th><th>Status</th></tr></thead>
-                <tbody>
-                <?php foreach ($settlements as $settlement): ?>
-                <tr>
-                    <td><a href="../cars/view.php?id=<?= $settlement['car_id'] ?>"><?= clean(formatRegistrationNo($settlement['registration_no'])) ?></a></td>
-                    <td><?= clean($settlement['direction']) ?></td>
-                    <td class="text-right amount <?= $settlement['direction'] === 'PAYABLE' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($settlement['profit_amount']) ?></td>
-                    <td class="text-right amount <?= $settlement['direction'] === 'PAYABLE' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($settlement['outstanding_amount']) ?></td>
-                    <td><span class="badge badge-blue"><?= clean($settlement['status']) ?></span></td>
-                </tr>
-                <?php endforeach; ?>
-                <?php if (empty($settlements)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No settlements yet</td></tr><?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+<div class="card" style="margin-top:24px;">
+    <div class="card-header"><h3>Current Account Ledger</h3></div>
+    <div class="card-body" style="padding:0;">
+        <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
+            <tbody>
+            <?php foreach ($currentLedger as $l): ?>
+            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
+                <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+                <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+            <?php endforeach; ?>
+            <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No entries</td></tr><?php endif; ?>
+            </tbody>
+        </table>
     </div>
 </div>
 
