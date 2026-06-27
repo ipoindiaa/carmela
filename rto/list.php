@@ -15,6 +15,57 @@ $paymentAccounts = array_merge($primaryAccountGroups['cash_book'] ?? [], $primar
 $paymentAccountIds = array_values(array_filter(array_map(static fn($account) => $account['id'] ?? null, $paymentAccounts)));
 $selectedCarId = get('car_id', '');
 
+$resolveRtoCase = function () use ($db, $businessId, $userId) {
+    $rtoId = trim((string) post('rto_id'));
+    $carId = trim((string) post('car_id'));
+    $rtoType = trim((string) post('rto_type'));
+    $partyName = trim((string) post('party_name'));
+    $agentName = trim((string) post('agent_name'));
+    $isRecoverable = post('is_recoverable', '1') === '0' ? 0 : 1;
+    $status = post('status', 'IN_PROGRESS');
+    $narration = trim((string) post('narration'));
+
+    if ($rtoId !== '') {
+        $existing = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
+        if (!$existing) {
+            throw new Exception('Select a valid RTO case.');
+        }
+        $updates = [];
+        if ($carId !== '') $updates['car_id'] = $carId;
+        if ($rtoType !== '') $updates['rto_type'] = $rtoType;
+        if ($partyName !== '') $updates['party_name'] = $partyName;
+        if ($agentName !== '') $updates['agent_name'] = $agentName;
+        if ($narration !== '') $updates['narration'] = $narration;
+        $updates['is_recoverable'] = $isRecoverable;
+        $updates['status'] = $status;
+        if (!empty($updates)) {
+            $db->update('rto_records', $updates, 'id = ? AND business_id = ?', [$rtoId, $businessId]);
+            $existing = array_merge($existing, $updates);
+        }
+        return $existing;
+    }
+
+    if ($carId === '') throw new Exception('Select car for RTO entry.');
+    $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
+    if (!$car) throw new Exception('Select a valid car.');
+    if ($rtoType === '') throw new Exception('RTO work name is required.');
+
+    $record = [
+        'id' => Database::uuid(),
+        'business_id' => $businessId,
+        'car_id' => $carId,
+        'rto_type' => $rtoType,
+        'status' => $status,
+        'party_name' => $partyName,
+        'agent_name' => $agentName,
+        'narration' => $narration,
+        'is_recoverable' => $isRecoverable,
+        'created_by' => $userId,
+    ];
+    $db->insert('rto_records', $record);
+    return $record;
+};
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     if (!$canWriteRto) {
@@ -25,79 +76,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = post('action');
 
-        if ($action === 'save_rto') {
-            $rtoId = post('rto_id') ?: Database::uuid();
-            $carId = post('car_id');
-            $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
-            if (!$car) throw new Exception('Select a valid car.');
+        if ($action === 'save_rto_entry') {
+            $accountId = post('payment_account');
+            if (!in_array($accountId, $paymentAccountIds, true)) throw new Exception('Select valid cash/bank account.');
+            $entryMode = strtoupper(trim((string) post('entry_mode', 'RECEIVE')));
+            $entryDate = post('entry_date');
+            $entryAmount = parseDecimalInput(post('amount'));
+            if ($entryAmount <= 0) throw new Exception('Amount must be greater than zero.');
 
-            $data = [
-                'business_id' => $businessId,
-                'car_id' => $carId,
-                'rto_type' => trim((string) post('rto_type')),
-                'status' => post('status', 'PENDING'),
-                'party_name' => trim((string) post('party_name')),
-                'agent_name' => trim((string) post('agent_name')),
-                'narration' => trim((string) post('narration')),
-                'is_recoverable' => post('is_recoverable') === '0' ? 0 : 1,
-            ];
+            $rto = $resolveRtoCase();
+            $narration = post('narration') ?: ($entryMode === 'RECEIVE' ? 'RTO money received - ' . $rto['rto_type'] : 'RTO expense - ' . $rto['rto_type']);
 
-            if ($data['rto_type'] === '') {
-                throw new Exception('RTO work name is required.');
-            }
-
-            $existing = $db->fetch("SELECT id FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-            if ($existing) {
-                $db->update('rto_records', $data, 'id = ? AND business_id = ?', [$rtoId, $businessId]);
+            if ($entryMode === 'RECEIVE') {
+                $engine->rtoRecovery($rto['id'], $entryAmount, $entryDate, $accountId, $narration);
+                setFlash('success', 'RTO money received.');
             } else {
-                $data['id'] = $rtoId;
-                $data['created_by'] = $userId;
-                $db->insert('rto_records', $data);
+                $engine->rtoExpense($rto['id'], $rto['car_id'], $entryAmount, $entryDate, $accountId, $narration);
+                setFlash('success', 'RTO expense posted.');
             }
 
-            uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoId, 'RTO_DOC', 'rto_docs', $userId, 'vouchers');
-            setFlash('success', 'RTO case saved.');
-            redirect('list.php?car_id=' . urlencode($carId));
-        }
-
-        if ($action === 'add_expense') {
-            $rtoId = post('rto_id');
-            $rto = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-            if (!$rto) throw new Exception('RTO case not found.');
-
-            $accountId = post('payment_account');
-            if (!in_array($accountId, $paymentAccountIds, true)) throw new Exception('Invalid payment account.');
-
-            $engine->rtoExpense(
-                $rtoId,
-                $rto['car_id'],
-                parseDecimalInput(post('amount')),
-                post('entry_date'),
-                $accountId,
-                post('narration') ?: ('RTO expense - ' . $rto['rto_type'])
-            );
-            uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoId, 'RTO_DOC', 'rto_docs', $userId, 'vouchers');
-            setFlash('success', 'RTO expense posted.');
-            redirect('list.php?car_id=' . urlencode($rto['car_id']));
-        }
-
-        if ($action === 'add_recovery') {
-            $rtoId = post('rto_id');
-            $rto = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-            if (!$rto) throw new Exception('RTO case not found.');
-
-            $accountId = post('payment_account');
-            if (!in_array($accountId, $paymentAccountIds, true)) throw new Exception('Invalid receiving account.');
-
-            $engine->rtoRecovery(
-                $rtoId,
-                parseDecimalInput(post('amount')),
-                post('entry_date'),
-                $accountId,
-                post('narration') ?: ('RTO received - ' . $rto['rto_type'])
-            );
-            uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoId, 'RTO_DOC', 'rto_docs', $userId, 'vouchers');
-            setFlash('success', 'RTO money received.');
+            uploadEntityAttachments($businessId, 'RTO_RECORD', $rto['id'], 'RTO_DOC', 'rto_docs', $userId, 'vouchers');
             redirect('list.php?car_id=' . urlencode($rto['car_id']));
         }
     } catch (Exception $e) {
@@ -171,7 +169,7 @@ $rtoEntries = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-file-shield-2-line"></i> RTO Book</h1>
-    <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Case</a><?php endif; ?>
+    <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Entry</a><?php endif; ?>
 </div>
 
 <div class="stats-grid compact-operational-grid">
@@ -203,11 +201,39 @@ $rtoEntries = $db->fetchAll(
 
 <?php if ($canWriteRto): ?>
 <div class="card" id="rto-form" style="margin-bottom:16px;">
-    <div class="card-header"><h3><i class="ri-add-box-line"></i> Add Simple RTO Case</h3></div>
+    <div class="card-header"><h3><i class="ri-add-box-line"></i> Add RTO Entry</h3></div>
     <div class="card-body">
+        <div class="entry-menu-legend" style="margin:0 0 14px;">
+            <span><i class="ri-arrow-down-circle-line"></i> Receive = buyer/customer gave RTO money</span>
+            <span><i class="ri-arrow-up-circle-line"></i> Expense = you paid agent / RTO office</span>
+        </div>
         <form method="POST" enctype="multipart/form-data" class="rto-entry-grid">
             <?= csrfField() ?>
-            <input type="hidden" name="action" value="save_rto">
+            <input type="hidden" name="action" value="save_rto_entry">
+            <div class="form-group">
+                <label class="form-label">Entry Type *</label>
+                <select name="entry_mode" class="form-control searchable-select">
+                    <option value="RECEIVE">RTO Money Received</option>
+                    <option value="EXPENSE">RTO Expense Paid</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Date *</label>
+                <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Cash / Bank Account *</label>
+                <select name="payment_account" class="form-control searchable-select" required>
+                    <option value="">Select account</option>
+                    <?php foreach ($paymentAccounts as $account): ?>
+                        <option value="<?= clean($account['id']) ?>"><?= clean($account['name'] . ' (' . $account['code'] . ')') ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount (₹) *</label>
+                <input name="amount" class="form-control currency-input" placeholder="0" required>
+            </div>
             <div class="form-group">
                 <label class="form-label">Car *</label>
                 <select name="car_id" class="form-control searchable-select" required>
@@ -221,42 +247,53 @@ $rtoEntries = $db->fetchAll(
             </div>
             <div class="form-group">
                 <label class="form-label">RTO Work *</label>
-                <input name="rto_type" class="form-control" placeholder="Transfer, passing, tax, NOC" required>
+                <input name="rto_type" class="form-control" placeholder="Transfer, NOC, tax, passing" required>
             </div>
             <div class="form-group">
                 <label class="form-label">Buyer / Customer</label>
-                <input name="party_name" class="form-control" placeholder="Buyer name">
+                <input name="party_name" class="form-control" placeholder="Who gives RTO money">
             </div>
             <div class="form-group">
                 <label class="form-label">Agent / Office</label>
-                <input name="agent_name" class="form-control" placeholder="Agent or office name">
+                <input name="agent_name" class="form-control" placeholder="Who receives expense payment">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Existing RTO Case</label>
+                <select name="rto_id" class="form-control searchable-select">
+                    <option value="">Create new / no old case selected</option>
+                    <?php foreach ($records as $record): ?>
+                        <option value="<?= clean($record['id']) ?>">
+                            <?= clean(formatRegistrationNo($record['registration_no']) . ' - ' . $record['rto_type']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Recovery Type</label>
-                <select name="is_recoverable" class="form-control">
-                    <option value="1">Need to receive from buyer</option>
+                <select name="is_recoverable" class="form-control searchable-select">
+                    <option value="1">Buyer will pay</option>
                     <option value="0">Business cost only</option>
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Case Status</label>
-                <select name="status" class="form-control">
-                    <option value="PENDING">Open</option>
+                <select name="status" class="form-control searchable-select">
                     <option value="IN_PROGRESS">In Progress</option>
+                    <option value="PENDING">Open</option>
                     <option value="COMPLETED">Done</option>
                     <option value="CANCELLED">Cancelled</option>
                 </select>
             </div>
             <div class="form-group rto-span-2">
                 <label class="form-label">Narration</label>
-                <input name="narration" class="form-control" placeholder="Short note for this RTO case">
+                <input name="narration" class="form-control" placeholder="Short note for this RTO entry">
             </div>
             <div class="form-group rto-span-2">
                 <label class="form-label">Images / Vouchers</label>
                 <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
-                <div class="form-hint">Upload receipt photos, agent slips, transfer papers, or PDF vouchers.</div>
+                <div class="form-hint">Upload receipt photos, slips, transfer papers, or proof documents.</div>
             </div>
-            <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Case</button></div>
+            <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Entry</button></div>
         </form>
     </div>
 </div>
@@ -274,7 +311,7 @@ $rtoEntries = $db->fetchAll(
                     <th class="text-right">Received</th>
                     <th class="text-right">Spent</th>
                     <th class="text-right">Pending</th>
-                    <th>Actions</th>
+                    <th>History / Files</th>
                 </tr>
             </thead>
             <tbody>
@@ -304,33 +341,7 @@ $rtoEntries = $db->fetchAll(
                     <td class="text-right amount flow-out"><?= formatAmount($record['expense_amount']) ?></td>
                     <td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
                     <td>
-                        <?php if ($canWriteRto): ?>
-                        <details class="row-actions-details">
-                            <summary>Post</summary>
-                            <form method="POST" enctype="multipart/form-data" class="mini-post-form">
-                                <?= csrfField() ?>
-                                <input type="hidden" name="action" value="add_recovery">
-                                <input type="hidden" name="rto_id" value="<?= clean($record['id']) ?>">
-                                <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>">
-                                <input name="amount" class="form-control currency-input" placeholder="Received ₹" value="<?= $pending > 0 ? clean(round($pending)) : '' ?>">
-                                <select name="payment_account" class="form-control"><?php foreach ($paymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= clean($account['name'] . ' - ' . $account['code']) ?></option><?php endforeach; ?></select>
-                                <input name="narration" class="form-control" placeholder="Buyer gave RTO money">
-                                <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
-                                <button class="btn btn-sm btn-success">Receive</button>
-                            </form>
-                            <form method="POST" enctype="multipart/form-data" class="mini-post-form">
-                                <?= csrfField() ?>
-                                <input type="hidden" name="action" value="add_expense">
-                                <input type="hidden" name="rto_id" value="<?= clean($record['id']) ?>">
-                                <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>">
-                                <input name="amount" class="form-control currency-input" placeholder="Spent ₹">
-                                <select name="payment_account" class="form-control"><?php foreach ($paymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= clean($account['name'] . ' - ' . $account['code']) ?></option><?php endforeach; ?></select>
-                                <input name="narration" class="form-control" placeholder="Paid to agent / RTO">
-                                <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
-                                <button class="btn btn-sm btn-outline">Add Expense</button>
-                            </form>
-                        </details>
-                        <?php endif; ?>
+                        <a href="#rto-form" class="mini-pill mini-pill-neutral"><i class="ri-edit-line"></i> Continue</a>
                         <?php foreach ($attachments as $attachment):
                             $url = attachmentUrl($attachment);
                             $shareUrl = attachmentUrl($attachment, true);

@@ -155,9 +155,64 @@ $rtoOptions = $db->fetchAll(
      JOIN cars c ON c.id = r.car_id
      WHERE r.business_id = ? AND r.status <> 'CANCELLED'
      ORDER BY r.created_at DESC
-     LIMIT 200",
+    LIMIT 200",
     [$businessId]
 );
+
+$resolveRtoRecord = function () use ($db, $businessId, $userId) {
+    $rtoId = trim((string) post('rto_id'));
+    $rtoType = trim((string) post('rto_type_name'));
+    $carId = trim((string) post('rto_car_id'));
+    $partyName = trim((string) post('rto_party_name'));
+    $agentName = trim((string) post('rto_agent_name'));
+    $isRecoverable = post('rto_is_recoverable', '1') === '0' ? 0 : 1;
+    $narration = trim((string) post('narration'));
+
+    if ($rtoId !== '') {
+        $existing = $db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
+        if (!$existing) {
+            throw new Exception('Select a valid RTO case.');
+        }
+
+        $updates = [];
+        if ($rtoType !== '') $updates['rto_type'] = $rtoType;
+        if ($partyName !== '') $updates['party_name'] = $partyName;
+        if ($agentName !== '') $updates['agent_name'] = $agentName;
+        if ($narration !== '') $updates['narration'] = $narration;
+        $updates['is_recoverable'] = $isRecoverable;
+        if (!empty($updates)) {
+            $db->update('rto_records', $updates, 'id = ? AND business_id = ?', [$rtoId, $businessId]);
+            $existing = array_merge($existing, $updates);
+        }
+        return $existing;
+    }
+
+    if ($carId === '') {
+        throw new Exception('Select car for this RTO entry.');
+    }
+    $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
+    if (!$car) {
+        throw new Exception('Select a valid car for RTO entry.');
+    }
+    if ($rtoType === '') {
+        throw new Exception('Enter RTO work name.');
+    }
+
+    $record = [
+        'id' => Database::uuid(),
+        'business_id' => $businessId,
+        'car_id' => $carId,
+        'rto_type' => $rtoType,
+        'status' => 'IN_PROGRESS',
+        'party_name' => $partyName,
+        'agent_name' => $agentName,
+        'narration' => $narration,
+        'is_recoverable' => $isRecoverable,
+        'created_by' => $userId,
+    ];
+    $db->insert('rto_records', $record);
+    return $record;
+};
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -313,15 +368,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'RTO_EXPENSE':
-                $rtoId = post('rto_id');
-                $rto = $db->fetch("SELECT car_id FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $businessId]);
-                if (!$rto) throw new Exception('Select a valid RTO record.');
-                $entryId = $engine->rtoExpense($rtoId, $rto['car_id'], $amount, $date, $paymentAccountId, $narration);
+                $rtoRecord = $resolveRtoRecord();
+                $entryId = $engine->rtoExpense($rtoRecord['id'], $rtoRecord['car_id'], $amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'RTO_RECOVERY':
-                $rtoId = post('rto_id');
-                $entryId = $engine->rtoRecovery($rtoId, $amount, $date, $paymentAccountId, $narration);
+                $rtoRecord = $resolveRtoRecord();
+                $entryId = $engine->rtoRecovery($rtoRecord['id'], $amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'CONTRA_TRANSFER':
@@ -399,6 +452,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($type === 'CAR_SALE' && $attachmentCarId) {
                     uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'images');
                 }
+                if (in_array($type, ['RTO_EXPENSE', 'RTO_RECOVERY'], true) && !empty($rtoRecord['id'])) {
+                    uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'vouchers');
+                }
             } catch (Exception $uploadError) {
                 $uploadWarning = transactionTypeLabel($type, ['car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select')]) . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
             }
@@ -458,8 +514,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
-                            <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO work linked to a car from RTO Book.">RTO Expense</option>
-                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Recovery Received" data-desc="Receive RTO money back from owner/customer.">RTO Recovery Received</option>
+                            <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
+                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Recovery Received" data-desc="Receive RTO money from buyer/customer for a specific car.">RTO Recovery Received</option>
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
@@ -800,18 +856,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- RTO SECTION -->
             <div class="txn-section" id="rto-section" style="display:none;">
+                <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-blue);">
+                    <i class="ri-file-shield-2-line"></i> RTO Entry
+                </h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Car *</label>
+                        <input type="hidden" name="rto_car_id" id="rto_car_id" value="<?= clean($preselectedCarId) ?>">
+                        <button type="button" class="picker-trigger picker-trigger-wide" id="rto-car-picker-trigger" onclick="openEntityPicker('rto_car', this)">
+                            <span><?= $preselectedCar ? clean($preselectedCar['registration_no']) : 'Select car for RTO' ?></span>
+                            <i class="ri-search-line"></i>
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">RTO Work *</label>
+                        <input type="text" name="rto_type_name" class="form-control" placeholder="Transfer, NOC, passing, tax">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Buyer / Customer</label>
+                        <input type="text" name="rto_party_name" class="form-control" placeholder="Who is giving RTO money">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Agent / Office</label>
+                        <input type="text" name="rto_agent_name" class="form-control" placeholder="Who is receiving RTO payment">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Existing RTO Case</label>
+                        <select name="rto_id" class="form-control searchable-select">
+                            <option value="">Create new / no old case selected</option>
+                            <?php foreach ($rtoOptions as $rto): ?>
+                                <?php $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?>
+                                <option value="<?= clean($rto['id']) ?>" <?= $preselectedRtoId === $rto['id'] ? 'selected' : '' ?>>
+                                    <?= clean(formatRegistrationNo($rto['registration_no']) . ' - ' . $rto['rto_type'] . ($pending > 0 ? ' | Pending ' . formatAmount($pending) : '')) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-hint">Select old case only if this entry belongs to an existing RTO history.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Recovery Type</label>
+                        <select name="rto_is_recoverable" class="form-control searchable-select">
+                            <option value="1">Buyer will pay RTO</option>
+                            <option value="0">Business cost only</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label class="form-label">RTO Record *</label>
-                    <select name="rto_id" class="form-control searchable-select">
-                        <option value="">Select RTO work</option>
-                        <?php foreach ($rtoOptions as $rto): ?>
-                            <?php $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?>
-                            <option value="<?= clean($rto['id']) ?>" <?= $preselectedRtoId === $rto['id'] ? 'selected' : '' ?>>
-                                <?= clean(formatRegistrationNo($rto['registration_no']) . ' - ' . $rto['rto_type'] . ($pending > 0 ? ' | Pending ' . formatAmount($pending) : '')) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div class="form-hint">Create detailed RTO work from RTO Book. Use this only to post expense or recovery against an existing RTO record.</div>
+                    <label class="form-label">RTO Images / Vouchers</label>
+                    <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
+                    <div class="form-hint">Upload agent slips, RTO receipts, transfer papers, or proof images for this car.</div>
                 </div>
             </div>
 
@@ -1072,6 +1169,13 @@ const entityPickerConfig = {
         inputId: 'linked_car_id',
         triggerId: 'payment-car-picker-trigger',
         emptyLabel: 'Select car if this payment belongs to one car',
+    },
+    rto_car: {
+        title: 'Search Cars',
+        subtitle: 'Select the car connected to this RTO entry.',
+        inputId: 'rto_car_id',
+        triggerId: 'rto-car-picker-trigger',
+        emptyLabel: 'Select car for RTO',
     },
     car: {
         title: 'Search Cars',
@@ -1542,7 +1646,7 @@ async function renderEntityPickerResults(query) {
     const kind = activeEntityPicker.kind;
     const searchQuery = (query || '').trim();
     const txnType = document.getElementById('transaction_type')?.value || '';
-    const contextParam = (kind === 'car' || kind === 'payment_car') ? `&context=${encodeURIComponent(txnType)}` : '';
+    const contextParam = (kind === 'car' || kind === 'payment_car' || kind === 'rto_car') ? `&context=${encodeURIComponent(txnType)}` : '';
     results.innerHTML = '<div class="picker-empty">Searching...</div>';
 
     try {

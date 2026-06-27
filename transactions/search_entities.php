@@ -77,6 +77,7 @@ switch ($kind) {
 
     case 'car':
     case 'payment_car':
+    case 'rto_car':
         $statusFilterSql = "AND status <> 'CANCELLED'";
         if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true)) {
             $statusFilterSql = "AND status = 'IN_STOCK'";
