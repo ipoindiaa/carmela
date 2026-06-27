@@ -20,7 +20,8 @@ $resolveRtoCase = function () use ($db, $businessId, $userId) {
     $rtoType = trim((string) post('rto_type'));
     $partyName = trim((string) post('party_name'));
     $agentName = trim((string) post('agent_name'));
-    $isRecoverable = post('is_recoverable', '1') === '0' ? 0 : 1;
+    $entryMode = strtoupper(trim((string) post('entry_mode', 'RECEIVE')));
+    $isRecoverable = $entryMode === 'RECEIVE' ? 1 : 0;
     $narration = trim((string) post('narration'));
 
     if ($carId === '') throw new Exception('Select car for RTO entry.');
@@ -82,18 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $q = trim((string) get('q', ''));
-$mode = get('mode', '');
 $where = "WHERE r.business_id = ?";
 $params = [$businessId];
 if ($selectedCarId !== '') {
     $where .= " AND r.car_id = ?";
     $params[] = $selectedCarId;
-}
-if ($mode === 'recoverable') {
-    $where .= " AND r.is_recoverable = 1";
-}
-if ($mode === 'business') {
-    $where .= " AND r.is_recoverable = 0";
 }
 if ($q !== '') {
     $needle = '%' . $q . '%';
@@ -105,7 +99,6 @@ $stats = $db->fetch(
     "SELECT
         COALESCE(SUM(expense_amount),0) AS spent,
         COALESCE(SUM(recovered_amount),0) AS recovered,
-        COALESCE(SUM(CASE WHEN is_recoverable = 1 THEN GREATEST(expense_amount - recovered_amount, 0) ELSE 0 END),0) AS pending_recovery,
         COUNT(*) AS total_cases
      FROM rto_records
      WHERE business_id = ?",
@@ -153,7 +146,8 @@ $rtoEntries = $db->fetchAll(
 <div class="stats-grid compact-operational-grid">
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($stats['recovered'] ?? 0) ?></div><div class="stat-label">RTO Received From Buyer</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['spent'] ?? 0) ?></div><div class="stat-label">RTO Paid To Agent / Office</div></div>
-    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['pending_recovery'] ?? 0) ?></div><div class="stat-label">Still To Receive</div></div>
+    <?php $rtoNet = (float)($stats['recovered'] ?? 0) - (float)($stats['spent'] ?? 0); ?>
+    <div class="stat-card"><div class="stat-value <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($rtoNet, true) ?></div><div class="stat-label">Net RTO Balance</div></div>
     <div class="stat-card"><div class="stat-value"><?= intval($stats['total_cases'] ?? 0) ?></div><div class="stat-label">RTO Entries</div></div>
 </div>
 
@@ -167,11 +161,6 @@ $rtoEntries = $db->fetchAll(
     <form method="GET" class="compact-filter-form">
         <?php if ($selectedCarId !== ''): ?><input type="hidden" name="car_id" value="<?= clean($selectedCarId) ?>"><?php endif; ?>
         <input type="search" name="q" class="form-control" value="<?= clean($q) ?>" placeholder="Search car, buyer, agent, work name">
-        <select name="mode" class="form-control">
-            <option value="">All Cases</option>
-            <option value="recoverable" <?= $mode === 'recoverable' ? 'selected' : '' ?>>Recoverable From Buyer</option>
-            <option value="business" <?= $mode === 'business' ? 'selected' : '' ?>>Business Cost Only</option>
-        </select>
         <button class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
         <a href="list.php<?= $selectedCarId !== '' ? '?car_id=' . urlencode($selectedCarId) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
     </form>
@@ -235,13 +224,6 @@ $rtoEntries = $db->fetchAll(
                 <label class="form-label">Agent / Office</label>
                 <input name="agent_name" class="form-control" placeholder="Who receives expense payment">
             </div>
-            <div class="form-group">
-                <label class="form-label">Recovery Type</label>
-                <select name="is_recoverable" class="form-control searchable-select">
-                    <option value="1">Buyer will pay</option>
-                    <option value="0">Business cost only</option>
-                </select>
-            </div>
             <div class="form-group rto-span-2">
                 <label class="form-label">Narration</label>
                 <input name="narration" class="form-control" placeholder="Short note for this RTO entry">
@@ -265,19 +247,17 @@ $rtoEntries = $db->fetchAll(
                 <tr>
                     <th>Car / Work</th>
                     <th>Buyer / Agent</th>
-                    <th>Type</th>
+                    <th>Money Type</th>
                     <th class="text-right">Received</th>
                     <th class="text-right">Spent</th>
-                    <th class="text-right">Pending</th>
                     <th>Files</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($records)): ?>
-                    <tr><td colspan="7" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($records as $record):
-                    $pending = !empty($record['is_recoverable']) ? max(0, (float) $record['expense_amount'] - (float) $record['recovered_amount']) : 0;
                     $attachments = fetchEntityAttachments($businessId, 'RTO_RECORD', $record['id'], 'RTO_DOC');
                 ?>
                 <tr>
@@ -291,13 +271,11 @@ $rtoEntries = $db->fetchAll(
                     </td>
                     <td>
                         <span class="badge <?= (float) $record['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>">
-                            <?= (float) $record['recovered_amount'] > 0 ? 'Received' : 'Expense' ?>
+                            <?= (float) $record['recovered_amount'] > 0 ? 'Money In' : 'Money Out' ?>
                         </span>
-                        <div class="text-muted" style="margin-top:4px;"><?= !empty($record['is_recoverable']) ? 'Buyer Pays' : 'Business Cost' ?></div>
                     </td>
                     <td class="text-right amount flow-in"><?= formatAmount($record['recovered_amount']) ?></td>
                     <td class="text-right amount flow-out"><?= formatAmount($record['expense_amount']) ?></td>
-                    <td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
                     <td>
                         <?php foreach ($attachments as $attachment):
                             $url = attachmentUrl($attachment);

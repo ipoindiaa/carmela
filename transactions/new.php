@@ -153,7 +153,7 @@ $resolveRtoRecord = function () use ($db, $businessId, $userId) {
     $carId = trim((string) post('rto_car_id'));
     $partyName = trim((string) post('rto_party_name'));
     $agentName = trim((string) post('rto_agent_name'));
-    $isRecoverable = post('rto_is_recoverable', '1') === '0' ? 0 : 1;
+    $isRecoverable = strtoupper((string) post('transaction_type')) === 'RTO_RECOVERY' ? 1 : 0;
     $narration = trim((string) post('narration'));
 
     if ($carId === '') {
@@ -852,13 +852,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">Agent / Office</label>
                         <input type="text" name="rto_agent_name" class="form-control" placeholder="Who is receiving RTO payment">
                     </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Recovery Type</label>
-                    <select name="rto_is_recoverable" class="form-control searchable-select">
-                        <option value="1">Buyer will pay RTO</option>
-                        <option value="0">Business cost only</option>
-                    </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">RTO Images / Vouchers</label>

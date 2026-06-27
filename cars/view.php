@@ -71,7 +71,7 @@ $rtoRecords = $db->fetchAll(
 );
 $rtoSpent = array_sum(array_map(static fn($row) => (float) $row['expense_amount'], $rtoRecords));
 $rtoRecovered = array_sum(array_map(static fn($row) => (float) $row['recovered_amount'], $rtoRecords));
-$rtoPending = array_sum(array_map(static fn($row) => !empty($row['is_recoverable']) ? max(0, (float) $row['expense_amount'] - (float) $row['recovered_amount']) : 0, $rtoRecords));
+$rtoPending = max(0, $rtoSpent - $rtoRecovered);
 $keyEvents = $db->fetchAll(
     "SELECT ske.*, u.full_name FROM car_second_key_events ske LEFT JOIN users u ON u.id = ske.created_by WHERE ske.business_id = ? AND ske.car_id = ? ORDER BY ske.event_date DESC, ske.created_at DESC",
     [$businessId, $id]
@@ -334,10 +334,10 @@ $contributions = $db->fetchAll(
 <div class="card" style="margin-top:24px;">
     <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
     <div class="card-body" style="padding:0;">
-        <table><thead><tr><th>Work</th><th>Buyer / Agent</th><th>Type</th><th class="text-right">Received</th><th class="text-right">Spent</th><th class="text-right">Pending</th></tr></thead><tbody>
-            <?php if (empty($rtoRecords)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
-            <?php foreach ($rtoRecords as $rto): $pending = !empty($rto['is_recoverable']) ? max(0, (float)$rto['expense_amount'] - (float)$rto['recovered_amount']) : 0; ?><tr>
-                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= (float)$rto['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>"><?= (float)$rto['recovered_amount'] > 0 ? 'Received' : 'Expense' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['recovered_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['expense_amount']) ?></td><td class="text-right amount <?= $pending > 0 ? 'flow-out' : 'flow-neutral' ?>"><?= formatAmount($pending) ?></td>
+        <table><thead><tr><th>Work</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
+            <?php if (empty($rtoRecords)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
+            <?php foreach ($rtoRecords as $rto): ?><tr>
+                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= (float)$rto['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>"><?= (float)$rto['recovered_amount'] > 0 ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['recovered_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['expense_amount']) ?></td>
             </tr><?php endforeach; ?><?php endif; ?>
         </tbody></table>
     </div>
