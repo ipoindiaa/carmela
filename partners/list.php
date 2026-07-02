@@ -16,18 +16,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     verifyCsrf();
     try {
         $partnerId = Database::uuid();
-        $name = post('name');
+        $name = trim((string) post('name'));
         $partnerType = strtoupper((string) post('partner_type', 'MAIN'));
         if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) {
             throw new Exception('Invalid partner type.');
         }
+        $phone = validatePhoneNumber(post('phone'), 'Phone number');
+        $email = validateEmailAddress(post('email'), 'Email');
         $capitalAccId = $engine->createAccount('CAP-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
         $currentAccId = $engine->createAccount('CUR-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
 
         $db->insert('partners', [
             'id' => $partnerId, 'business_id' => $businessId, 'name' => $name,
             'partner_type' => $partnerType,
-            'phone' => post('phone'), 'email' => post('email'), 'pan' => post('pan'),
+            'phone' => $phone, 'email' => $email, 'pan' => post('pan'),
             'profit_share_pct' => floatval(post('profit_share_pct', 0)),
             'capital_account_id' => $capitalAccId, 'current_account_id' => $currentAccId,
             'joined_date' => post('joined_date'),
@@ -174,8 +176,8 @@ $pageDescription = $requestedType === 'CARWISE'
                 </div>
                 <div class="form-group"><label class="form-label">Full Name *</label><input type="text" name="name" class="form-control" required></div>
                 <div class="form-row">
-                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control"></div>
-                    <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control"></div>
+                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                    <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" placeholder="name@example.com"></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" maxlength="10"></div>

@@ -21,6 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
             $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'images');
             setFlash('success', $count > 0 ? "$count image uploaded." : 'No image selected.');
+        } elseif ($action === 'delete_car_image') {
+            deleteAttachment($businessId, post('attachment_id'), 'CAR', $id);
+            setFlash('success', 'Car image deleted.');
         } elseif ($action === 'return_car') {
             $engine->returnSoldCar($id, post('return_reason'));
             setFlash('success', 'Car return recorded. Car is back in stock.');
@@ -67,6 +70,40 @@ $sellerHistory = $sellerParty ? $db->fetchAll(
 $rtoRecords = $db->fetchAll(
     "SELECT * FROM rto_records WHERE business_id = ? AND car_id = ? ORDER BY created_at DESC",
     [$businessId, $id]
+);
+$rtoHistory = $db->fetchAll(
+    "(SELECT
+        r.id AS record_id,
+        je.id AS entry_id,
+        je.entry_date,
+        je.created_at,
+        r.rto_type,
+        r.party_name,
+        r.agent_name,
+        'EXPENSE' AS money_type,
+        0 AS received_amount,
+        r.expense_amount AS spent_amount
+      FROM rto_records r
+      JOIN journal_entries je ON je.id = r.expense_entry_id
+      WHERE r.business_id = ? AND r.car_id = ? AND r.expense_entry_id IS NOT NULL)
+     UNION ALL
+     (SELECT
+        r.id AS record_id,
+        rr.journal_entry_id AS entry_id,
+        rr.received_date AS entry_date,
+        je.created_at,
+        r.rto_type,
+        r.party_name,
+        r.agent_name,
+        'RECEIVE' AS money_type,
+        rr.amount AS received_amount,
+        0 AS spent_amount
+      FROM rto_recoveries rr
+      JOIN rto_records r ON r.id = rr.rto_record_id
+      LEFT JOIN journal_entries je ON je.id = rr.journal_entry_id
+      WHERE r.business_id = ? AND r.car_id = ?)
+     ORDER BY entry_date DESC, created_at DESC",
+    [$businessId, $id, $businessId, $id]
 );
 $rtoSpent = array_sum(array_map(static fn($row) => (float) $row['expense_amount'], $rtoRecords));
 $rtoRecovered = array_sum(array_map(static fn($row) => (float) $row['recovered_amount'], $rtoRecords));
@@ -123,7 +160,7 @@ $contributions = $db->fetchAll(
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
         <a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-shield-2-line"></i> RTO</a>
-        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 
@@ -256,6 +293,12 @@ $contributions = $db->fetchAll(
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
+                                        <form method="POST" onsubmit="return confirm('Delete this image?');" style="display:inline-flex;">
+                                            <?= csrfField() ?>
+                                            <input type="hidden" name="action" value="delete_car_image">
+                                            <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline text-red"><i class="ri-delete-bin-line"></i> Delete</button>
+                                        </form>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -305,9 +348,9 @@ $contributions = $db->fetchAll(
     <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
     <div class="card-body" style="padding:0;">
         <table><thead><tr><th>Work</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
-            <?php if (empty($rtoRecords)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
-            <?php foreach ($rtoRecords as $rto): ?><tr>
-                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= (float)$rto['recovered_amount'] > 0 ? 'badge-green' : 'badge-red' ?>"><?= (float)$rto['recovered_amount'] > 0 ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['recovered_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['expense_amount']) ?></td>
+            <?php if (empty($rtoHistory)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
+            <?php foreach ($rtoHistory as $rto): ?><tr>
+                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= ($rto['money_type'] === 'RECEIVE') ? 'badge-green' : 'badge-red' ?>"><?= $rto['money_type'] === 'RECEIVE' ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['received_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['spent_amount']) ?></td>
             </tr><?php endforeach; ?><?php endif; ?>
         </tbody></table>
     </div>

@@ -3733,6 +3733,13 @@ html.js .pagination.no-js-pagination { display: none; }
 /* ============ PRINT ============ */
 @media print {
     .sidebar, .top-header, .btn, .filter-bar, .pagination { display: none !important; }
+    .attachment-upload-panel,
+    .car-images-upload-panel,
+    input[type="file"],
+    .attachment-actions,
+    .modal-overlay {
+        display: none !important;
+    }
     .main-content { margin-left: 0 !important; }
     .page-content { padding: 0 !important; }
     body { background: white; color: black; }

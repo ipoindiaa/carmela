@@ -175,3 +175,34 @@ function attachmentUrl($attachment, $absolute = false) {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     return $scheme . '://' . $host . $relative;
 }
+
+function deleteAttachment($businessId, $attachmentId, $entityType = null, $entityId = null) {
+    ensureAttachmentSchema();
+
+    $db = Database::getInstance();
+    $params = [$attachmentId, $businessId];
+    $where = "id = ? AND business_id = ?";
+    if ($entityType !== null) {
+        $where .= " AND entity_type = ?";
+        $params[] = $entityType;
+    }
+    if ($entityId !== null) {
+        $where .= " AND entity_id = ?";
+        $params[] = $entityId;
+    }
+
+    $attachment = $db->fetch("SELECT * FROM attachments WHERE {$where} LIMIT 1", $params);
+    if (!$attachment) {
+        throw new Exception('Attachment not found.');
+    }
+
+    $relativePath = ltrim((string) ($attachment['relative_path'] ?? ''), '/');
+    if ($relativePath !== '') {
+        $fullPath = APP_ROOT . '/' . $relativePath;
+        if (is_file($fullPath)) {
+            @unlink($fullPath);
+        }
+    }
+
+    $db->query("DELETE FROM attachments WHERE id = ? AND business_id = ?", [$attachmentId, $businessId]);
+}

@@ -9,8 +9,10 @@ $business = $db->fetch("SELECT * FROM businesses WHERE id = ?", [$businessId]);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
+    $phone = validatePhoneNumber(post('phone'), 'Phone number');
+    $email = validateEmailAddress(post('email'), 'Email');
     $db->query("UPDATE businesses SET name = ?, gstin = ?, address = ?, phone = ?, email = ?, updated_at = NOW() WHERE id = ?",
-        [post('name'), post('gstin'), post('address'), post('phone'), post('email'), $businessId]);
+        [post('name'), post('gstin'), post('address'), $phone, $email, $businessId]);
     Auth::auditLog('UPDATE', 'business', $businessId, 'Business profile updated');
     setFlash('success', 'Business profile updated!');
     redirect('business.php');
@@ -28,9 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-group"><label class="form-label">Business Name *</label><input type="text" name="name" class="form-control" value="<?= clean($business['name']) ?>" required></div>
             <div class="form-row">
                 <div class="form-group"><label class="form-label">GSTIN</label><input type="text" name="gstin" class="form-control" value="<?= clean($business['gstin'] ?? '') ?>" maxlength="15"></div>
-                <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" value="<?= clean($business['phone'] ?? '') ?>"></div>
+                <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" value="<?= clean($business['phone'] ?? '') ?>" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
             </div>
-            <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<?= clean($business['email'] ?? '') ?>"></div>
+            <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<?= clean($business['email'] ?? '') ?>" placeholder="name@example.com"></div>
             <div class="form-group"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="3"><?= clean($business['address'] ?? '') ?></textarea></div>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Save Changes</button>
         </form>

@@ -16,13 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($step === 1) {
             // Create Business
             $businessId = Database::uuid();
+            $phone = validatePhoneNumber(post('phone'), 'Phone number');
+            $email = validateEmailAddress(post('email'), 'Email');
             $db->insert('businesses', [
                 'id' => $businessId,
                 'name' => post('business_name'),
                 'gstin' => post('gstin') ?: null,
                 'address' => post('address') ?: null,
-                'phone' => post('phone') ?: null,
-                'email' => post('email') ?: null,
+                'phone' => $phone,
+                'email' => $email,
                 'fy_start_month' => intval(post('fy_start_month', 4)),
             ]);
 
@@ -123,7 +125,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
                 </div>
                 <div class="form-group">
                     <label class="form-label">Phone</label>
-                    <input type="text" name="phone" class="form-control" placeholder="+91 XXXXXXXXXX">
+                    <input type="text" name="phone" class="form-control" placeholder="10 digit phone" inputmode="numeric" pattern="[0-9]{10}" maxlength="10">
                 </div>
             </div>
             <div class="form-group">

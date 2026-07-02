@@ -85,6 +85,38 @@ function signedAmountColorClass($amount, $positiveMeans = 'in') {
     return $positiveMeans === 'in' ? 'flow-out' : 'flow-in';
 }
 
+function normalizePhoneNumber($phone) {
+    return preg_replace('/\D+/', '', (string) $phone);
+}
+
+function validatePhoneNumber($phone, $fieldLabel = 'Phone number', $required = false) {
+    $normalized = normalizePhoneNumber($phone);
+    if ($normalized === '') {
+        if ($required) {
+            throw new Exception($fieldLabel . ' is required.');
+        }
+        return null;
+    }
+    if (!preg_match('/^\d{10}$/', $normalized)) {
+        throw new Exception($fieldLabel . ' must be exactly 10 digits.');
+    }
+    return $normalized;
+}
+
+function validateEmailAddress($email, $fieldLabel = 'Email', $required = false) {
+    $normalized = strtolower(trim((string) $email));
+    if ($normalized === '') {
+        if ($required) {
+            throw new Exception($fieldLabel . ' is required.');
+        }
+        return null;
+    }
+    if (!filter_var($normalized, FILTER_VALIDATE_EMAIL)) {
+        throw new Exception('Please enter a valid ' . strtolower($fieldLabel) . '.');
+    }
+    return $normalized;
+}
+
 /**
  * Format date for display
  */

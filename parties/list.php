@@ -19,8 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     try {
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $partyId = $engine->getOrCreateParty(post('name'), post('type'));
+        $phone = validatePhoneNumber(post('phone'), 'Phone number');
+        $email = validateEmailAddress(post('email'), 'Email');
         $db->query("UPDATE debtors_creditors SET phone = ?, email = ?, address = ?, pan_gstin = ? WHERE id = ?",
-            [post('phone'), post('email'), post('address'), post('pan_gstin'), $partyId]);
+            [$phone, $email, post('address'), post('pan_gstin'), $partyId]);
         setFlash('success', 'Party added!');
         redirect('list.php');
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -172,10 +174,10 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
                 <div class="form-group"><label class="form-label">Name *</label><input type="text" name="name" class="form-control" required></div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control" required><option value="DEBTOR">Debtor</option><option value="CREDITOR">Creditor</option><option value="BUYER">Buyer</option><option value="SELLER">Seller</option></select></div>
-                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control"></div>
+                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control"></div>
+                    <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" placeholder="name@example.com"></div>
                     <div class="form-group"><label class="form-label">PAN / GSTIN</label><input type="text" name="pan_gstin" class="form-control"></div>
                 </div>
                 <div class="form-group"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"></textarea></div>

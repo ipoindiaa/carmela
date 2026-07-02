@@ -11,12 +11,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     try {
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $empId = Database::uuid();
-        $name = post('name');
+        $name = trim((string) post('name'));
+        $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $advAccId = $engine->createAccount('ADV-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Advance A/c", 'ASSET', 'Current Assets', 'EMPLOYEE', $empId);
         
         $db->insert('employees', [
             'id' => $empId, 'business_id' => $businessId, 'name' => $name,
-            'phone' => post('phone'), 'role' => post('role'),
+            'phone' => $phone, 'role' => post('role'),
             'monthly_salary' => floatval(post('monthly_salary', 0)),
             'advance_account_id' => $advAccId, 'join_date' => post('join_date'),
         ]);
@@ -101,7 +102,7 @@ $employees = $db->fetchAll(
                 <div class="form-group"><label class="form-label">Full Name *</label><input type="text" name="name" class="form-control" required></div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Role</label><input type="text" name="role" class="form-control" placeholder="e.g., Driver, Mechanic"></div>
-                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control"></div>
+                    <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Monthly Salary (₹)</label><input type="number" name="monthly_salary" class="form-control" step="0.01"></div>

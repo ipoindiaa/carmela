@@ -7,6 +7,8 @@ define('APP_CURRENCY_CODE', 'INR');
 define('APP_TIMEZONE', 'Asia/Kolkata');
 define('APP_FY_START_MONTH', 4); // April
 
+date_default_timezone_set(APP_TIMEZONE);
+
 // Paths
 define('APP_ROOT', dirname(__DIR__));
 define('APP_URL', '/');

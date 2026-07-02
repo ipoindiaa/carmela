@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-car-line"></i> Add New Car</h1>
-    <a href="list.php" class="btn btn-outline" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+    <a href="list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
 <div class="card" style="max-width: 800px;">
