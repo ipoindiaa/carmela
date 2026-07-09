@@ -4,3 +4,4 @@ vendor/
 *.log
 config/database.local.php
 tmp/
+*.local.md
