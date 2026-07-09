@@ -1,32 +1,40 @@
 /**
  * Auto Deploy Script
  * Usage:
- *   DEPLOY_PASSWORD='...' DEPLOY_PATH='/home/.../public_html' node deploy.js "commit message"
+ *   DEPLOY_PASSWORD='...' DEPLOY_DB_PASS='...' node deploy.js "commit message"
  *
  * What it does:
  * 1. Stages all local changes and commits them
  * 2. Pushes the current branch to origin/main
  * 3. Connects to Hostinger shared hosting over SSH
  * 4. Clones the repo on first deploy or hard-resets to origin/main on later deploys
+ * 5. Optionally writes config/database.local.php when DEPLOY_DB_PASS is provided
  */
 
 const { execFileSync } = require('child_process');
 
 const SERVER = {
-  host: process.env.DEPLOY_HOST || '193.203.185.237',
-  username: process.env.DEPLOY_USER || 'u772891971',
+  host: process.env.DEPLOY_HOST || '147.93.109.162',
+  username: process.env.DEPLOY_USER || 'u892049228',
   port: process.env.DEPLOY_PORT || '65002',
   password: process.env.DEPLOY_PASSWORD || '',
 };
 
 const REMOTE_PATH =
   process.env.DEPLOY_PATH ||
-  '/home/u772891971/domains/darkgreen-turtle-127042.hostingersite.com/public_html';
+  '/home/u892049228/domains/tirangacarworld.com/public_html';
 const REMOTE_REPO = process.env.DEPLOY_REPO || 'git@github.com:ipoindiaa/carmela.git';
 const REMOTE_GITHUB_KEY = process.env.DEPLOY_GITHUB_KEY || '~/.ssh/github_carmela_deploy';
 const LOCAL_GIT_SSH_COMMAND =
   process.env.LOCAL_GIT_SSH_COMMAND ||
   'ssh -F /dev/null -i ~/.ssh/carmela_github_push -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new';
+const REMOTE_DB = {
+  host: process.env.DEPLOY_DB_HOST || 'localhost',
+  name: process.env.DEPLOY_DB_NAME || 'u892049228_tirangamaindb',
+  user: process.env.DEPLOY_DB_USER || 'u892049228_tirangamaindb',
+  pass: process.env.DEPLOY_DB_PASS || '',
+  charset: process.env.DEPLOY_DB_CHARSET || 'utf8mb4',
+};
 
 function run(command, args, options = {}) {
   execFileSync(command, args, {
@@ -52,6 +60,35 @@ function escapeForExpect(value) {
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
     .replace(/\$/g, '\\$');
+}
+
+function phpString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function buildRemoteDatabaseConfigCommand() {
+  if (!REMOTE_DB.pass) {
+    return '# DEPLOY_DB_PASS not provided; skipping database.local.php write';
+  }
+
+  const config = `<?php
+
+return [
+    'host' => '${phpString(REMOTE_DB.host)}',
+    'name' => '${phpString(REMOTE_DB.name)}',
+    'user' => '${phpString(REMOTE_DB.user)}',
+    'pass' => '${phpString(REMOTE_DB.pass)}',
+    'charset' => '${phpString(REMOTE_DB.charset)}',
+];
+`;
+
+  return [
+    'mkdir -p config',
+    "cat > config/database.local.php <<'PHP'",
+    config,
+    'PHP',
+    'chmod 600 config/database.local.php',
+  ].join('\n');
 }
 
 function sshExpect(remoteCommand) {
@@ -99,6 +136,7 @@ function buildRemoteDeployCommand() {
     '  fi',
     `  GIT_SSH_COMMAND='${remoteGitSsh}' git clone "${REMOTE_REPO}" .`,
     'fi',
+    buildRemoteDatabaseConfigCommand(),
   ].join('\n');
 }
 
