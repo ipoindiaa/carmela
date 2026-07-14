@@ -296,12 +296,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 function addPartnerRow() {
     const container = document.getElementById('partner-funding');
     const row = container.querySelector('.partner-row').cloneNode(true);
+    row.querySelectorAll('.custom-select').forEach((wrapper) => {
+        const select = wrapper.querySelector('select');
+        if (!select) return;
+        select.classList.remove('custom-select-native');
+        select.removeAttribute('data-select-enhanced');
+        select.removeAttribute('tabindex');
+        wrapper.replaceWith(select);
+    });
     row.querySelectorAll('input').forEach(i => i.value = '');
     row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
     if (typeof initCurrencyInputs === 'function') {
         initCurrencyInputs(row);
     }
     container.appendChild(row);
+    if (typeof enhanceSelects === 'function') {
+        enhanceSelects(row);
+    }
 }
 </script>
 

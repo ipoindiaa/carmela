@@ -28,15 +28,44 @@ function displayAuditValue($value) {
     if (is_array($value)) return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     return (string) $value;
 }
+
+function renderAuditLines($lines) {
+    if (!is_array($lines) || empty($lines)) return '<span class="text-muted">-</span>';
+    global $db, $businessId;
+    static $accountLabels = [];
+    $html = '<div class="audit-line-list">';
+    foreach ($lines as $line) {
+        if (!is_array($line)) continue;
+        $accountId = trim((string) ($line['account_id'] ?? ''));
+        $account = trim((string) ($line['account'] ?? ''));
+        if ($account === '' && $accountId !== '') {
+            if (!array_key_exists($accountId, $accountLabels)) {
+                $row = $db->fetch(
+                    "SELECT code, name FROM accounts WHERE id = ? AND business_id = ?",
+                    [$accountId, $businessId]
+                );
+                $accountLabels[$accountId] = $row ? trim($row['code'] . ' - ' . $row['name']) : $accountId;
+            }
+            $account = $accountLabels[$accountId];
+        }
+        if ($account === '') $account = 'Account';
+        $type = strtoupper((string) ($line['type'] ?? $line['entry_type'] ?? ''));
+        $amount = floatval($line['amount'] ?? 0);
+        $note = trim((string) ($line['narration'] ?? ''));
+        $html .= '<div class="audit-line-item">';
+        $html .= '<span><strong>' . clean($account) . '</strong>' . ($note !== '' ? '<small>' . clean($note) . '</small>' : '') . '</span>';
+        $html .= '<b class="' . ($type === 'DR' ? 'debit-amount' : 'credit-amount') . '">' . clean($type) . ' ' . clean(formatAmount($amount)) . '</b>';
+        $html .= '</div>';
+    }
+    return $html . '</div>';
+}
 ?>
 
 <div class="page-header">
-    <div>
-        <h1><i class="ri-history-line"></i> <?= clean($entityLabel) ?> Change History</h1>
-        <div class="text-muted">Record ID: <?= clean($entityId) ?></div>
-    </div>
+    <h1><i class="ri-history-line"></i> <?= clean($entityLabel) ?> Change History</h1>
     <button type="button" class="btn btn-outline" onclick="history.back()"><i class="ri-arrow-left-line"></i> Back</button>
 </div>
+<div class="history-record-context text-muted">Record ID: <?= clean($entityId) ?></div>
 
 <?php if (empty($history)): ?>
     <div class="empty-state">No recorded changes for this record yet.</div>
@@ -73,7 +102,16 @@ function displayAuditValue($value) {
                             <thead><tr><th>Field</th><th>Old Value</th><th>New Value</th></tr></thead>
                             <tbody>
                             <?php foreach ($changes as $field => $change): ?>
-                                <tr><td class="text-bold"><?= clean(ucwords(str_replace('_', ' ', $field))) ?></td><td><?= clean(displayAuditValue($change['old'] ?? null)) ?></td><td><?= clean(displayAuditValue($change['new'] ?? null)) ?></td></tr>
+                                <tr>
+                                    <td class="text-bold"><?= clean(ucwords(str_replace('_', ' ', $field))) ?></td>
+                                    <?php if ($field === 'lines'): ?>
+                                        <td><?= renderAuditLines($change['old'] ?? []) ?></td>
+                                        <td><?= renderAuditLines($change['new'] ?? []) ?></td>
+                                    <?php else: ?>
+                                        <td><?= clean(displayAuditValue($change['old'] ?? null)) ?></td>
+                                        <td><?= clean(displayAuditValue($change['new'] ?? null)) ?></td>
+                                    <?php endif; ?>
+                                </tr>
                             <?php endforeach; ?>
                             </tbody>
                         </table>

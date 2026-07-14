@@ -210,7 +210,7 @@ function clean($input) {
     if (is_array($input)) {
         return array_map('clean', $input);
     }
-    return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars(trim((string) $input), ENT_QUOTES, 'UTF-8');
 }
 
 /**

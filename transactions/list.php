@@ -79,6 +79,9 @@ function renderTransactionRows($entries) {
             <td class="text-muted"><?= clean($entry['created_by_name']) ?></td>
             <td class="text-center">
                 <a href="view.php?id=<?= $entry['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a>
+                <?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && Auth::canAccessTransactionEntry($entry['id'], Auth::user('business_id'), 'write')): ?>
+                    <a href="edit.php?id=<?= $entry['id'] ?>" class="btn btn-sm btn-outline" title="Edit entry"><i class="ri-edit-line"></i></a>
+                <?php endif; ?>
                 <?php if ($entry['status'] === 'POSTED' && Auth::canAccessTransactionEntry($entry['id'], Auth::user('business_id'), 'delete')): ?>
                     <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-sm btn-outline" title="Reverse" data-confirm="Are you sure you want to reverse this entry?"><i class="ri-arrow-go-back-line"></i></a>
                 <?php endif; ?>

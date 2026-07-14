@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initRegistrationInputs();
     initTableShells();
     initScrollMemory();
-    enhanceSearchableSelects();
+    enhanceSelects();
     initLazyTables();
     initSmartBackLinks();
     initBreadcrumbs();
@@ -474,50 +474,271 @@ function shouldUseHistoryBack() {
     }
 }
 
-function enhanceSearchableSelects(scope = document) {
-    scope.querySelectorAll('select.searchable-select:not([data-search-enhanced])').forEach(select => {
-        select.dataset.searchEnhanced = '1';
+const customSelectInstances = new WeakMap();
+let activeCustomSelect = null;
+
+function enhanceSelects(scope = document) {
+    const candidates = [];
+    if (scope instanceof Element && scope.matches('select')) candidates.push(scope);
+    candidates.push(...scope.querySelectorAll('select'));
+
+    candidates.forEach((select) => {
+        if (
+            select.dataset.selectEnhanced === '1' ||
+            select.matches('[multiple], [data-native-select], .native-transaction-select') ||
+            Number(select.getAttribute('size') || 0) > 1
+        ) return;
+
         const wrapper = document.createElement('div');
-        wrapper.className = 'searchable-select-wrap';
+        wrapper.className = 'custom-select';
         select.parentNode.insertBefore(wrapper, select);
         wrapper.appendChild(select);
+        select.classList.add('custom-select-native');
+        select.dataset.selectEnhanced = '1';
+        select.tabIndex = -1;
 
-        const search = document.createElement('input');
-        search.type = 'search';
-        search.className = 'select-search-input';
-        search.placeholder = select.dataset.searchPlaceholder || 'Search...';
-        search.setAttribute('aria-label', 'Search options');
-        wrapper.insertBefore(search, select);
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'custom-select-trigger';
+        trigger.innerHTML = '<span class="custom-select-value"></span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>';
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        wrapper.appendChild(trigger);
 
-        const allOptions = Array.from(select.querySelectorAll('option')).map(option => ({
-            option,
-            parent: option.parentElement,
-            text: option.textContent.toLowerCase(),
-        }));
-        const groups = Array.from(select.querySelectorAll('optgroup'));
+        const popover = document.createElement('div');
+        popover.className = 'custom-select-popover';
+        popover.hidden = true;
+        document.body.appendChild(popover);
 
-        search.addEventListener('input', () => {
-            const query = search.value.trim().toLowerCase();
-            allOptions.forEach(({ option, text }) => {
-                option.hidden = !!query && !text.includes(query);
-            });
-            groups.forEach(group => {
-                const visibleOptions = Array.from(group.querySelectorAll('option')).some(option => !option.hidden);
-                group.hidden = !!query && !visibleOptions;
-            });
+        const instance = { select, wrapper, trigger, popover, search: null, list: null, observer: null };
+        customSelectInstances.set(select, instance);
+
+        trigger.addEventListener('click', () => {
+            if (select.disabled) return;
+            activeCustomSelect === instance ? closeCustomSelect(instance) : openCustomSelect(instance);
         });
-
-        select.addEventListener('change', () => {
-            search.value = '';
-            search.dispatchEvent(new Event('input'));
+        trigger.addEventListener('keydown', (event) => {
+            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+                event.preventDefault();
+                openCustomSelect(instance);
+                focusCustomSelectOption(instance, event.key === 'ArrowUp' ? -1 : 1);
+            }
         });
+        select.addEventListener('change', () => refreshCustomSelect(select));
+        select.addEventListener('invalid', () => trigger.focus());
+
+        instance.observer = new MutationObserver(() => refreshCustomSelect(select));
+        instance.observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'label'] });
+        refreshCustomSelect(select);
     });
 }
-window.enhanceSearchableSelects = enhanceSearchableSelects;
+
+function refreshCustomSelect(select) {
+    const instance = customSelectInstances.get(select);
+    if (!instance) return;
+    const selected = select.options[select.selectedIndex];
+    const value = instance.trigger.querySelector('.custom-select-value');
+    value.textContent = selected ? selected.textContent.trim() : (select.dataset.placeholder || 'Select');
+    instance.trigger.disabled = select.disabled;
+    instance.trigger.classList.toggle('is-placeholder', !selected || selected.value === '');
+    instance.wrapper.classList.toggle('is-disabled', select.disabled);
+    if (activeCustomSelect === instance) buildCustomSelectMenu(instance);
+}
+
+function openCustomSelect(instance) {
+    if (activeCustomSelect && activeCustomSelect !== instance) closeCustomSelect(activeCustomSelect);
+    activeCustomSelect = instance;
+    buildCustomSelectMenu(instance);
+    instance.popover.hidden = false;
+    instance.wrapper.classList.add('is-open');
+    instance.trigger.setAttribute('aria-expanded', 'true');
+    positionCustomSelect(instance);
+    requestAnimationFrame(() => {
+        positionCustomSelect(instance);
+        if (instance.search) instance.search.focus();
+    });
+}
+
+function closeCustomSelect(instance, restoreFocus = false) {
+    if (!instance) return;
+    instance.popover.hidden = true;
+    instance.wrapper.classList.remove('is-open');
+    instance.trigger.setAttribute('aria-expanded', 'false');
+    if (activeCustomSelect === instance) activeCustomSelect = null;
+    if (restoreFocus) instance.trigger.focus();
+}
+
+function buildCustomSelectMenu(instance) {
+    const { select, popover } = instance;
+    popover.replaceChildren();
+    const available = Array.from(select.options).filter((option) => !option.hidden);
+    const searchableCount = available.filter((option) => option.value !== '' && !option.disabled).length;
+    const searchable = select.dataset.searchable === 'true' || (select.dataset.searchable !== 'false' && searchableCount >= 8);
+
+    instance.search = null;
+    if (searchable) {
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'custom-select-search-wrap';
+        searchWrap.innerHTML = '<i class="ri-search-line" aria-hidden="true"></i>';
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'custom-select-search';
+        search.placeholder = select.dataset.searchPlaceholder || 'Search options';
+        search.setAttribute('aria-label', 'Search options');
+        searchWrap.appendChild(search);
+        popover.appendChild(searchWrap);
+        instance.search = search;
+        search.addEventListener('input', () => filterCustomSelect(instance, search.value));
+        search.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                focusCustomSelectOption(instance, 1);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeCustomSelect(instance, true);
+            }
+        });
+    }
+
+    const list = document.createElement('div');
+    list.className = 'custom-select-list';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', select.getAttribute('aria-label') || select.name || 'Options');
+    instance.list = list;
+
+    let lastGroup = null;
+    available.forEach((option) => {
+        const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement.label : '';
+        if (group && group !== lastGroup) {
+            const heading = document.createElement('div');
+            heading.className = 'custom-select-group';
+            heading.textContent = group;
+            list.appendChild(heading);
+            lastGroup = group;
+        }
+
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'custom-select-option';
+        item.dataset.value = option.value;
+        item.dataset.searchText = option.textContent.toLowerCase();
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', option.selected ? 'true' : 'false');
+        item.disabled = option.disabled;
+        item.innerHTML = `<span>${escapeSelectText(option.textContent.trim())}</span>${option.selected ? '<i class="ri-check-line" aria-hidden="true"></i>' : ''}`;
+        if (option.selected) item.classList.add('is-selected');
+        item.addEventListener('click', () => {
+            if (option.disabled) return;
+            select.value = option.value;
+            select.dispatchEvent(new Event('input', { bubbles: true }));
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            closeCustomSelect(instance, true);
+        });
+        item.addEventListener('keydown', (event) => handleCustomSelectOptionKeydown(event, instance));
+        list.appendChild(item);
+    });
+    popover.appendChild(list);
+}
+
+function filterCustomSelect(instance, query) {
+    const needle = query.trim().toLowerCase();
+    let visibleCount = 0;
+    instance.list.querySelectorAll('.custom-select-option').forEach((item) => {
+        const visible = !needle || item.dataset.searchText.includes(needle);
+        item.hidden = !visible;
+        if (visible) visibleCount += 1;
+    });
+    instance.list.querySelectorAll('.custom-select-group').forEach((group) => {
+        let next = group.nextElementSibling;
+        let visible = false;
+        while (next && !next.classList.contains('custom-select-group')) {
+            if (next.classList.contains('custom-select-option') && !next.hidden) visible = true;
+            next = next.nextElementSibling;
+        }
+        group.hidden = !visible;
+    });
+    let empty = instance.list.querySelector('.custom-select-empty');
+    if (!visibleCount && !empty) {
+        empty = document.createElement('div');
+        empty.className = 'custom-select-empty';
+        empty.textContent = 'No matching options';
+        instance.list.appendChild(empty);
+    } else if (visibleCount && empty) {
+        empty.remove();
+    }
+}
+
+function handleCustomSelectOptionKeydown(event, instance) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCustomSelect(instance, true);
+        return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const options = visibleCustomSelectOptions(instance);
+    let index = options.indexOf(document.activeElement);
+    if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = options.length - 1;
+    else index = (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[index]?.focus();
+}
+
+function visibleCustomSelectOptions(instance) {
+    return Array.from(instance.list?.querySelectorAll('.custom-select-option:not([hidden]):not(:disabled)') || []);
+}
+
+function focusCustomSelectOption(instance, direction = 1) {
+    const options = visibleCustomSelectOptions(instance);
+    const selectedIndex = options.findIndex((item) => item.classList.contains('is-selected'));
+    const index = selectedIndex >= 0 ? selectedIndex : (direction < 0 ? options.length - 1 : 0);
+    options[index]?.focus();
+}
+
+function positionCustomSelect(instance) {
+    if (instance.popover.hidden) return;
+    const rect = instance.trigger.getBoundingClientRect();
+    const gutter = 8;
+    const width = Math.min(Math.max(rect.width, 220), window.innerWidth - gutter * 2);
+    const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - width - gutter));
+    const roomBelow = window.innerHeight - rect.bottom - gutter;
+    const roomAbove = rect.top - gutter;
+    const openAbove = roomBelow < 220 && roomAbove > roomBelow;
+    instance.popover.style.width = `${width}px`;
+    instance.popover.style.left = `${left}px`;
+    instance.popover.style.maxHeight = `${Math.max(160, Math.min(360, openAbove ? roomAbove : roomBelow))}px`;
+    instance.popover.style.top = openAbove ? 'auto' : `${rect.bottom + 6}px`;
+    instance.popover.style.bottom = openAbove ? `${window.innerHeight - rect.top + 6}px` : 'auto';
+}
+
+function escapeSelectText(value) {
+    const span = document.createElement('span');
+    span.textContent = value;
+    return span.innerHTML;
+}
+
+document.addEventListener('pointerdown', (event) => {
+    if (!activeCustomSelect) return;
+    if (activeCustomSelect.wrapper.contains(event.target) || activeCustomSelect.popover.contains(event.target)) return;
+    closeCustomSelect(activeCustomSelect);
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && activeCustomSelect) closeCustomSelect(activeCustomSelect, true);
+});
+window.addEventListener('resize', () => activeCustomSelect && positionCustomSelect(activeCustomSelect));
+window.addEventListener('scroll', () => activeCustomSelect && positionCustomSelect(activeCustomSelect), true);
+
+window.enhanceSelects = enhanceSelects;
+window.enhanceSearchableSelects = enhanceSelects;
+window.refreshCustomSelect = refreshCustomSelect;
 
 // Modal helpers
 function openModal(id) {
-    document.getElementById(id).classList.add('active');
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add('active');
+    enhanceSelects(modal);
+    modal.querySelectorAll('select').forEach((select) => refreshCustomSelect(select));
 }
 
 function closeModal(id) {

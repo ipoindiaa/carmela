@@ -96,6 +96,10 @@ CREATE TABLE `journal_entries` (
     `employee_id` CHAR(36) DEFAULT NULL,
     `party_id` CHAR(36) DEFAULT NULL,
     `journal_voucher_id` CHAR(36) DEFAULT NULL,
+    `corrected_from_id` CHAR(36) DEFAULT NULL,
+    `corrected_by_id` CHAR(36) DEFAULT NULL,
+    `correction_reason` VARCHAR(500) DEFAULT NULL,
+    `version_no` INT NOT NULL DEFAULT 1,
     `created_by` CHAR(36) NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `financial_year` INT NOT NULL,
@@ -104,6 +108,7 @@ CREATE TABLE `journal_entries` (
     KEY `idx_date` (`entry_date`),
     KEY `idx_type` (`transaction_type`),
     KEY `idx_status` (`status`),
+    KEY `idx_correction_from` (`corrected_from_id`),
     CONSTRAINT `fk_je_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
     CONSTRAINT `fk_je_created_by` FOREIGN KEY (`created_by`) REFERENCES `users`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

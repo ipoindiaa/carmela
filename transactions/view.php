@@ -16,13 +16,20 @@ if (!Auth::canAccessTransactionEntry($id, $businessId, 'read')) {
     redirect('list.php');
 }
 $canReverseEntry = Auth::canAccessTransactionEntry($id, $businessId, 'delete');
+$canEditEntry = Auth::canAccessTransactionEntry($id, $businessId, 'write');
 
 $entry = $db->fetch(
     "SELECT je.*, u.full_name as created_by_name, c.registration_no as car_reg, p.name as partner_name, e.name as employee_name,
-            jv.reference_no as voucher_reference_no
+            jv.reference_no as voucher_reference_no, previous.reference_no AS corrected_from_reference,
+            replacement.reference_no AS corrected_by_reference, reversal.reference_no AS reversal_reference,
+            original.reference_no AS original_reference
      FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by
      LEFT JOIN cars c ON c.id = je.car_id LEFT JOIN partners p ON p.id = je.partner_id LEFT JOIN employees e ON e.id = je.employee_id
      LEFT JOIN journal_vouchers jv ON jv.id = je.journal_voucher_id
+     LEFT JOIN journal_entries previous ON previous.id = je.corrected_from_id
+     LEFT JOIN journal_entries replacement ON replacement.id = je.corrected_by_id
+     LEFT JOIN journal_entries reversal ON reversal.id = je.reversed_by
+     LEFT JOIN journal_entries original ON original.id = je.original_entry_id
      WHERE je.id = ? AND je.business_id = ?", [$id, $businessId]);
 
 if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
@@ -52,6 +59,10 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 <div class="page-header">
     <h1><i class="ri-file-list-3-line"></i> <?= $entry['reference_no'] ?></h1>
     <div style="display: flex; gap: 10px;">
+        <?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && $canEditEntry): ?>
+            <a href="edit.php?id=<?= $entry['id'] ?>" class="btn btn-primary btn-sm"><i class="ri-edit-line"></i> Edit</a>
+        <?php endif; ?>
+        <a href="../reports/change_history.php?entity_type=journal_entry&amp;entity_id=<?= urlencode($entry['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if ($entry['status'] === 'POSTED' && $canReverseEntry): ?>
             <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm" data-confirm="Reverse this entry?"><i class="ri-arrow-go-back-line"></i> Reverse</a>
         <?php endif; ?>
@@ -59,6 +70,22 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
+
+<?php if (!empty($entry['corrected_from_id']) || !empty($entry['corrected_by_id']) || !empty($entry['original_entry_id'])): ?>
+<div class="correction-chain-banner">
+    <i class="ri-git-commit-line"></i>
+    <div>
+        <?php if (!empty($entry['corrected_from_id'])): ?>
+            <strong>Corrected entry</strong><span>Replaces <a href="view.php?id=<?= urlencode($entry['corrected_from_id']) ?>"><?= clean($entry['corrected_from_reference'] ?: 'original entry') ?></a>. Version <?= intval($entry['version_no'] ?? 2) ?>.</span>
+        <?php elseif (!empty($entry['corrected_by_id'])): ?>
+            <strong>This version was corrected</strong><span>Current entry: <a href="view.php?id=<?= urlencode($entry['corrected_by_id']) ?>"><?= clean($entry['corrected_by_reference'] ?: 'view replacement') ?></a>.</span>
+        <?php else: ?>
+            <strong>Reversal entry</strong><span>Reverses <a href="view.php?id=<?= urlencode($entry['original_entry_id']) ?>"><?= clean($entry['original_reference'] ?: 'original entry') ?></a>.</span>
+        <?php endif; ?>
+        <?php if (!empty($entry['correction_reason'])): ?><span>Reason: <?= clean($entry['correction_reason']) ?></span><?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if ($voucherDetails): ?>
 <div class="card" style="margin-bottom:24px;">

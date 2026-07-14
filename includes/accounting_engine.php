@@ -11,6 +11,7 @@ class AccountingEngine {
     private $db;
     private $businessId;
     private $userId;
+    private $writablePrimaryAccountIds = null;
     private static $advancedSchemaEnsured = false;
 
     public function __construct($businessId, $userId) {
@@ -288,6 +289,19 @@ class AccountingEngine {
             if (!$this->columnExists('journal_entries', 'journal_voucher_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `journal_voucher_id` CHAR(36) DEFAULT NULL AFTER `party_id`");
             }
+            if (!$this->columnExists('journal_entries', 'corrected_from_id')) {
+                $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `corrected_from_id` CHAR(36) DEFAULT NULL AFTER `journal_voucher_id`");
+            }
+            if (!$this->columnExists('journal_entries', 'corrected_by_id')) {
+                $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `corrected_by_id` CHAR(36) DEFAULT NULL AFTER `corrected_from_id`");
+            }
+            if (!$this->columnExists('journal_entries', 'correction_reason')) {
+                $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `correction_reason` VARCHAR(500) DEFAULT NULL AFTER `corrected_by_id`");
+            }
+            if (!$this->columnExists('journal_entries', 'version_no')) {
+                $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `version_no` INT NOT NULL DEFAULT 1 AFTER `correction_reason`");
+            }
+            $this->addIndexIfMissing('journal_entries', 'idx_correction_from', '`corrected_from_id`');
             if (!$this->columnExists('cars', 'sale_gst_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
             }
@@ -1755,6 +1769,317 @@ class AccountingEngine {
     // ========================================
     // REVERSAL
     // ========================================
+    public function entrySupportsLineCorrection($entry) {
+        foreach (['car_id', 'partner_id', 'employee_id', 'party_id', 'journal_voucher_id'] as $field) {
+            if (!empty($entry[$field])) {
+                return false;
+            }
+        }
+
+        return !in_array($entry['transaction_type'] ?? '', [
+            'OPENING_BALANCE',
+            'CAR_PURCHASE',
+            'CAR_SALE',
+            'CAR_EXPENSE',
+            'RTO_EXPENSE',
+            'RTO_RECOVERY',
+            'PARTNER_INVEST',
+            'PARTNER_WITHDRAW',
+            'PARTNER_SETTLEMENT',
+            'PROFIT_DISTRIBUTION',
+            'SALARY_PAYMENT',
+            'EMPLOYEE_ADVANCE',
+            'EMPLOYEE_ADVANCE_WRITEOFF',
+            'BAD_DEBT',
+        ], true);
+    }
+
+    public function correctEntry($entryId, $date, $narration, $submittedLines, $reason) {
+        $entry = $this->db->fetch(
+            "SELECT * FROM journal_entries WHERE id = ? AND business_id = ?",
+            [$entryId, $this->businessId]
+        );
+        if (!$entry) throw new Exception('Entry not found.');
+        if ($entry['status'] !== 'POSTED' || !empty($entry['is_reversal'])) {
+            throw new Exception('Only a posted original entry can be edited.');
+        }
+
+        $reason = trim((string) $reason);
+        if (mb_strlen($reason) < 5) {
+            throw new Exception('Enter a clear correction reason of at least 5 characters.');
+        }
+        $date = trim((string) $date);
+        $narration = trim((string) $narration);
+        if ($narration === '') {
+            throw new Exception('Narration is required.');
+        }
+        $this->validateDateNotLocked($entry['entry_date']);
+        $this->validateDateNotLocked($date);
+
+        $oldRows = $this->db->fetchAll(
+            "SELECT jl.*, a.name AS account_name, a.code AS account_code, a.entity_type AS account_entity_type
+             FROM journal_lines jl
+             JOIN accounts a ON a.id = jl.account_id
+             WHERE jl.journal_entry_id = ?
+             ORDER BY jl.id",
+            [$entryId]
+        );
+        if (count($oldRows) < 2) {
+            throw new Exception('This entry does not contain a complete journal.');
+        }
+        foreach ($oldRows as $line) {
+            $this->assertCorrectionAccountAccess($line['account_id'], $line['account_entity_type']);
+        }
+
+        $oldLines = array_map(function ($line) {
+            return [
+                'account_id' => $line['account_id'],
+                'account' => trim(($line['account_code'] ?? '') . ' - ' . ($line['account_name'] ?? '')),
+                'type' => $line['entry_type'],
+                'amount' => round(floatval($line['amount']), 2),
+                'narration' => trim((string) ($line['narration'] ?? '')),
+            ];
+        }, $oldRows);
+
+        $canEditLines = $this->entrySupportsLineCorrection($entry);
+        $newLines = $canEditLines
+            ? $this->normalizeCorrectionLines((array) $submittedLines)
+            : array_map(function ($line) {
+                return [
+                    'account_id' => $line['account_id'],
+                    'type' => $line['entry_type'],
+                    'amount' => round(floatval($line['amount']), 2),
+                    'narration' => trim((string) ($line['narration'] ?? '')),
+                ];
+            }, $oldRows);
+
+        $newLinesForAudit = $this->decorateCorrectionLines($newLines);
+        $oldSnapshot = [
+            'entry_date' => $entry['entry_date'],
+            'narration' => $entry['narration'],
+            'lines' => $oldLines,
+        ];
+        $newSnapshot = [
+            'entry_date' => $date,
+            'narration' => $narration,
+            'lines' => $newLinesForAudit,
+            'correction_reason' => $reason,
+        ];
+        if ($this->correctionSnapshotsMatch($oldSnapshot, $newSnapshot)) {
+            throw new Exception('Change the date, narration, or journal lines before saving.');
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $reversalId = $this->createReversalEntry(
+                $entry,
+                $oldRows,
+                'Correction: ' . $reason,
+                $entry['entry_date']
+            );
+            $replacementId = Database::uuid();
+            $referenceNo = getNextRefNo($this->db, $this->businessId, $date, 'COR');
+            $replacement = [
+                'id' => $replacementId,
+                'business_id' => $this->businessId,
+                'entry_date' => $date,
+                'reference_no' => $referenceNo,
+                'narration' => $narration,
+                'transaction_type' => $entry['transaction_type'],
+                'status' => 'POSTED',
+                'car_id' => $entry['car_id'] ?: null,
+                'partner_id' => $entry['partner_id'] ?: null,
+                'employee_id' => $entry['employee_id'] ?: null,
+                'party_id' => $entry['party_id'] ?: null,
+                'journal_voucher_id' => $entry['journal_voucher_id'] ?: null,
+                'corrected_from_id' => $entryId,
+                'correction_reason' => $reason,
+                'version_no' => max(1, intval($entry['version_no'] ?? 1)) + 1,
+                'created_by' => $this->userId,
+                'financial_year' => getCurrentFY($date),
+            ];
+            $this->db->insert('journal_entries', $replacement);
+
+            foreach ($newLines as $line) {
+                $this->db->insert('journal_lines', [
+                    'id' => Database::uuid(),
+                    'journal_entry_id' => $replacementId,
+                    'account_id' => $line['account_id'],
+                    'amount' => $line['amount'],
+                    'entry_type' => $line['type'],
+                    'narration' => $line['narration'] ?: null,
+                ]);
+                $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
+            }
+
+            $this->relinkCorrectedEntry($entry, $replacementId, $date, $narration);
+
+            $this->db->query(
+                "UPDATE journal_entries SET corrected_by_id = ?, correction_reason = ? WHERE id = ? AND business_id = ?",
+                [$replacementId, $reason, $entryId, $this->businessId]
+            );
+            $newSnapshot['corrected_entry_id'] = $replacementId;
+            $newSnapshot['reversal_entry_id'] = $reversalId;
+            Auth::auditUpdate(
+                'journal_entry',
+                $entryId,
+                $oldSnapshot,
+                $newSnapshot,
+                "Entry {$entry['reference_no']} corrected as {$referenceNo}: {$reason}",
+                'transactions'
+            );
+            Auth::auditCreate(
+                'journal_entry',
+                $replacementId,
+                array_merge($replacement, ['lines' => $newLinesForAudit]),
+                "Corrected entry created from {$entry['reference_no']}",
+                'transactions'
+            );
+
+            $this->db->commit();
+            return $replacementId;
+        } catch (Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    private function normalizeCorrectionLines($lines) {
+        $normalized = [];
+        $totalDr = 0.0;
+        $totalCr = 0.0;
+        foreach ($lines as $line) {
+            $accountId = trim((string) ($line['account_id'] ?? ''));
+            $type = strtoupper(trim((string) ($line['type'] ?? '')));
+            $amount = round(floatval($line['amount'] ?? 0), 2);
+            if ($accountId === '' && $amount <= 0) continue;
+            if (!in_array($type, ['DR', 'CR'], true)) throw new Exception('Each journal line needs a debit or credit type.');
+            if ($amount <= 0) throw new Exception('Each journal line amount must be greater than zero.');
+            $account = $this->db->fetch(
+                "SELECT id, entity_type FROM accounts WHERE id = ? AND business_id = ? AND is_active = 1",
+                [$accountId, $this->businessId]
+            );
+            if (!$account) throw new Exception('Select a valid active account for every journal line.');
+            $this->assertCorrectionAccountAccess($account['id'], $account['entity_type']);
+            $normalized[] = [
+                'account_id' => $accountId,
+                'type' => $type,
+                'amount' => $amount,
+                'narration' => trim((string) ($line['narration'] ?? '')),
+            ];
+            if ($type === 'DR') $totalDr += $amount;
+            else $totalCr += $amount;
+        }
+        if (count($normalized) < 2) throw new Exception('At least two journal lines are required.');
+        if (abs($totalDr - $totalCr) > 0.01) {
+            throw new Exception('The corrected entry must balance. Debit and credit totals are different.');
+        }
+        return $normalized;
+    }
+
+    private function assertCorrectionAccountAccess($accountId, $entityType) {
+        if (!class_exists('Auth') || !Auth::isLoggedIn() || Auth::isAdmin()) {
+            return;
+        }
+        if (!in_array($entityType, array_values(PRIMARY_BOOK_ACCOUNT_TYPES), true)) {
+            return;
+        }
+        if ($this->writablePrimaryAccountIds === null) {
+            $this->writablePrimaryAccountIds = Auth::getAccessiblePrimaryAccountIds($this->businessId, 'write');
+        }
+        if (!in_array($accountId, $this->writablePrimaryAccountIds, true)) {
+            throw new Exception('You do not have write access to every cash or bank book used by this entry.');
+        }
+    }
+
+    private function relinkCorrectedEntry($entry, $replacementId, $date, $narration) {
+        $entryId = $entry['id'];
+        $this->db->query(
+            "UPDATE accounts SET opening_entry_id = ?, opening_balance_date = ?
+             WHERE business_id = ? AND opening_entry_id = ?",
+            [$replacementId, $date, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE car_partner_contributions SET journal_entry_id = ?, contribution_date = ? WHERE journal_entry_id = ?",
+            [$replacementId, $date, $entryId]
+        );
+        $this->db->query(
+            "UPDATE salary_records SET journal_entry_id = ?, processed_date = ?
+             WHERE business_id = ? AND journal_entry_id = ?",
+            [$replacementId, $date, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE partner_profit_settlements SET journal_entry_id = ?, settlement_date = ?
+             WHERE business_id = ? AND journal_entry_id = ?",
+            [$replacementId, $date, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE partner_settlement_applications SET journal_entry_id = ?, applied_date = ?
+             WHERE business_id = ? AND journal_entry_id = ?",
+            [$replacementId, $date, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE rto_recoveries SET journal_entry_id = ?, received_date = ?, narration = ?
+             WHERE business_id = ? AND journal_entry_id = ?",
+            [$replacementId, $date, $narration, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE journal_vouchers SET posted_entry_id = ?, voucher_date = ?, narration = ?
+             WHERE business_id = ? AND posted_entry_id = ?",
+            [$replacementId, $date, $narration, $this->businessId, $entryId]
+        );
+        $this->db->query(
+            "UPDATE attachments SET entity_id = ?
+             WHERE business_id = ? AND entity_type = 'JOURNAL_ENTRY' AND entity_id = ?",
+            [$replacementId, $this->businessId, $entryId]
+        );
+
+        if (!empty($entry['car_id']) && $entry['transaction_type'] === 'CAR_PURCHASE') {
+            $this->db->query(
+                "UPDATE cars SET purchase_date = ? WHERE id = ? AND business_id = ?",
+                [$date, $entry['car_id'], $this->businessId]
+            );
+        }
+        if (!empty($entry['car_id']) && $entry['transaction_type'] === 'CAR_SALE') {
+            $this->db->query(
+                "UPDATE cars SET sold_date = ? WHERE id = ? AND business_id = ?",
+                [$date, $entry['car_id'], $this->businessId]
+            );
+        }
+    }
+
+    private function decorateCorrectionLines($lines) {
+        $decorated = [];
+        foreach ($lines as $line) {
+            $account = $this->db->fetch(
+                "SELECT code, name FROM accounts WHERE id = ? AND business_id = ?",
+                [$line['account_id'], $this->businessId]
+            );
+            $decorated[] = [
+                'account_id' => $line['account_id'],
+                'account' => trim(($account['code'] ?? '') . ' - ' . ($account['name'] ?? '')),
+                'type' => $line['type'],
+                'amount' => round(floatval($line['amount']), 2),
+                'narration' => trim((string) ($line['narration'] ?? '')),
+            ];
+        }
+        return $decorated;
+    }
+
+    private function correctionSnapshotsMatch($old, $new) {
+        $oldComparable = [
+            'entry_date' => (string) ($old['entry_date'] ?? ''),
+            'narration' => trim((string) ($old['narration'] ?? '')),
+            'lines' => $old['lines'] ?? [],
+        ];
+        $newComparable = [
+            'entry_date' => (string) ($new['entry_date'] ?? ''),
+            'narration' => trim((string) ($new['narration'] ?? '')),
+            'lines' => $new['lines'] ?? [],
+        ];
+        return json_encode($oldComparable) === json_encode($newComparable);
+    }
+
     public function reverseEntry($entryId, $reason, $reversalDate = null) {
         $entry = $this->db->fetch("SELECT * FROM journal_entries WHERE id = ? AND business_id = ?", [$entryId, $this->businessId]);
         if (!$entry) throw new Exception("Entry not found");
