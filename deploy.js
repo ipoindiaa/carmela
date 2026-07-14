@@ -27,6 +27,7 @@ const REMOTE_PATH =
   '/home/u892049228/domains/tirangacarworld.com/public_html';
 const REMOTE_REPO = process.env.DEPLOY_REPO || 'git@github.com:ipoindiaa/carmela.git';
 const REMOTE_GITHUB_KEY = process.env.DEPLOY_GITHUB_KEY || '~/.ssh/github_carmela_deploy';
+const APP_ENV = (process.env.DEPLOY_APP_ENV || 'production').trim().toLowerCase();
 const LOCAL_GIT_SSH_COMMAND =
   process.env.LOCAL_GIT_SSH_COMMAND ||
   'ssh -F /dev/null -i ~/.ssh/carmela_github_push -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new';
@@ -84,12 +85,35 @@ return [
 ];
 `;
 
+  const databaseConfigName = APP_ENV === 'testing'
+    ? 'database.testing.local.php'
+    : 'database.local.php';
+
   return [
     'mkdir -p config',
-    "cat > config/database.local.php <<'PHP'",
+    `cat > config/${databaseConfigName} <<'PHP'`,
     config,
     'PHP',
-    'chmod 600 config/database.local.php',
+    `chmod 600 config/${databaseConfigName}`,
+  ].join('\n');
+}
+
+function buildRemoteEnvironmentConfigCommand() {
+  if (APP_ENV === 'production') {
+    return 'rm -f config/environment.local.php';
+  }
+  if (APP_ENV !== 'testing') {
+    throw new Error(`Unsupported DEPLOY_APP_ENV: ${APP_ENV}`);
+  }
+
+  return [
+    'mkdir -p config',
+    "cat > config/environment.local.php <<'PHP'",
+    '<?php',
+    '',
+    "return ['environment' => 'testing'];",
+    'PHP',
+    'chmod 600 config/environment.local.php',
   ].join('\n');
 }
 
@@ -155,6 +179,7 @@ function buildRemoteDeployCommand() {
     '  fi',
     `  GIT_SSH_COMMAND='${remoteGitSsh}' git clone "${REMOTE_REPO}" .`,
     'fi',
+    buildRemoteEnvironmentConfigCommand(),
     buildRemoteDatabaseConfigCommand(),
   ].join('\n');
 }

@@ -1,6 +1,6 @@
 <?php
 // Application Configuration
-define('APP_ENV', strtolower(trim((string) (getenv('APP_ENV') ?: 'production'))));
+require_once __DIR__ . '/environment.php';
 define('APP_IS_TESTING', APP_ENV === 'testing');
 define('APP_NAME', 'Tiranga Car World');
 define('APP_VERSION', '1.0');

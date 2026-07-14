@@ -5,7 +5,8 @@
 // 2. Environment-specific local config (not committed)
 // 3. Local development defaults
 
-$dbEnvironment = strtolower(trim((string) (getenv('APP_ENV') ?: 'production')));
+require_once __DIR__ . '/environment.php';
+$dbEnvironment = APP_ENV;
 $isTestingDatabase = $dbEnvironment === 'testing';
 
 $dbDefaults = [

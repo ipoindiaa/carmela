@@ -18,6 +18,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php if (APP_IS_TESTING): ?><meta name="robots" content="noindex, nofollow, noarchive"><?php endif; ?>
     <title><?= APP_IS_TESTING ? '[TEST] ' : '' ?><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
     <link rel="icon" type="image/png" href="<?= APP_URL ?>logo.png">

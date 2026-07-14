@@ -28,3 +28,16 @@ Useful commands:
 `APP_ENV=testing` includes a database-name safety guard: the application refuses to start unless the selected database name contains `test`. Testing pages also show a visible TEST badge and `[TEST]` in the browser title.
 
 The production Hostinger deployment remains configured through `config/database.local.php` and is not read by the testing environment.
+
+### Hostinger Staging
+
+The public staging site uses `test.tirangacarworld.com`, an independent Hostinger database, and the isolated document root `public_html/test`.
+
+```bash
+DEPLOY_DB_NAME='hostinger_test_database' \
+DEPLOY_DB_USER='hostinger_test_user' \
+DEPLOY_DB_PASS='test_database_password' \
+./scripts/deploy-testing-hostinger.sh
+```
+
+The staging deploy writes ignored `config/environment.local.php` and `config/database.testing.local.php` files on Hostinger. It never reads or writes the production database configuration.

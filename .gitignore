@@ -4,6 +4,7 @@ vendor/
 *.log
 config/database.local.php
 config/database.testing.local.php
+config/environment.local.php
 tmp/
 *.local.md
 uploads/attachments/*
