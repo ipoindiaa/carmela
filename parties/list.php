@@ -12,17 +12,23 @@ if ($isLazyRequest) {
 }
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+Auth::requireEntityAccess('party', 'read');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
+    Auth::requireEntityAccess('party', 'write');
     verifyCsrf();
     try {
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+        $existingParty = $db->fetch("SELECT * FROM debtors_creditors WHERE business_id = ? AND name = ? AND type = ?", [$businessId, post('name'), post('type')]);
         $partyId = $engine->getOrCreateParty(post('name'), post('type'));
+        $beforeParty = $existingParty ?: $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $businessId]);
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
         $db->query("UPDATE debtors_creditors SET phone = ?, email = ?, address = ?, pan_gstin = ? WHERE id = ?",
             [$phone, $email, post('address'), post('pan_gstin'), $partyId]);
+        $createdParty = $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $businessId]);
+        Auth::auditUpdate('party', $partyId, $beforeParty ?: [], $createdParty ?: [], 'Party contact details saved: ' . post('name'), 'parties');
         setFlash('success', 'Party added!');
         redirect('list.php');
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -58,7 +64,7 @@ function renderPartyRows($parties, $snapshots) {
             <div class="text-muted" style="font-size: 11px;"><?= clean($outstandingLabel) ?></div>
         </td>
         <td><?= $p['is_bad_debt'] ? '<span class="badge badge-red">Bad Debt</span>' : '-' ?></td>
-        <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+        <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
     </tr>
     <?php endforeach; ?>
     <?php if (empty($parties)): ?><tr><td colspan="6" class="text-center text-muted" style="padding: 40px;">No parties yet</td></tr><?php endif; ?>
@@ -127,7 +133,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> Debtors & Creditors</h1>
-    <button onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button>
+    <?php if (Auth::hasEntityAccess('party', 'write')): ?><button onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -169,7 +175,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
     <div class="modal">
         <div class="modal-header"><h3>Add Party</h3><button class="modal-close" onclick="closeModal('add-party')">×</button></div>
         <div class="modal-body">
-            <form method="POST">
+            <form method="POST" data-confirm-submit="Add this party and create its ledger account?">
                 <?= csrfField() ?><input type="hidden" name="action" value="add">
                 <div class="form-group"><label class="form-label">Name *</label><input type="text" name="name" class="form-control" required></div>
                 <div class="form-row">

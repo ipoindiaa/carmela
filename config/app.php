@@ -111,6 +111,7 @@ define('TXN_TYPES', [
     'CONTRA_TRANSFER' => 'Cash to Bank / Bank to Cash',
     'GST_PAYMENT' => 'Tax Payment',
     'GST_UTILIZATION' => 'Tax Credit Utilized',
+    'OPENING_BALANCE' => 'Opening Balance',
     'BAD_DEBT' => 'Bad Debt Write-Off',
 ]);
 

@@ -42,6 +42,7 @@ $resolveRtoCase = function () use ($db, $businessId, $userId) {
         'created_by' => $userId,
     ];
     $db->insert('rto_records', $record);
+    Auth::auditCreate('rto_record', $record['id'], $record, 'RTO record created: ' . $rtoType, 'rto');
     return $record;
 };
 
@@ -174,7 +175,7 @@ $rtoEntries = $db->fetchAll(
             <span><i class="ri-arrow-down-circle-line"></i> Receive = buyer/customer gave RTO money</span>
             <span><i class="ri-arrow-up-circle-line"></i> Expense = you paid agent / RTO office</span>
         </div>
-        <form method="POST" enctype="multipart/form-data" class="rto-entry-grid">
+        <form method="POST" enctype="multipart/form-data" class="rto-entry-grid" data-confirm-submit="Post this RTO money entry? Financial corrections require reversal.">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="save_rto_entry">
             <div class="form-group">

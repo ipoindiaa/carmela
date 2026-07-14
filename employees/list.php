@@ -4,23 +4,35 @@ $pageIcon = '<i class="ri-user-star-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+Auth::requireEntityAccess('employee', 'read');
 $search = trim((string) get('q', ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
+    Auth::requireEntityAccess('employee', 'write');
     verifyCsrf();
     try {
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $empId = Database::uuid();
         $name = trim((string) post('name'));
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
-        $advAccId = $engine->createAccount('ADV-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Advance A/c", 'ASSET', 'Current Assets', 'EMPLOYEE', $empId);
+        $email = validateEmailAddress(post('email'), 'Email');
+        $emergencyPhone = validatePhoneNumber(post('emergency_contact_phone'), 'Emergency contact phone');
+        $accountSuffix = strtoupper(substr(str_replace('-', '', $empId), 0, 7));
+        $advAccId = $engine->createAccount('ADV-' . $accountSuffix, "$name - Advance A/c", 'ASSET', 'Current Assets', 'EMPLOYEE', $empId);
         
         $db->insert('employees', [
             'id' => $empId, 'business_id' => $businessId, 'name' => $name,
             'phone' => $phone, 'role' => post('role'),
-            'monthly_salary' => floatval(post('monthly_salary', 0)),
+            'email' => $email,
+            'monthly_salary' => parseDecimalInput(post('monthly_salary', 0)),
             'advance_account_id' => $advAccId, 'join_date' => post('join_date'),
+            'address' => post('address'),
+            'emergency_contact_name' => post('emergency_contact_name'),
+            'emergency_contact_phone' => $emergencyPhone,
+            'notes' => post('notes'),
         ]);
+        $createdEmployee = $db->fetch("SELECT * FROM employees WHERE id = ? AND business_id = ?", [$empId, $businessId]);
+        Auth::auditCreate('employee', $empId, $createdEmployee ?: ['name' => $name], "Employee $name added", 'employees');
         setFlash('success', "Employee $name added!");
         redirect('list.php');
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -33,12 +45,13 @@ if ($search !== '') {
         e.name LIKE ?
         OR e.role LIKE ?
         OR e.phone LIKE ?
+        OR e.email LIKE ?
         OR e.monthly_salary LIKE ?
         OR e.join_date LIKE ?
         OR CASE WHEN e.is_active = 1 THEN 'Active' ELSE 'Left' END LIKE ?
     )";
     $needle = '%' . $search . '%';
-    array_push($employeeParams, $needle, $needle, $needle, $needle, $needle, $needle);
+    array_push($employeeParams, $needle, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 
 $employees = $db->fetchAll(
@@ -53,7 +66,7 @@ $employees = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> Employees</h1>
-    <button onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button>
+    <?php if (Auth::hasEntityAccess('employee', 'write')): ?><button onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -84,7 +97,11 @@ $employees = $db->fetchAll(
                     <td class="text-right amount <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></td>
                     <td><?= renderDateTimeStack($e['join_date'], $e['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
-                    <td class="text-center"><a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+                    <td class="text-center">
+                        <a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a>
+                        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $e['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
+                        <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $e['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -96,7 +113,7 @@ $employees = $db->fetchAll(
     <div class="modal">
         <div class="modal-header"><h3>Add Employee</h3><button class="modal-close" onclick="closeModal('add-employee')">×</button></div>
         <div class="modal-body">
-            <form method="POST">
+            <form method="POST" data-confirm-submit="Add this employee with the entered salary and contact details?">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="add">
                 <div class="form-group"><label class="form-label">Full Name *</label><input type="text" name="name" class="form-control" required></div>
@@ -104,6 +121,15 @@ $employees = $db->fetchAll(
                     <div class="form-group"><label class="form-label">Role</label><input type="text" name="role" class="form-control" placeholder="e.g., Driver, Mechanic"></div>
                     <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" placeholder="name@example.com"></div>
+                    <div class="form-group"><label class="form-label">Emergency Contact Name</label><input type="text" name="emergency_contact_name" class="form-control"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Emergency Contact Phone</label><input type="text" name="emergency_contact_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+                    <div class="form-group"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"></textarea></div>
+                </div>
+                <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"></textarea></div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Monthly Salary (₹)</label><input type="number" name="monthly_salary" class="form-control" step="0.01"></div>
                     <div class="form-group"><label class="form-label">Join Date *</label><input type="date" name="join_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>

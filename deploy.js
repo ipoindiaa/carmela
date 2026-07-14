@@ -1,6 +1,7 @@
 /**
  * Auto Deploy Script
  * Usage:
+ *   DEPLOY_SSH_KEY='~/.ssh/hostinger_key' node deploy.js "commit message"
  *   DEPLOY_PASSWORD='...' DEPLOY_DB_PASS='...' node deploy.js "commit message"
  *
  * What it does:
@@ -18,6 +19,7 @@ const SERVER = {
   username: process.env.DEPLOY_USER || 'u892049228',
   port: process.env.DEPLOY_PORT || '65002',
   password: process.env.DEPLOY_PASSWORD || '',
+  sshKey: process.env.DEPLOY_SSH_KEY || '',
 };
 
 const REMOTE_PATH =
@@ -112,6 +114,23 @@ expect eof
   run('expect', ['-c', expectScript]);
 }
 
+function sshDeploy(remoteCommand) {
+  if (SERVER.sshKey) {
+    run('ssh', [
+      '-F', '/dev/null',
+      '-i', SERVER.sshKey,
+      '-p', SERVER.port,
+      '-o', 'IdentitiesOnly=yes',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      `${SERVER.username}@${SERVER.host}`,
+      remoteCommand,
+    ]);
+    return;
+  }
+
+  sshExpect(remoteCommand);
+}
+
 function buildRemoteDeployCommand() {
   if (!REMOTE_PATH) {
     throw new Error('DEPLOY_PATH is required.');
@@ -157,7 +176,7 @@ function deploy() {
   git(['push', '-u', 'origin', 'main']);
 
   console.log('\nStep 3: Deploying on Hostinger...');
-  sshExpect(buildRemoteDeployCommand());
+  sshDeploy(buildRemoteDeployCommand());
   console.log('\nDeploy complete.\n');
 }
 

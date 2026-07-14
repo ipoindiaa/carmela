@@ -33,6 +33,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    document.addEventListener('submit', function(e) {
+        const form = e.target.closest('form[data-confirm-submit]');
+        if (!form || form.dataset.confirmed === '1') return;
+        if (!confirm(form.dataset.confirmSubmit)) {
+            e.preventDefault();
+            return;
+        }
+        form.dataset.confirmed = '1';
+    });
+
     document.addEventListener('click', async function(e) {
         const shareButton = e.target.closest('[data-share-url]');
         if (!shareButton) return;

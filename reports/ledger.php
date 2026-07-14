@@ -35,7 +35,9 @@ if ($accountId) {
                AND je.entry_date <= ?",
             [$accountId, $dateTo]
         );
-        $signedOpening = signedBalanceValue($selectedAccount['opening_balance'] ?? 0, $selectedAccount['opening_balance_type'] ?? 'DR');
+        $signedOpening = empty($selectedAccount['opening_entry_id'])
+            ? signedBalanceValue($selectedAccount['opening_balance'] ?? 0, $selectedAccount['opening_balance_type'] ?? 'DR')
+            : 0.0;
         $openingBalanceSigned = round($signedOpening + floatval($priorMovement['dr_total'] ?? 0) - floatval($priorMovement['cr_total'] ?? 0), 2);
         $asOnSigned = round($signedOpening + floatval($asOnMovement['dr_total'] ?? 0) - floatval($asOnMovement['cr_total'] ?? 0), 2);
         $balanceAsOn = [

@@ -83,16 +83,14 @@ class Auth {
     public static function requireAdmin() {
         if (!self::isAdmin()) {
             $_SESSION['flash_error'] = 'Access denied. Admin privileges required.';
-            header('Location: ' . APP_URL . 'dashboard.php');
-            exit;
+            self::redirectDenied();
         }
     }
 
     public static function requireRole($roles) {
         if (!self::hasRole($roles)) {
             $_SESSION['flash_error'] = 'Access denied. Insufficient privileges.';
-            header('Location: ' . APP_URL . 'dashboard.php');
-            exit;
+            self::redirectDenied();
         }
     }
 
@@ -196,17 +194,56 @@ class Auth {
     public static function requireBookAccess($bookKey, $access = 'read') {
         if (!self::hasBookAccess($bookKey, $access)) {
             $_SESSION['flash_error'] = 'Access denied for this book.';
-            header('Location: ' . APP_URL . 'dashboard.php');
-            exit;
+            self::redirectDenied();
         }
     }
 
     public static function requireAnyBookAccess($bookKeys, $access = 'read') {
         if (!self::hasAnyBookAccess($bookKeys, $access)) {
             $_SESSION['flash_error'] = 'Access denied. You do not have permission for this book.';
-            header('Location: ' . APP_URL . 'dashboard.php');
-            exit;
+            self::redirectDenied();
         }
+    }
+
+    public static function hasEntityAccess($entityType, $access = 'read') {
+        if (self::isAdmin()) {
+            return true;
+        }
+
+        $entityBooks = [
+            'car' => ['car_profitability', 'cash_book', 'bank_book'],
+            'partner' => ['partner_accounts'],
+            'employee' => ['employee_advances'],
+            'party' => ['outstanding_summary', 'debtor_ageing', 'creditors_report'],
+            'journal_entry' => array_merge(self::getPrimaryBookKeys(), ['jv_register']),
+            'account' => ['general_ledger'],
+            'rto_record' => ['rto_book'],
+        ];
+
+        if (!isset($entityBooks[$entityType])) {
+            return false;
+        }
+
+        return self::hasAnyBookAccess($entityBooks[$entityType], $access);
+    }
+
+    public static function requireEntityAccess($entityType, $access = 'read') {
+        if (!self::hasEntityAccess($entityType, $access)) {
+            $_SESSION['flash_error'] = 'Access denied. You do not have permission to ' . ($access === 'write' ? 'edit' : 'view') . ' this record.';
+            self::redirectDenied();
+        }
+    }
+
+    private static function redirectDenied() {
+        $url = APP_URL . 'dashboard.php';
+        if (!headers_sent()) {
+            header('Location: ' . $url);
+        } else {
+            $encodedUrl = json_encode($url, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+            echo '<script>window.location.href=' . $encodedUrl . ';</script>';
+            echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '"></noscript>';
+        }
+        exit;
     }
 
     public static function getAccessiblePrimaryAccountTypes($access = 'read') {
@@ -379,9 +416,12 @@ class Auth {
         return password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
     }
 
-    public static function auditLog($action, $entityType, $entityId = null, $description = null, $oldValue = null, $newValue = null) {
+    public static function auditLog($action, $entityType, $entityId = null, $description = null, $oldValue = null, $newValue = null, $module = null) {
         $db = Database::getInstance();
         self::ensureAuditLogSchema();
+        $changedFields = self::buildChangedFields($oldValue, $newValue);
+        $module = $module ?: self::inferAuditModule();
+        $requestUri = $_SERVER['REQUEST_URI'] ?? null;
         try {
             $db->insert('audit_log', [
                 'id' => Database::uuid(),
@@ -393,6 +433,9 @@ class Auth {
                 'description' => $description,
                 'old_value' => $oldValue ? json_encode($oldValue) : null,
                 'new_value' => $newValue ? json_encode($newValue) : null,
+                'changed_fields' => $changedFields ? json_encode($changedFields) : null,
+                'module' => $module,
+                'request_uri' => $requestUri,
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                 'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
             ]);
@@ -415,6 +458,70 @@ class Auth {
                 error_log('AutoBooks audit log fallback failed: ' . $fallbackError->getMessage());
             }
         }
+    }
+
+    public static function auditCreate($entityType, $entityId, $newValue, $description = null, $module = null) {
+        self::auditLog('CREATE', $entityType, $entityId, $description, null, $newValue, $module);
+    }
+
+    public static function auditUpdate($entityType, $entityId, $oldValue, $newValue, $description = null, $module = null) {
+        $changedFields = self::buildChangedFields($oldValue, $newValue);
+        if (empty($changedFields)) {
+            return false;
+        }
+        self::auditLog('UPDATE', $entityType, $entityId, $description, $oldValue, $newValue, $module);
+        return true;
+    }
+
+    public static function getRecordHistory($entityType, $entityId, $businessId = null, $limit = 100) {
+        self::ensureAuditLogSchema();
+        $businessId = $businessId ?: ($_SESSION['business_id'] ?? null);
+        $limit = max(1, min(250, intval($limit)));
+        if (!$businessId || !$entityType || !$entityId) {
+            return [];
+        }
+
+        return Database::getInstance()->fetchAll(
+            "SELECT al.*, u.full_name
+             FROM audit_log al
+             LEFT JOIN users u ON u.id = al.user_id
+             WHERE al.business_id = ? AND al.entity_type = ? AND al.entity_id = ?
+             ORDER BY al.created_at DESC, al.id DESC
+             LIMIT $limit",
+            [$businessId, $entityType, $entityId]
+        );
+    }
+
+    private static function buildChangedFields($oldValue, $newValue) {
+        if (!is_array($oldValue) || !is_array($newValue)) {
+            return [];
+        }
+
+        $ignored = ['password_hash', 'updated_at', 'created_at'];
+        $changes = [];
+        foreach (array_unique(array_merge(array_keys($oldValue), array_keys($newValue))) as $field) {
+            if (in_array($field, $ignored, true)) {
+                continue;
+            }
+            $old = $oldValue[$field] ?? null;
+            $new = $newValue[$field] ?? null;
+            $oldComparable = is_array($old) || is_object($old) ? json_encode($old) : (string) $old;
+            $newComparable = is_array($new) || is_object($new) ? json_encode($new) : (string) $new;
+            if ($oldComparable === $newComparable) {
+                continue;
+            }
+            $changes[$field] = ['old' => $old, 'new' => $new];
+        }
+        return $changes;
+    }
+
+    private static function inferAuditModule() {
+        $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? 'system');
+        $parts = array_values(array_filter(explode('/', trim($script, '/'))));
+        if (count($parts) >= 2) {
+            return $parts[count($parts) - 2];
+        }
+        return pathinfo($script, PATHINFO_FILENAME) ?: 'system';
     }
 
     private static function buildPermissionMatrix($defaultRead, $defaultWrite) {
@@ -497,6 +604,21 @@ class Auth {
 
             if (!$column) {
                 $db->query("ALTER TABLE `audit_log` ADD COLUMN `user_agent` VARCHAR(255) DEFAULT NULL AFTER `ip_address`");
+            }
+
+            foreach ([
+                'changed_fields' => "ADD COLUMN `changed_fields` JSON DEFAULT NULL AFTER `new_value`",
+                'module' => "ADD COLUMN `module` VARCHAR(100) DEFAULT NULL AFTER `changed_fields`",
+                'request_uri' => "ADD COLUMN `request_uri` VARCHAR(500) DEFAULT NULL AFTER `module`",
+            ] as $columnName => $alterSql) {
+                $existing = $db->fetch(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_log' AND COLUMN_NAME = ?",
+                    [$columnName]
+                );
+                if (!$existing) {
+                    $db->query("ALTER TABLE `audit_log` $alterSql");
+                }
             }
         } catch (\Throwable $e) {
             error_log('AutoBooks audit log schema check failed: ' . $e->getMessage());

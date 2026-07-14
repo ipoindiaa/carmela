@@ -2,9 +2,11 @@
 $pageTitle = 'Account Settings';
 $pageIcon = '<i class="ri-bank-card-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../includes/accounting_engine.php';
 Auth::requireAdmin();
 
 $businessId = Auth::user('business_id');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $accountTypes = [
     'CASH' => ['label' => 'Cash Account', 'prefix' => 'CASH', 'icon' => 'ri-wallet-3-line'],
     'BANK' => ['label' => 'Bank Account', 'prefix' => 'BANK', 'icon' => 'ri-bank-line'],
@@ -60,9 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $openingBalance = round(parseDecimalInput(post('opening_balance', 0)), 2);
             $openingType = strtoupper(post('opening_balance_type', 'DR')) === 'CR' ? 'CR' : 'DR';
+            $openingDate = post('opening_balance_date', getCurrentFY() . '-04-01');
+
+            $accountId = Database::uuid();
 
             $db->insert('accounts', [
-                'id' => Database::uuid(),
+                'id' => $accountId,
                 'business_id' => $businessId,
                 'code' => $code,
                 'name' => $name,
@@ -71,12 +76,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'entity_type' => $type,
                 'entity_id' => null,
                 'is_active' => 1,
-                'opening_balance' => $openingBalance,
-                'opening_balance_type' => $openingType,
-                'current_balance' => $openingBalance,
-                'current_balance_type' => $openingType,
+                'opening_balance' => 0,
+                'opening_balance_type' => 'DR',
+                'current_balance' => 0,
+                'current_balance_type' => 'DR',
             ]);
-            Auth::auditLog('CREATE', 'account', null, "Created {$accountTypes[$type]['label']} $name");
+            if ($openingBalance > 0.009) {
+                $engine->setOpeningBalance($accountId, $openingBalance, $openingType, $openingDate, 'Account created with opening balance');
+            }
+            $createdAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
+            Auth::auditCreate('account', $accountId, $createdAccount ?: ['name' => $name, 'code' => $code], "Created {$accountTypes[$type]['label']} $name", 'accounts');
             setFlash('success', 'Account added successfully.');
         }
 
@@ -110,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?",
                 [$name, $isActive, $accountId, $businessId]
             );
-            Auth::auditLog('UPDATE', 'account', $accountId, "Updated account $name");
+            $updatedAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
+            Auth::auditUpdate('account', $accountId, $account, $updatedAccount ?: [], "Updated account $name", 'accounts');
             setFlash('success', 'Account updated successfully.');
         }
 
@@ -141,7 +151,7 @@ $accounts = $db->fetchAll(
 <div class="card" style="margin-bottom: 18px;">
     <div class="card-header"><h3><i class="ri-add-line"></i> Add Account</h3></div>
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" data-confirm-submit="Create this account and save its opening balance?">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create">
             <div class="form-row-3">
@@ -176,6 +186,10 @@ $accounts = $db->fetchAll(
                         <option value="DR">DR / Money Available</option>
                         <option value="CR">CR / Overdrawn</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Opening Balance Date</label>
+                    <input type="date" name="opening_balance_date" class="form-control" value="<?= clean(getCurrentFY() . '-04-01') ?>" required>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Add Account</button>
@@ -215,11 +229,14 @@ $accounts = $db->fetchAll(
                                 </select>
                             </td>
                             <td class="text-center">
-                                <form method="POST" id="<?= clean($formId) ?>">
+                                <form method="POST" id="<?= clean($formId) ?>" data-confirm-submit="Save changes to this account?">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="update">
                                     <input type="hidden" name="account_id" value="<?= clean($account['id']) ?>">
                                     <button type="submit" class="btn btn-outline btn-sm"><i class="ri-save-line"></i> Save</button>
+                                    <a href="../reports/ledger.php?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="View ledger"><i class="ri-eye-line"></i></a>
+                                    <a href="opening_balances.php?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Edit opening balance"><i class="ri-scales-3-line"></i></a>
+                                    <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
                                 </form>
                             </td>
                         </tr>

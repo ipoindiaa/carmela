@@ -4,9 +4,46 @@ $pageIcon = '<i class="ri-contacts-book-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+Auth::requireEntityAccess('party', 'read');
 $id = get('id');
 $party = $db->fetch("SELECT dc.*, a.current_balance, a.current_balance_type FROM debtors_creditors dc LEFT JOIN accounts a ON a.id = dc.account_id WHERE dc.id = ? AND dc.business_id = ?", [$id, $businessId]);
 if (!$party) { setFlash('error', 'Party not found.'); redirect('list.php'); }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
+    Auth::requireEntityAccess('party', 'write');
+    verifyCsrf();
+    try {
+        $name = trim((string) post('name'));
+        $type = strtoupper((string) post('type'));
+        if ($name === '') throw new Exception('Party name is required.');
+        if (!in_array($type, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER'], true)) throw new Exception('Invalid party type.');
+        $phone = validatePhoneNumber(post('phone'), 'Phone number');
+        $email = validateEmailAddress(post('email'), 'Email');
+        if ($type !== $party['type']) {
+            $usage = $db->fetch("SELECT COUNT(*) AS cnt FROM journal_lines WHERE account_id = ?", [$party['account_id']]);
+            if (($usage['cnt'] ?? 0) > 0) throw new Exception('Party type cannot be changed after ledger activity. Create a new party or reverse the connected entries first.');
+        }
+        $db->query(
+            "UPDATE debtors_creditors SET name = ?, type = ?, phone = ?, email = ?, address = ?, pan_gstin = ?, is_active = ? WHERE id = ? AND business_id = ?",
+            [$name, $type, $phone, $email, post('address'), strtoupper(trim((string) post('pan_gstin'))), post('is_active', '0') === '1' ? 1 : 0, $id, $businessId]
+        );
+        $isReceivable = in_array($type, ['DEBTOR', 'BUYER'], true);
+        $oldPartyAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$party['account_id'], $businessId]);
+        $db->query(
+            "UPDATE accounts SET name = ?, group_name = ?, sub_group = ?, entity_type = ? WHERE id = ? AND business_id = ?",
+            ["$name ($type)", $isReceivable ? 'ASSET' : 'LIABILITY', $isReceivable ? 'Sundry Debtors' : 'Sundry Creditors', $isReceivable ? 'DEBTOR' : 'CREDITOR', $party['account_id'], $businessId]
+        );
+        $newPartyAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$party['account_id'], $businessId]);
+        Auth::auditUpdate('account', $party['account_id'], $oldPartyAccount ?: [], $newPartyAccount ?: [], 'Party ledger account updated', 'parties');
+        $updated = $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$id, $businessId]);
+        Auth::auditUpdate('party', $id, $party, $updated ?: [], "Party $name updated", 'parties');
+        setFlash('success', 'Party details updated.');
+        redirect("view.php?id=$id");
+    } catch (Exception $e) {
+        setFlash('error', $e->getMessage());
+        redirect("view.php?id=$id&edit=1");
+    }
+}
 
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $openItems = $engine->getPartyOpenItems($party['id']);
@@ -28,12 +65,39 @@ $ledger = $db->fetchAll(
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> <?= clean($party['name']) ?></h1>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
+        <a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (Auth::isAdmin() && $debtorOutstanding > 0): ?>
             <a href="write_off.php?id=<?= $party['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-close-circle-line"></i> Write Off Bad Debt</a>
         <?php endif; ?>
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
+
+<?php if (get('edit') === '1' && Auth::hasEntityAccess('party', 'write')): ?>
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Party</h3></div>
+    <div class="card-body">
+        <form method="POST" data-confirm-submit="Save these party changes? The changes will be added to the audit log.">
+            <?= csrfField() ?><input type="hidden" name="action" value="update">
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Name *</label><input type="text" name="name" class="form-control" value="<?= clean($party['name']) ?>" required></div>
+                <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control"><?php foreach (['DEBTOR','CREDITOR','BUYER','SELLER'] as $type): ?><option value="<?= $type ?>" <?= $party['type'] === $type ? 'selected' : '' ?>><?= $type ?></option><?php endforeach; ?></select></div>
+                <div class="form-group"><label class="form-label">Status</label><select name="is_active" class="form-control"><option value="1" <?= $party['is_active'] ? 'selected' : '' ?>>Active</option><option value="0" <?= !$party['is_active'] ? 'selected' : '' ?>>Inactive</option></select></div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" value="<?= clean($party['phone']) ?>" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+                <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<?= clean($party['email']) ?>"></div>
+                <div class="form-group"><label class="form-label">PAN / GSTIN</label><input type="text" name="pan_gstin" class="form-control" value="<?= clean($party['pan_gstin']) ?>"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"><?= clean($party['address']) ?></textarea></div>
+            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Party</button>
+            <a href="view.php?id=<?= $party['id'] ?>" class="btn btn-outline">Cancel</a>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="stats-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
     <div class="stat-card"><div class="stat-value"><?= $party['type'] ?></div><div class="stat-label">Type</div></div>

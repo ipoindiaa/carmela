@@ -44,7 +44,9 @@ if ($cashAccount) {
         [$cashAccount['id'], $dateTo]
     );
 
-    $signedOpening = signedBalanceValue($cashAccount['opening_balance'] ?? 0, $cashAccount['opening_balance_type'] ?? 'DR');
+    $signedOpening = empty($cashAccount['opening_entry_id'])
+        ? signedBalanceValue($cashAccount['opening_balance'] ?? 0, $cashAccount['opening_balance_type'] ?? 'DR')
+        : 0.0;
     $openingBalanceSigned = round($signedOpening + floatval($priorMovement['dr_total'] ?? 0) - floatval($priorMovement['cr_total'] ?? 0), 2);
     $asOnSigned = round($signedOpening + floatval($asOnMovement['dr_total'] ?? 0) - floatval($asOnMovement['cr_total'] ?? 0), 2);
     $cashBalanceAsOn = [

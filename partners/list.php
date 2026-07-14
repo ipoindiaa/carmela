@@ -9,10 +9,12 @@ require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
+Auth::requireEntityAccess('partner', 'read');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $search = trim((string) get('q', ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
+    Auth::requireEntityAccess('partner', 'write');
     verifyCsrf();
     try {
         $partnerId = Database::uuid();
@@ -23,8 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
         }
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
-        $capitalAccId = $engine->createAccount('CAP-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
-        $currentAccId = $engine->createAccount('CUR-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $name), 0, 8)), "$name - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
+        $accountSuffix = strtoupper(substr(str_replace('-', '', $partnerId), 0, 7));
+        $capitalAccId = $engine->createAccount('CAP-' . $accountSuffix, "$name - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
+        $currentAccId = $engine->createAccount('CUR-' . $accountSuffix, "$name - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
 
         $db->insert('partners', [
             'id' => $partnerId, 'business_id' => $businessId, 'name' => $name,
@@ -34,6 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
             'capital_account_id' => $capitalAccId, 'current_account_id' => $currentAccId,
             'joined_date' => post('joined_date'),
         ]);
+        $createdPartner = $db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $businessId]);
+        Auth::auditCreate('partner', $partnerId, $createdPartner ?: ['name' => $name], "Partner $name added", 'partners');
         setFlash('success', "Partner $name added successfully!");
         redirect('list.php' . ($partnerType ? '?type=' . urlencode($partnerType) : ''));
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -81,7 +86,7 @@ $pageDescription = $requestedType === 'CARWISE'
         <h1><i class="ri-group-line"></i> <?= clean($pageHeading) ?></h1>
         <div class="text-muted" style="margin-top:4px;"><?= clean($pageDescription) ?></div>
     </div>
-    <button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button>
+    <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -123,7 +128,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -150,7 +155,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -164,7 +169,7 @@ $pageDescription = $requestedType === 'CARWISE'
     <div class="modal">
         <div class="modal-header"><h3>Add Partner</h3><button class="modal-close" onclick="closeModal('add-partner')">×</button></div>
         <div class="modal-body">
-            <form method="POST">
+            <form method="POST" data-confirm-submit="Add this partner and create the related capital accounts?">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="add">
                 <div class="form-group">

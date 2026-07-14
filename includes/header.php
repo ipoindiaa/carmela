@@ -193,6 +193,10 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
                     Account Settings
                 </a>
+                <a href="<?= APP_URL ?>settings/opening_balances.php" class="nav-link <?= $currentPage === 'opening_balances' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-scales-3-line"></i></span>
+                    Opening Balances
+                </a>
                 <a href="<?= APP_URL ?>settings/categories.php" class="nav-link <?= $currentPage === 'categories' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-price-tag-3-line"></i></span>
                     Entry Categories

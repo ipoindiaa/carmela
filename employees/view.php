@@ -2,10 +2,47 @@
 $pageTitle = 'Employee Statement';
 $pageIcon = '<i class="ri-user-star-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
+Auth::requireEntityAccess('employee', 'read');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $id = get('id');
 $emp = $db->fetch("SELECT e.*, a.current_balance as advance_balance, a.current_balance_type as advance_balance_type FROM employees e LEFT JOIN accounts a ON a.id = e.advance_account_id WHERE e.id = ? AND e.business_id = ?", [$id, $businessId]);
 if (!$emp) { setFlash('error', 'Employee not found.'); redirect('list.php'); }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
+    Auth::requireEntityAccess('employee', 'write');
+    verifyCsrf();
+    try {
+        $name = trim((string) post('name'));
+        if ($name === '') throw new Exception('Employee name is required.');
+        $phone = validatePhoneNumber(post('phone'), 'Phone number');
+        $email = validateEmailAddress(post('email'), 'Email');
+        $emergencyPhone = validatePhoneNumber(post('emergency_contact_phone'), 'Emergency contact phone');
+        $isActive = post('is_active', '0') === '1' ? 1 : 0;
+        $exitDate = trim((string) post('exit_date')) ?: null;
+        if (!$isActive && !$exitDate) $exitDate = date('Y-m-d');
+        if ($isActive) $exitDate = null;
+
+        $db->query(
+            "UPDATE employees SET name = ?, phone = ?, email = ?, role = ?, monthly_salary = ?, join_date = ?, exit_date = ?, address = ?, emergency_contact_name = ?, emergency_contact_phone = ?, notes = ?, is_active = ? WHERE id = ? AND business_id = ?",
+            [$name, $phone, $email, post('role'), parseDecimalInput(post('monthly_salary', 0)), post('join_date'), $exitDate, post('address'), post('emergency_contact_name'), $emergencyPhone, post('notes'), $isActive, $id, $businessId]
+        );
+        if (!empty($emp['advance_account_id'])) {
+            $oldAdvanceAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$emp['advance_account_id'], $businessId]);
+            $db->query("UPDATE accounts SET name = ? WHERE id = ? AND business_id = ?", ["$name - Advance A/c", $emp['advance_account_id'], $businessId]);
+            $newAdvanceAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$emp['advance_account_id'], $businessId]);
+            Auth::auditUpdate('account', $emp['advance_account_id'], $oldAdvanceAccount ?: [], $newAdvanceAccount ?: [], 'Employee advance account renamed', 'employees');
+        }
+        $updated = $db->fetch("SELECT * FROM employees WHERE id = ? AND business_id = ?", [$id, $businessId]);
+        Auth::auditUpdate('employee', $id, $emp, $updated ?: [], "Employee $name updated", 'employees');
+        setFlash('success', 'Employee details updated.');
+        redirect("view.php?id=$id");
+    } catch (Exception $e) {
+        setFlash('error', $e->getMessage());
+        redirect("view.php?id=$id&edit=1");
+    }
+}
 
 $advanceOutstanding = (($emp['advance_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($emp['advance_balance'] ?? 0)) : 0;
 
@@ -19,12 +56,60 @@ $advanceLedger = $db->fetchAll(
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> <?= clean($emp['name']) ?></h1>
     <div style="display:flex;gap:10px;">
+        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $emp['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $emp['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
+        <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $emp['advance_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Advance</a><?php endif; ?>
         <a href="../transactions/new.php?type=SALARY_PAYMENT" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
         <a href="../transactions/new.php?type=EMPLOYEE_ADVANCE" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a>
         <?php if (Auth::isAdmin() && $advanceOutstanding > 0): ?>
             <a href="write_off.php?id=<?= $emp['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-close-circle-line"></i> Write Off Advance</a>
         <?php endif; ?>
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+    </div>
+</div>
+
+<?php if (get('edit') === '1' && Auth::hasEntityAccess('employee', 'write')): ?>
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Employee Details</h3></div>
+    <div class="card-body">
+        <form method="POST" data-confirm-submit="Save these employee changes? Salary, status, and contact details will be added to Change History.">
+            <?= csrfField() ?><input type="hidden" name="action" value="update">
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Full Name *</label><input type="text" name="name" class="form-control" value="<?= clean($emp['name']) ?>" required></div>
+                <div class="form-group"><label class="form-label">Role</label><input type="text" name="role" class="form-control" value="<?= clean($emp['role']) ?>"></div>
+                <div class="form-group"><label class="form-label">Monthly Salary</label><input type="text" name="monthly_salary" class="form-control currency-input" value="<?= clean($emp['monthly_salary']) ?>" inputmode="decimal"></div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" value="<?= clean($emp['phone']) ?>" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+                <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<?= clean($emp['email'] ?? '') ?>"></div>
+                <div class="form-group"><label class="form-label">Status</label><select name="is_active" class="form-control"><option value="1" <?= $emp['is_active'] ? 'selected' : '' ?>>Active</option><option value="0" <?= !$emp['is_active'] ? 'selected' : '' ?>>Left</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Join Date *</label><input type="date" name="join_date" class="form-control" value="<?= clean($emp['join_date']) ?>" required></div>
+                <div class="form-group"><label class="form-label">Exit Date</label><input type="date" name="exit_date" class="form-control" value="<?= clean($emp['exit_date'] ?? '') ?>"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Emergency Contact Name</label><input type="text" name="emergency_contact_name" class="form-control" value="<?= clean($emp['emergency_contact_name'] ?? '') ?>"></div>
+                <div class="form-group"><label class="form-label">Emergency Contact Phone</label><input type="text" name="emergency_contact_phone" class="form-control" value="<?= clean($emp['emergency_contact_phone'] ?? '') ?>" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"><?= clean($emp['address'] ?? '') ?></textarea></div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"><?= clean($emp['notes'] ?? '') ?></textarea></div>
+            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Employee</button>
+            <a href="view.php?id=<?= $emp['id'] ?>" class="btn btn-outline">Cancel</a>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header"><h3>Employee Details</h3></div>
+    <div class="card-body">
+        <div class="grid-2">
+            <div><span class="text-muted">Phone</span><div class="text-bold"><?= clean($emp['phone'] ?: '-') ?></div></div>
+            <div><span class="text-muted">Email</span><div class="text-bold"><?= clean($emp['email'] ?? '-') ?></div></div>
+            <div><span class="text-muted">Join / Exit</span><div class="text-bold"><?= formatDate($emp['join_date']) ?><?= !empty($emp['exit_date']) ? ' / ' . formatDate($emp['exit_date']) : '' ?></div></div>
+            <div><span class="text-muted">Emergency Contact</span><div class="text-bold"><?= clean(trim(($emp['emergency_contact_name'] ?? '') . ' ' . ($emp['emergency_contact_phone'] ?? '')) ?: '-') ?></div></div>
+        </div>
     </div>
 </div>
 

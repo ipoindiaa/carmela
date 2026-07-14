@@ -47,7 +47,7 @@ class AccountingEngine {
     // ========================================
     public function createAccount($code, $name, $group, $subGroup, $entityType, $entityId = null) {
         $id = Database::uuid();
-        $this->db->insert('accounts', [
+        $accountRecord = [
             'id' => $id,
             'business_id' => $this->businessId,
             'code' => $code,
@@ -56,8 +56,113 @@ class AccountingEngine {
             'sub_group' => $subGroup,
             'entity_type' => $entityType,
             'entity_id' => $entityId,
-        ]);
+        ];
+        $this->db->insert('accounts', $accountRecord);
+        if (class_exists('Auth') && Auth::isLoggedIn()) {
+            Auth::auditCreate('account', $id, $accountRecord, "Account created: $name", 'accounts');
+        }
         return $id;
+    }
+
+    public function setOpeningBalance($accountId, $amount, $balanceType, $date, $reason = '') {
+        $amount = round(floatval($amount), 2);
+        $balanceType = strtoupper((string) $balanceType) === 'CR' ? 'CR' : 'DR';
+        $date = trim((string) $date);
+        if ($amount < 0) {
+            throw new Exception('Opening balance cannot be negative. Select DR or CR for the balance direction.');
+        }
+        $dateParts = preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $matches)
+            ? [intval($matches[1]), intval($matches[2]), intval($matches[3])]
+            : null;
+        if (!$dateParts || !checkdate($dateParts[1], $dateParts[2], $dateParts[0])) {
+            throw new Exception('A valid opening balance date is required.');
+        }
+        $this->validateDateNotLocked($date);
+
+        $account = $this->db->fetch(
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ?",
+            [$accountId, $this->businessId]
+        );
+        if (!$account || $account['code'] === 'OB-EQUITY') {
+            throw new Exception('Opening balance account not found.');
+        }
+
+        $oldSnapshot = [
+            'opening_balance' => $account['opening_balance'] ?? 0,
+            'opening_balance_type' => $account['opening_balance_type'] ?? 'DR',
+            'opening_balance_date' => $account['opening_balance_date'] ?? null,
+            'opening_entry_id' => $account['opening_entry_id'] ?? null,
+        ];
+
+        $oldEntryId = $account['opening_entry_id'] ?? null;
+        if ($oldEntryId) {
+            $oldEntry = $this->db->fetch(
+                "SELECT id, entry_date, status FROM journal_entries WHERE id = ? AND business_id = ? AND transaction_type = 'OPENING_BALANCE'",
+                [$oldEntryId, $this->businessId]
+            );
+            if ($oldEntry && $oldEntry['status'] === 'POSTED') {
+                $this->reverseEntry($oldEntryId, 'Opening balance replaced: ' . ($reason ?: $account['name']), $oldEntry['entry_date']);
+            }
+        } elseif (floatval($account['opening_balance'] ?? 0) > 0.009) {
+            // Legacy account openings were stored directly in current_balance. Remove
+            // that amount before replacing it with a balanced journal entry.
+            $legacyType = strtoupper((string) ($account['opening_balance_type'] ?? 'DR')) === 'CR' ? 'CR' : 'DR';
+            $this->updateAccountBalance($accountId, floatval($account['opening_balance']), $legacyType === 'DR' ? 'CR' : 'DR');
+        }
+
+        $this->db->query(
+            "UPDATE accounts
+             SET opening_balance = 0, opening_balance_type = 'DR', opening_balance_date = NULL, opening_entry_id = NULL
+             WHERE id = ? AND business_id = ?",
+            [$accountId, $this->businessId]
+        );
+
+        $openingEntryId = null;
+        if ($amount > 0.009) {
+            $equityAccount = $this->getOrCreateSystemAccount(
+                'OB-EQUITY',
+                'Opening Balance Equity',
+                'EQUITY',
+                'Opening Balances'
+            );
+            $lines = [
+                [
+                    'account_id' => $accountId,
+                    'amount' => $amount,
+                    'type' => $balanceType,
+                    'narration' => 'Opening balance for ' . $account['name'],
+                ],
+                [
+                    'account_id' => $equityAccount['id'],
+                    'amount' => $amount,
+                    'type' => $balanceType === 'DR' ? 'CR' : 'DR',
+                    'narration' => 'Opening balance offset for ' . $account['name'],
+                ],
+            ];
+            $openingEntryId = $this->postJournalEntry(
+                'OPENING_BALANCE',
+                $date,
+                trim('Opening balance - ' . $account['name'] . ($reason ? ': ' . $reason : '')),
+                $lines,
+                ['reference_prefix' => 'OB']
+            );
+        }
+
+        $this->db->query(
+            "UPDATE accounts
+             SET opening_balance = ?, opening_balance_type = ?, opening_balance_date = ?, opening_entry_id = ?
+             WHERE id = ? AND business_id = ?",
+            [$amount, $balanceType, $amount > 0.009 ? $date : null, $openingEntryId, $accountId, $this->businessId]
+        );
+
+        $newSnapshot = [
+            'opening_balance' => $amount,
+            'opening_balance_type' => $balanceType,
+            'opening_balance_date' => $amount > 0.009 ? $date : null,
+            'opening_entry_id' => $openingEntryId,
+        ];
+        Auth::auditUpdate('account', $accountId, $oldSnapshot, $newSnapshot, 'Opening balance updated for ' . $account['name'], 'opening_balances');
+        return $openingEntryId;
     }
 
     public function getOrCreateExpenseAccount($categoryName, $type = 'GENERAL') {
@@ -200,6 +305,35 @@ class AccountingEngine {
             }
             if (!$this->columnExists('cars', 'has_second_key')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `has_second_key` TINYINT(1) NOT NULL DEFAULT 0 AFTER `seller_party_id`");
+            }
+            if (!$this->columnExists('cars', 'partner_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `partner_id` CHAR(36) DEFAULT NULL AFTER `seller_party_id`");
+            }
+            $partnerIndex = $this->db->fetch(
+                "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cars' AND INDEX_NAME = 'idx_car_partner'"
+            );
+            if (!$partnerIndex) {
+                $this->db->query("ALTER TABLE `cars` ADD INDEX `idx_car_partner` (`partner_id`)");
+            }
+            if (!$this->columnExists('accounts', 'opening_balance_date')) {
+                $this->db->query("ALTER TABLE `accounts` ADD COLUMN `opening_balance_date` DATE DEFAULT NULL AFTER `opening_balance_type`");
+            }
+            if (!$this->columnExists('accounts', 'opening_entry_id')) {
+                $this->db->query("ALTER TABLE `accounts` ADD COLUMN `opening_entry_id` CHAR(36) DEFAULT NULL AFTER `opening_balance_date`");
+            }
+            foreach ([
+                'email' => "VARCHAR(100) DEFAULT NULL AFTER `phone`",
+                'exit_date' => "DATE DEFAULT NULL AFTER `join_date`",
+                'address' => "TEXT DEFAULT NULL AFTER `exit_date`",
+                'emergency_contact_name' => "VARCHAR(200) DEFAULT NULL AFTER `address`",
+                'emergency_contact_phone' => "VARCHAR(20) DEFAULT NULL AFTER `emergency_contact_name`",
+                'notes' => "TEXT DEFAULT NULL AFTER `emergency_contact_phone`",
+                'updated_at' => "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`",
+            ] as $employeeColumn => $definition) {
+                if (!$this->columnExists('employees', $employeeColumn)) {
+                    $this->db->query("ALTER TABLE `employees` ADD COLUMN `$employeeColumn` $definition");
+                }
             }
             if (!$this->columnExists('partners', 'partner_type')) {
                 $this->db->query("ALTER TABLE `partners` ADD COLUMN `partner_type` ENUM('MAIN','CARWISE') NOT NULL DEFAULT 'MAIN' AFTER `name`");
@@ -431,7 +565,7 @@ class AccountingEngine {
                 $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
             }
 
-            Auth::auditLog('CREATE', 'journal_entry', $entryId, "Posted $type entry: $narration");
+            Auth::auditCreate('journal_entry', $entryId, array_merge($entryData, ['lines' => $lines]), "Posted $type entry: $narration", 'transactions');
 
             // Check alerts after posting
             $this->checkAlerts();
@@ -451,25 +585,26 @@ class AccountingEngine {
         $account = $this->db->fetch("SELECT * FROM accounts WHERE id = ?", [$accountId]);
         if (!$account) throw new Exception("Account not found: $accountId");
 
-        $balance = $account['current_balance'];
-        $balType = $account['current_balance_type'];
+        $balance = abs(floatval($account['current_balance']));
+        $balType = strtoupper((string) $account['current_balance_type']);
         $group = $account['group_name'];
 
         // Natural balance types: ASSET/EXPENSE = DR, LIABILITY/INCOME/EQUITY = CR
         $naturalDr = in_array($group, ['ASSET', 'EXPENSE', 'CONTRA']);
 
+        $naturalType = $naturalDr ? 'DR' : 'CR';
+        $signedBalance = $balType === $naturalType ? $balance : -$balance;
         if ($naturalDr) {
-            if ($entryType === 'DR') $balance += $amount;
-            else $balance -= $amount;
+            $signedBalance += $entryType === 'DR' ? $amount : -$amount;
         } else {
-            if ($entryType === 'CR') $balance += $amount;
-            else $balance -= $amount;
+            $signedBalance += $entryType === 'CR' ? $amount : -$amount;
         }
 
-        if ($balance >= 0) {
-            $balType = $naturalDr ? 'DR' : 'CR';
+        if ($signedBalance >= 0) {
+            $balance = $signedBalance;
+            $balType = $naturalType;
         } else {
-            $balance = abs($balance);
+            $balance = abs($signedBalance);
             $balType = $naturalDr ? 'CR' : 'DR';
         }
 
@@ -486,22 +621,15 @@ class AccountingEngine {
     /**
      * CAR PURCHASE — Business funds
      */
-    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
-        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ?", [$carId]);
-        if (!$car) throw new Exception("Car not found");
-
-        $carAccountId = $car['account_id'];
-        $lines = [];
+    public function validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
+        $this->validateDateNotLocked($date);
         [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
         $partnerFunding = $this->normalizePartnerFunding($grossAmount, $partnerFunding);
-        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
-        // Business funding
         $businessAmount = $grossAmount;
-        foreach ($partnerFunding as $pf) {
-            $businessAmount -= $pf['amount'];
+        foreach ($partnerFunding as $funding) {
+            $businessAmount -= $funding['amount'];
         }
-
         if ($businessAmount < -0.01) {
             throw new Exception("Partner funding cannot exceed the car purchase amount.");
         }
@@ -513,12 +641,37 @@ class AccountingEngine {
         if ($sellerOutstanding > 0.009 && trim((string) $sellerName) === '') {
             throw new Exception("Seller name is required when purchase payment is pending.");
         }
+        if ($paidNow > 0) {
+            $this->validateCashAvailable($paymentAccount, $paidNow);
+        }
+
+        return [
+            'gross_amount' => $grossAmount,
+            'gst_amount' => $gstAmount,
+            'base_amount' => $baseAmount,
+            'partner_funding' => $partnerFunding,
+            'business_amount' => round($businessAmount, 2),
+            'paid_now' => $paidNow,
+            'seller_outstanding' => $sellerOutstanding,
+        ];
+    }
+
+    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception("Car not found");
+
+        $carAccountId = $car['account_id'];
+        $lines = [];
+        $validation = $this->validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding, $gstAmount, $sellerName, $paidNow);
+        $grossAmount = $validation['gross_amount'];
+        $gstAmount = $validation['gst_amount'];
+        $partnerFunding = $validation['partner_funding'];
+        $businessAmount = $validation['business_amount'];
+        $paidNow = $validation['paid_now'];
+        $sellerOutstanding = $validation['seller_outstanding'];
+        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         if ($businessAmount > 0) {
-            if ($paidNow > 0) {
-                $this->validateCashAvailable($paymentAccount, $paidNow);
-            }
-
             $businessGst = $grossAmount > 0 ? round(($gstAmount * $businessAmount) / $grossAmount, 2) : 0.0;
             $businessBase = round($businessAmount - $businessGst, 2);
             if ($businessBase > 0) {
@@ -546,7 +699,7 @@ class AccountingEngine {
         $partnerGstAllocated = 0.0;
         $partnerRowsRemaining = count($partnerFunding);
         foreach ($partnerFunding as $pf) {
-            $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ?", [$pf['partner_id']]);
+            $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$pf['partner_id'], $this->businessId]);
             if (!$partner) continue;
 
             $partnerRowsRemaining--;
@@ -607,6 +760,8 @@ class AccountingEngine {
             "UPDATE cars SET purchase_paid_amount = ?, seller_party_id = COALESCE(?, seller_party_id) WHERE id = ? AND business_id = ?",
             [$paidNow, $sellerPartyId ?? null, $carId, $this->businessId]
         );
+        $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Car purchase balances and seller link updated', 'transactions');
 
         return $entryId;
     }
@@ -675,6 +830,8 @@ class AccountingEngine {
         $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
         $this->db->query("UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, sale_gst_amount = ?, buyer_name = ?, buyer_party_id = ? WHERE id = ?",
             [$status, $date, $grossSalePrice, $commissionAmount, $gstAmount, $buyerName, $partyId ?? null, $carId]);
+        $soldCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        Auth::auditUpdate('car', $carId, $car, $soldCar ?: [], 'Car sale status and buyer details updated', 'transactions');
 
         $this->recordPartnerProfitDistribution($carId, $profit, $date);
 
@@ -968,6 +1125,8 @@ class AccountingEngine {
              WHERE id = ? AND business_id = ?",
             [$grossAmount, $entryId, $rtoId, $this->businessId]
         );
+        $updatedRto = $this->db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $this->businessId]);
+        Auth::auditUpdate('rto_record', $rtoId, $rto, $updatedRto ?: [], 'RTO expense totals updated', 'rto');
         return $entryId;
     }
 
@@ -1001,27 +1160,34 @@ class AccountingEngine {
             "UPDATE rto_records SET recovered_amount = recovered_amount + ?, last_recovery_entry_id = ? WHERE id = ? AND business_id = ?",
             [$amount, $entryId, $rtoId, $this->businessId]
         );
+        $updatedRto = $this->db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $this->businessId]);
+        Auth::auditUpdate('rto_record', $rtoId, $rto, $updatedRto ?: [], 'RTO recovery totals updated', 'rto');
         return $entryId;
     }
 
     public function recordSecondKeyEvent($carId, $eventType, $date, $narration) {
         $eventType = strtoupper((string) $eventType);
         if (!in_array($eventType, ['RECEIVED', 'GIVEN'], true)) throw new Exception("Invalid second key event.");
-        $car = $this->db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found.");
-        $this->db->insert('car_second_key_events', [
-            'id' => Database::uuid(),
+        $eventId = Database::uuid();
+        $eventRecord = [
+            'id' => $eventId,
             'business_id' => $this->businessId,
             'car_id' => $carId,
             'event_type' => $eventType,
             'event_date' => $date,
             'narration' => $narration,
             'created_by' => $this->userId,
-        ]);
+        ];
+        $this->db->insert('car_second_key_events', $eventRecord);
+        Auth::auditLog('CREATE', 'car', $carId, 'Second key event recorded', null, ['second_key_event' => $eventRecord], 'cars');
         $this->db->query(
             "UPDATE cars SET has_second_key = ? WHERE id = ? AND business_id = ?",
             [$eventType === 'RECEIVED' ? 1 : 0, $carId, $this->businessId]
         );
+        $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Second key status updated', 'cars');
     }
 
     /**
@@ -1589,20 +1755,22 @@ class AccountingEngine {
     // ========================================
     // REVERSAL
     // ========================================
-    public function reverseEntry($entryId, $reason) {
+    public function reverseEntry($entryId, $reason, $reversalDate = null) {
         $entry = $this->db->fetch("SELECT * FROM journal_entries WHERE id = ? AND business_id = ?", [$entryId, $this->businessId]);
         if (!$entry) throw new Exception("Entry not found");
         if ($entry['status'] === 'REVERSED') throw new Exception("Entry is already reversed");
 
         // RULE 7: Check period lock
         $this->validateDateNotLocked($entry['entry_date']);
+        $reversalDate = $reversalDate ?: date('Y-m-d');
+        $this->validateDateNotLocked($reversalDate);
 
         $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$entryId]);
         $this->assertEntryCanBeReversed($entry, $lines);
 
         $this->db->beginTransaction();
         try {
-            $reversalId = $this->createReversalEntry($entry, $lines, $reason);
+            $reversalId = $this->createReversalEntry($entry, $lines, $reason, $reversalDate);
             $this->applyReversalBusinessEffects($entry, $lines, $reversalId);
 
             foreach ($this->getDependentEntriesForReversal($entry, $lines) as $dependentEntry) {
@@ -1613,7 +1781,8 @@ class AccountingEngine {
                 $this->applyReversalBusinessEffects($dependentEntry, $dependentLines, $linkedReversalId);
             }
 
-            Auth::auditLog('REVERSE', 'journal_entry', $entryId, "Reversed entry: $reason");
+            $reversedEntry = $this->db->fetch("SELECT * FROM journal_entries WHERE id = ? AND business_id = ?", [$entryId, $this->businessId]);
+            Auth::auditLog('REVERSE', 'journal_entry', $entryId, "Reversed entry: $reason", $entry, $reversedEntry ?: ['status' => 'REVERSED', 'reversed_by' => $reversalId], 'transactions');
             $this->db->commit();
             return $reversalId;
         } catch (Exception $e) {
@@ -1622,7 +1791,7 @@ class AccountingEngine {
         }
     }
 
-    private function createReversalEntry($entry, $lines, $reason) {
+    private function createReversalEntry($entry, $lines, $reason, $reversalDate = null) {
         $reversalLines = [];
         foreach ($lines as $line) {
             $reversalLines[] = [
@@ -1634,13 +1803,14 @@ class AccountingEngine {
         }
 
         $reversalId = Database::uuid();
-        $refNo = getNextRefNo($this->db, $this->businessId, date('Y-m-d'), 'REV');
-        $fy = getCurrentFY();
+        $reversalDate = $reversalDate ?: date('Y-m-d');
+        $refNo = getNextRefNo($this->db, $this->businessId, $reversalDate, 'REV');
+        $fy = getCurrentFY($reversalDate);
 
         $this->db->insert('journal_entries', [
             'id' => $reversalId,
             'business_id' => $this->businessId,
-            'entry_date' => date('Y-m-d'),
+            'entry_date' => $reversalDate,
             'reference_no' => $refNo,
             'narration' => "REVERSAL: $reason (Original: {$entry['reference_no']})",
             'transaction_type' => 'REVERSAL',
@@ -2030,7 +2200,7 @@ class AccountingEngine {
     // VALIDATION HELPERS
     // ========================================
     private function validateCashAvailable($accountId, $amount) {
-        $account = $this->db->fetch("SELECT * FROM accounts WHERE id = ?", [$accountId]);
+        $account = $this->db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $this->businessId]);
         if (!$account) throw new Exception("Payment account not found");
 
         $amount = round(floatval($amount), 2);
@@ -2088,6 +2258,11 @@ class AccountingEngine {
             'type' => $type,
             'account_id' => $accountId,
         ]);
+
+        if (class_exists('Auth') && Auth::isLoggedIn()) {
+            $createdParty = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $this->businessId]);
+            Auth::auditCreate('party', $partyId, $createdParty ?: ['name' => $name, 'type' => $type], "Party created: $name", 'transactions');
+        }
 
         return $partyId;
     }
@@ -2783,9 +2958,9 @@ class AccountingEngine {
             }
 
             if (!isset($grouped[$partnerId])) {
-                $partner = $this->db->fetch("SELECT id, profit_share_pct FROM partners WHERE id = ?", [$partnerId]);
+                $partner = $this->db->fetch("SELECT id, profit_share_pct FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
                 if (!$partner) {
-                    continue;
+                    throw new Exception('Select a valid active partner for purchase funding.');
                 }
                 $grouped[$partnerId] = [
                     'partner_id' => $partnerId,

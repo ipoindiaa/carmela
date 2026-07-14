@@ -121,8 +121,9 @@ function uploadEntityAttachments($businessId, $entityType, $entityId, $attachmen
         @chmod($targetPath, 0644);
 
         $relativePath = 'uploads/attachments/' . $businessFolder . '/' . $storedName;
-        $db->insert('attachments', [
-            'id' => Database::uuid(),
+        $attachmentId = Database::uuid();
+        $attachmentRecord = [
+            'id' => $attachmentId,
             'business_id' => $businessId,
             'entity_type' => $entityType,
             'entity_id' => $entityId,
@@ -133,7 +134,11 @@ function uploadEntityAttachments($businessId, $entityType, $entityId, $attachmen
             'mime_type' => $mimeType,
             'file_size' => (int) ($file['size'] ?? 0),
             'uploaded_by' => $uploadedBy,
-        ]);
+        ];
+        $db->insert('attachments', $attachmentRecord);
+        if (class_exists('Auth')) {
+            Auth::auditLog('CREATE', strtolower($entityType), $entityId, 'Attachment uploaded: ' . $attachmentRecord['original_name'], null, $attachmentRecord, strtolower($entityType));
+        }
         $uploaded++;
     }
 
@@ -205,4 +210,7 @@ function deleteAttachment($businessId, $attachmentId, $entityType = null, $entit
     }
 
     $db->query("DELETE FROM attachments WHERE id = ? AND business_id = ?", [$attachmentId, $businessId]);
+    if (class_exists('Auth')) {
+        Auth::auditLog('DELETE', strtolower($attachment['entity_type']), $attachment['entity_id'], 'Attachment deleted: ' . $attachment['original_name'], $attachment, null, strtolower($attachment['entity_type']));
+    }
 }

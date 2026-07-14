@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/attachments.php';
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+Auth::requireEntityAccess('car', 'write');
 
 // Get payment accounts for dropdown
 $primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
@@ -16,8 +17,9 @@ $paymentAccountIds = array_values(array_filter(array_map(
     $paymentAccounts
 )));
 
-// Get car-wise partners for optional funding
-$partners = $db->fetchAll("SELECT id, name FROM partners WHERE business_id = ? AND is_active = 1 AND partner_type = 'CARWISE' ORDER BY name", [$businessId]);
+// Existing partners can be linked to the car independently of deal funding.
+$partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+$fundingPartners = array_values(array_filter($partners, static fn($partner) => ($partner['partner_type'] ?? 'MAIN') === 'CARWISE'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -27,14 +29,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!isValidRegistrationNo($regNo)) {
             throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
         }
+        $existingCar = $db->fetch("SELECT id FROM cars WHERE business_id = ? AND registration_no = ?", [$businessId, $regNo]);
+        if ($existingCar) {
+            throw new Exception('A car with this registration number already exists.');
+        }
         $purchasePrice = parseDecimalInput(post('purchase_price'));
         $gstAmount = 0.0;
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
-        $purchasePaidNow = parseDecimalInput(post('purchase_paid_now', $purchasePrice));
+        $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
+        $purchasePaidNow = $purchasePaidInput === '' ? $purchasePrice : parseDecimalInput($purchasePaidInput);
         $sellerName = post('seller_name');
         if (!in_array($paymentAccount, $paymentAccountIds, true)) {
             throw new Exception('You do not have write access to that payment account.');
+        }
+
+        $partnerFunding = [];
+        if (!empty($_POST['partner_ids'])) {
+            foreach ($_POST['partner_ids'] as $idx => $partnerId) {
+                $partnerAmount = parseDecimalInput($_POST['partner_amounts'][$idx] ?? 0);
+                if ($partnerId && $partnerAmount > 0) {
+                    $partnerFunding[] = [
+                        'partner_id' => $partnerId,
+                        'amount' => $partnerAmount,
+                        'profit_share_pct' => $_POST['partner_profit_share_pcts'][$idx] ?? null,
+                    ];
+                }
+            }
+        }
+        $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
+
+        $linkedPartnerId = trim((string) post('linked_partner_id')) ?: null;
+        $newPartnerName = trim((string) post('new_partner_name'));
+        if ($linkedPartnerId && $newPartnerName !== '') {
+            throw new Exception('Select an existing partner or add a new partner, not both.');
+        }
+        if ($newPartnerName !== '') {
+            if (!Auth::hasEntityAccess('partner', 'write')) {
+                throw new Exception('You do not have permission to add a new partner. Select an existing partner instead.');
+            }
+            $linkedPartnerId = Database::uuid();
+            $newPartnerPhone = validatePhoneNumber(post('new_partner_phone'), 'Partner phone number');
+            $newPartnerShare = round(parseDecimalInput(post('new_partner_profit_share_pct', 0)), 2);
+            if ($newPartnerShare < 0 || $newPartnerShare > 100) {
+                throw new Exception('Partner profit share must be between 0 and 100.');
+            }
+            $partnerCodeSuffix = strtoupper(substr(str_replace('-', '', $linkedPartnerId), 0, 7));
+            $capitalAccountId = $engine->createAccount('CAP-' . $partnerCodeSuffix, "$newPartnerName - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $linkedPartnerId);
+            $currentAccountId = $engine->createAccount('CUR-' . $partnerCodeSuffix, "$newPartnerName - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $linkedPartnerId);
+            $db->insert('partners', [
+                'id' => $linkedPartnerId,
+                'business_id' => $businessId,
+                'name' => $newPartnerName,
+                'partner_type' => 'CARWISE',
+                'phone' => $newPartnerPhone,
+                'profit_share_pct' => $newPartnerShare,
+                'capital_account_id' => $capitalAccountId,
+                'current_account_id' => $currentAccountId,
+                'joined_date' => $purchaseDate,
+            ]);
+            $createdPartner = $db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$linkedPartnerId, $businessId]);
+            Auth::auditCreate('partner', $linkedPartnerId, $createdPartner ?: ['name' => $newPartnerName], "Partner $newPartnerName added while adding car", 'cars');
+        } elseif ($linkedPartnerId) {
+            $linkedPartner = $db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$linkedPartnerId, $businessId]);
+            if (!$linkedPartner) throw new Exception('Select a valid active partner.');
         }
 
         // Create car account in Chart of Accounts
@@ -54,25 +112,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'purchase_price' => max(0, $purchasePrice - $gstAmount),
             'purchase_paid_amount' => $purchasePaidNow,
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
+            'partner_id' => $linkedPartnerId,
             'account_id' => $carAccountId,
             'notes' => post('notes'),
         ]);
 
         // Auto-create the CAR_PURCHASE journal entry via accounting engine
-        $partnerFunding = [];
-        if (!empty($_POST['partner_ids'])) {
-            foreach ($_POST['partner_ids'] as $idx => $pid) {
-                $pAmount = parseDecimalInput($_POST['partner_amounts'][$idx] ?? 0);
-                if ($pid && $pAmount > 0) {
-                    $partnerFunding[] = [
-                        'partner_id' => $pid,
-                        'amount' => $pAmount,
-                        'profit_share_pct' => $_POST['partner_profit_share_pcts'][$idx] ?? null,
-                    ];
-                }
-            }
-        }
-
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
         $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
         $uploadWarning = '';
@@ -82,7 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $uploadWarning = ' Seller image upload failed: ' . $uploadError->getMessage();
         }
 
-        Auth::auditLog('CREATE', 'car', $carId, "Car $regNo added with purchase entry");
+        $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
+        Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo, 'partner_id' => $linkedPartnerId], "Car $regNo added with purchase entry", 'cars');
         setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
         redirect("view.php?id=$carId");
     } catch (Exception $e) {
@@ -98,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="card" style="max-width: 800px;">
     <div class="card-body">
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" data-confirm-submit="Add this car, link the selected partner, and post the purchase entry?">
             <?= csrfField() ?>
             <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-blue);"><i class="ri-car-line"></i> Vehicle Details</h3>
             <div class="form-row">
@@ -177,13 +223,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </select>
             </div>
 
+            <hr style="border-color: var(--border); margin: 24px 0;">
+            <h3 style="margin-bottom:16px;font-size:15px;color:var(--accent-purple);"><i class="ri-user-link"></i> Linked Partner</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Select Existing Partner</label>
+                    <select name="linked_partner_id" class="form-control searchable-select">
+                        <option value="">No linked partner</option>
+                        <?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>"><?= clean($partner['name']) ?> (<?= ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?>
+                    </select>
+                </div>
+                <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
+                <div class="form-group">
+                    <label class="form-label">Or Add New Partner</label>
+                    <input type="text" name="new_partner_name" class="form-control" placeholder="New partner full name">
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">New Partner Phone</label><input type="text" name="new_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+                <div class="form-group"><label class="form-label">New Partner Default Profit Share %</label><input type="number" name="new_partner_profit_share_pct" class="form-control" value="0" min="0" max="100" step="0.01"></div>
+            </div>
+            <?php endif; ?>
+            <div class="form-hint" style="margin-top:-8px;margin-bottom:16px;">This direct link is independent of partner funding. Funding amounts and profit allocation remain unchanged if the linked partner is edited later.</div>
+
             <div class="form-group">
                 <label class="form-label">Seller Images</label>
                 <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
                 <div class="form-hint">Optional. Upload photos or documents received from seller.</div>
             </div>
 
-            <?php if (!empty($partners)): ?>
+            <?php if (!empty($fundingPartners)): ?>
             <hr style="border-color: var(--border); margin: 24px 0;">
             <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-purple);"><i class="ri-group-line"></i> Car-wise Partners (Optional)</h3>
             <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Add only deal-specific partners for this car. Main business partners are managed separately.</p>
@@ -193,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-group">
                         <select name="partner_ids[]" class="form-control">
                             <option value="">-- Select Car-wise Partner --</option>
-                            <?php foreach ($partners as $p): ?>
+                            <?php foreach ($fundingPartners as $p): ?>
                                 <option value="<?= $p['id'] ?>"><?= clean($p['name']) ?></option>
                             <?php endforeach; ?>
                         </select>

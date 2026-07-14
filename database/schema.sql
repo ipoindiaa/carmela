@@ -66,6 +66,8 @@ CREATE TABLE `accounts` (
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `opening_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `opening_balance_type` ENUM('DR','CR') NOT NULL DEFAULT 'DR',
+    `opening_balance_date` DATE DEFAULT NULL,
+    `opening_entry_id` CHAR(36) DEFAULT NULL,
     `current_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `current_balance_type` ENUM('DR','CR') NOT NULL DEFAULT 'DR',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -146,6 +148,7 @@ CREATE TABLE `cars` (
     `buyer_contact` VARCHAR(20) DEFAULT NULL,
     `buyer_party_id` CHAR(36) DEFAULT NULL,
     `seller_party_id` CHAR(36) DEFAULT NULL,
+    `partner_id` CHAR(36) DEFAULT NULL,
     `has_second_key` TINYINT(1) NOT NULL DEFAULT 0,
     `notes` TEXT DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -153,6 +156,7 @@ CREATE TABLE `cars` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_car_reg` (`business_id`, `registration_no`),
     KEY `idx_status` (`status`),
+    KEY `idx_car_partner` (`partner_id`),
     CONSTRAINT `fk_cars_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
     CONSTRAINT `fk_cars_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -177,6 +181,9 @@ CREATE TABLE `partners` (
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_partners_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE `cars`
+    ADD CONSTRAINT `fk_cars_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners`(`id`);
 
 -- ============================================================
 -- TABLE: car_partner_contributions
@@ -278,12 +285,19 @@ CREATE TABLE `employees` (
     `business_id` CHAR(36) NOT NULL,
     `name` VARCHAR(200) NOT NULL,
     `phone` VARCHAR(20) DEFAULT NULL,
+    `email` VARCHAR(100) DEFAULT NULL,
     `role` VARCHAR(100) DEFAULT NULL,
     `monthly_salary` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `advance_account_id` CHAR(36) DEFAULT NULL,
     `join_date` DATE NOT NULL,
+    `exit_date` DATE DEFAULT NULL,
+    `address` TEXT DEFAULT NULL,
+    `emergency_contact_name` VARCHAR(200) DEFAULT NULL,
+    `emergency_contact_phone` VARCHAR(20) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_employees_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -359,6 +373,9 @@ CREATE TABLE `audit_log` (
     `description` TEXT DEFAULT NULL,
     `old_value` JSON DEFAULT NULL,
     `new_value` JSON DEFAULT NULL,
+    `changed_fields` JSON DEFAULT NULL,
+    `module` VARCHAR(100) DEFAULT NULL,
+    `request_uri` VARCHAR(500) DEFAULT NULL,
     `ip_address` VARCHAR(45) DEFAULT NULL,
     `user_agent` VARCHAR(255) DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

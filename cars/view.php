@@ -8,16 +8,35 @@ require_once __DIR__ . '/../includes/attachments.php';
 $id = get('id');
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+Auth::requireEntityAccess('car', 'read');
 $engine->syncCarPartyLinks($id);
 
 $car = $db->fetch("SELECT c.*, a.current_balance as total_cost FROM cars c LEFT JOIN accounts a ON a.id = c.account_id WHERE c.id = ? AND c.business_id = ?", [$id, $businessId]);
 if (!$car) { setFlash('error', 'Car not found.'); redirect('list.php'); }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Auth::requireEntityAccess('car', 'write');
     verifyCsrf();
     try {
         $action = post('action');
-        if ($action === 'upload_car_images') {
+        if ($action === 'update_details') {
+            $partnerId = trim((string) post('partner_id')) ?: null;
+            if ($partnerId) {
+                $validPartner = $db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $businessId]);
+                if (!$validPartner) throw new Exception('Select a valid active partner.');
+            }
+            $year = intval(post('year')) ?: null;
+            if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
+            $oldDetails = array_intersect_key($car, array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'partner_id', 'notes']));
+            $db->query(
+                "UPDATE cars SET make = ?, model = ?, year = ?, color = ?, has_second_key = ?, partner_id = ?, notes = ? WHERE id = ? AND business_id = ?",
+                [post('make'), post('model'), $year, post('color'), post('has_second_key') === '1' ? 1 : 0, $partnerId, post('notes'), $id, $businessId]
+            );
+            $updatedCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$id, $businessId]);
+            $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'partner_id', 'notes']));
+            Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details and linked partner updated', 'cars');
+            setFlash('success', 'Car details updated.');
+        } elseif ($action === 'upload_car_images') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
             $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'images');
             setFlash('success', $count > 0 ? "$count image uploaded." : 'No image selected.');
@@ -43,6 +62,8 @@ $profit = $profitability['status'] === 'SOLD' ? $profitability['profit'] : null;
 $expenses = $profitability['total_expenses'];
 $carTotalCost = $profitability['total_cost'] ?? $car['purchase_price'];
 $partnerships = $profitability['partnerships'];
+$partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+$linkedPartner = !empty($car['partner_id']) ? $db->fetch("SELECT id, name, partner_type FROM partners WHERE id = ? AND business_id = ?", [$car['partner_id'], $businessId]) : null;
 $buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
 $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
@@ -149,6 +170,8 @@ $contributions = $db->fetchAll(
 <div class="page-header">
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div style="display: flex; gap: 10px;">
+        <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
@@ -163,6 +186,31 @@ $contributions = $db->fetchAll(
         <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
+
+<?php if (get('edit') === '1' && Auth::hasEntityAccess('car', 'write')): ?>
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Car Details</h3></div>
+    <div class="card-body">
+        <form method="POST" data-confirm-submit="Save these car details and linked partner? Financial purchase and sale entries will not be changed.">
+            <?= csrfField() ?><input type="hidden" name="action" value="update_details">
+            <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase amount, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use reversal for financial corrections.</div>
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Make</label><input type="text" name="make" class="form-control" value="<?= clean($car['make']) ?>"></div>
+                <div class="form-group"><label class="form-label">Model</label><input type="text" name="model" class="form-control" value="<?= clean($car['model']) ?>"></div>
+                <div class="form-group"><label class="form-label">Year</label><input type="number" name="year" class="form-control" value="<?= clean($car['year']) ?>" min="1900" max="<?= date('Y') + 1 ?>"></div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group"><label class="form-label">Color</label><input type="text" name="color" class="form-control" value="<?= clean($car['color']) ?>"></div>
+                <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= empty($car['has_second_key']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($car['has_second_key']) ? 'selected' : '' ?>>Yes</option></select></div>
+                <div class="form-group"><label class="form-label">Linked Partner</label><select name="partner_id" class="form-control searchable-select"><option value="">No linked partner</option><?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>" <?= ($car['partner_id'] ?? '') === $partner['id'] ? 'selected' : '' ?>><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?></select></div>
+            </div>
+            <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="3"><?= clean($car['notes']) ?></textarea></div>
+            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button>
+            <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Car Summary Cards -->
 <div class="stats-grid car-detail-stats-grid">
@@ -205,6 +253,7 @@ $contributions = $db->fetchAll(
                 <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Linked Partner</td><td><?= $linkedPartner ? '<a href="../partners/view.php?id=' . clean($linkedPartner['id']) . '">' . clean($linkedPartner['name']) . '</a>' : '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td>
                     <?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>

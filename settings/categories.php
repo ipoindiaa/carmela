@@ -92,7 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'current_balance' => 0,
                 'current_balance_type' => $direction === 'in' ? 'CR' : 'DR',
             ]);
-            Auth::auditLog('CREATE', 'account', $accountId, "Created {$meta['label']} category $name");
+            $createdCategory = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
+            Auth::auditCreate('account', $accountId, $createdCategory ?: ['name' => $name, 'code' => $code], "Created {$meta['label']} category $name", 'categories');
             setFlash('success', 'Category added successfully.');
         }
 
@@ -118,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?",
                 [$name, $isActive, $accountId, $businessId]
             );
-            Auth::auditLog('UPDATE', 'account', $accountId, "Updated category $name");
+            $updatedCategory = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
+            Auth::auditUpdate('account', $accountId, $account, $updatedCategory ?: [], "Updated category $name", 'categories');
             setFlash('success', 'Category updated successfully.');
         }
 
@@ -140,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $db->query("DELETE FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
-            Auth::auditLog('DELETE', 'account', $accountId, "Deleted category {$account['name']}");
+            Auth::auditLog('DELETE', 'account', $accountId, "Deleted category {$account['name']}", $account, null, 'categories');
             setFlash('success', 'Category deleted successfully.');
         }
 
@@ -179,7 +181,7 @@ $categories = $db->fetchAll(
 <div class="card" style="margin-bottom: 18px;">
     <div class="card-header"><h3><i class="ri-add-line"></i> Add Category</h3></div>
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" data-confirm-submit="Create this entry category?">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create">
             <div class="form-row-3">
@@ -240,12 +242,14 @@ $categories = $db->fetchAll(
                                 </select>
                             </td>
                             <td class="text-center">
-                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;">
+                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;" data-confirm-submit="Save this category change?">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="update">
                                     <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
                                     <button type="submit" class="btn btn-outline btn-sm"><i class="ri-save-line"></i> Save</button>
                                 </form>
+                                <a href="../reports/ledger.php?account_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="View ledger"><i class="ri-eye-line"></i></a>
+                                <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
                                 <?php if (intval($category['linked_entries'] ?? 0) === 0): ?>
                                     <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this category? This is allowed only because no entries are connected.">
                                         <?= csrfField() ?>

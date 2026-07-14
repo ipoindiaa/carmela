@@ -15,6 +15,7 @@ if ($isLazyRequest) {
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+Auth::requireEntityAccess('car', 'read');
 
 $filter = get('status', '');
 $search = trim((string) get('q', ''));
@@ -33,7 +34,7 @@ function renderCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
-        <tr><td colspan="10" class="text-center text-muted" style="padding: 40px;">No cars found. <a href="add.php">Add your first car</a></td></tr>
+        <tr><td colspan="11" class="text-center text-muted" style="padding: 40px;">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
         <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -49,6 +50,7 @@ function renderCarRows($cars, $engine) {
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
+            <td><?= !empty($car['partner_name']) ? '<a href="../partners/view.php?id=' . clean($car['partner_id']) . '">' . clean($car['partner_name']) . '</a>' : '-' ?></td>
             <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($car['purchase_price']) ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($extraCost) ?></td>
@@ -75,6 +77,8 @@ function renderCarRows($cars, $engine) {
             <td class="text-center">
                 <div class="table-action-stack">
                     <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
+                    <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
+                    <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
                     <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
                         <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
                     <?php endif; ?>
@@ -101,20 +105,22 @@ if ($search !== '') {
         OR c.model LIKE ?
         OR c.year LIKE ?
         OR c.status LIKE ?
+        OR p.name LIKE ?
     )";
     $normalizedSearch = '%' . strtoupper(preg_replace('/[^A-Z0-9]/i', '', $search)) . '%';
     $needle = '%' . $search . '%';
-    array_push($params, $normalizedSearch, $needle, $needle, $needle, $needle, $needle);
+    array_push($params, $normalizedSearch, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 
-$total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
+$total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost,
+    "SELECT c.*, a.current_balance as total_cost, p.name AS partner_name,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
+     LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records
@@ -136,10 +142,11 @@ foreach ($cars as $carRow) {
 }
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost,
+    "SELECT c.*, a.current_balance as total_cost, p.name AS partner_name,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
+     LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records
@@ -166,7 +173,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 
 <div class="page-header">
     <h1><i class="ri-car-line"></i> Cars Inventory</h1>
-    <a href="add.php" class="btn btn-primary"><i class="ri-add-line"></i> Add Car</a>
+    <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="add.php" class="btn btn-primary"><i class="ri-add-line"></i> Add Car</a><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -196,6 +203,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th>Reg. No.</th>
                 <th>Make / Model</th>
                 <th>Year</th>
+                <th>Linked Partner</th>
                 <th>Purchase Date / Time</th>
                 <th class="text-right">Purchase Price</th>
                 <th class="text-right">Extra Cost</th>

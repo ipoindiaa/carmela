@@ -13,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = validateEmailAddress(post('email'), 'Email');
     $db->query("UPDATE businesses SET name = ?, gstin = ?, address = ?, phone = ?, email = ?, updated_at = NOW() WHERE id = ?",
         [post('name'), post('gstin'), post('address'), $phone, $email, $businessId]);
-    Auth::auditLog('UPDATE', 'business', $businessId, 'Business profile updated');
+    $updatedBusiness = $db->fetch("SELECT * FROM businesses WHERE id = ?", [$businessId]);
+    Auth::auditUpdate('business', $businessId, $business, $updatedBusiness ?: [], 'Business profile updated', 'business');
     setFlash('success', 'Business profile updated!');
     redirect('business.php');
 }
@@ -21,11 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-building-2-line"></i> Business Profile</h1>
+    <a href="../reports/change_history.php?entity_type=business&amp;entity_id=<?= clean($businessId) ?>" class="btn btn-outline"><i class="ri-history-line"></i> History</a>
 </div>
 
 <div class="card" style="max-width: 600px;">
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" data-confirm-submit="Save these business profile changes?">
             <?= csrfField() ?>
             <div class="form-group"><label class="form-label">Business Name *</label><input type="text" name="name" class="form-control" value="<?= clean($business['name']) ?>" required></div>
             <div class="form-row">

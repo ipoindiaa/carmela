@@ -18,6 +18,42 @@ $writableAccountIds = array_values(array_filter(array_map(
     static fn($account) => $account['id'] ?? null,
     $writablePrimaryAccounts
 )));
+$allPartners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+
+$resolveLinkedCarPartner = function ($date) use ($db, $engine, $businessId) {
+    $partnerId = trim((string) post('linked_partner_id')) ?: null;
+    $newName = trim((string) post('new_linked_partner_name'));
+    if ($partnerId && $newName !== '') {
+        throw new Exception('Select an existing partner or add a new partner, not both.');
+    }
+    if ($newName === '') {
+        if (!$partnerId) return null;
+        $valid = $db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $businessId]);
+        if (!$valid) throw new Exception('Select a valid active partner.');
+        return $partnerId;
+    }
+
+    if (!Auth::hasEntityAccess('partner', 'write')) {
+        throw new Exception('You do not have permission to add a new partner. Select an existing partner instead.');
+    }
+
+    $partnerId = Database::uuid();
+    $phone = validatePhoneNumber(post('new_linked_partner_phone'), 'Partner phone number');
+    $share = round(parseDecimalInput(post('new_linked_partner_share', 0)), 2);
+    if ($share < 0 || $share > 100) throw new Exception('Partner profit share must be between 0 and 100.');
+    $suffix = strtoupper(substr(str_replace('-', '', $partnerId), 0, 7));
+    $capitalAccountId = $engine->createAccount('CAP-' . $suffix, "$newName - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
+    $currentAccountId = $engine->createAccount('CUR-' . $suffix, "$newName - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
+    $db->insert('partners', [
+        'id' => $partnerId, 'business_id' => $businessId, 'name' => $newName,
+        'partner_type' => 'CARWISE', 'phone' => $phone, 'profit_share_pct' => $share,
+        'capital_account_id' => $capitalAccountId, 'current_account_id' => $currentAccountId,
+        'joined_date' => $date,
+    ]);
+    $created = $db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $businessId]);
+    Auth::auditCreate('partner', $partnerId, $created ?: ['name' => $newName], "Partner $newName added while posting car purchase", 'transactions');
+    return $partnerId;
+};
 
 $primaryAccountIcon = static function ($entityType) {
     return match ($entityType) {
@@ -215,6 +251,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'CAR_PURCHASE':
                 $carId = post('car_id');
+                $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
+                $purchasePaidNow = $purchasePaidInput === '' ? $amount : parseDecimalInput($purchasePaidInput);
+                $partnerFunding = [];
+                if (post('partner_funding_enabled')) {
+                    $pfPartners = $_POST['pf_partner_id'] ?? [];
+                    $pfAmounts = $_POST['pf_amount'] ?? [];
+                    $pfProfitShares = $_POST['pf_profit_share_pct'] ?? [];
+                    foreach ($pfPartners as $i => $partnerId) {
+                        $partnerAmount = parseDecimalInput($pfAmounts[$i] ?? 0);
+                        if (!empty($partnerId) && $partnerAmount > 0) {
+                            $partnerFunding[] = [
+                                'partner_id' => $partnerId,
+                                'amount' => $partnerAmount,
+                                'profit_share_pct' => $pfProfitShares[$i] ?? null,
+                            ];
+                        }
+                    }
+                }
+                $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
+
                 if (empty($carId) || $carId === 'new') {
                     // Create new car first
                     $carId = Database::uuid();
@@ -222,8 +278,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!isValidRegistrationNo($carRegNo)) {
                         throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
                     }
+                    $existingCar = $db->fetch("SELECT id FROM cars WHERE business_id = ? AND registration_no = ?", [$businessId, $carRegNo]);
+                    if ($existingCar) {
+                        throw new Exception('A car with this registration number already exists.');
+                    }
                     $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $carRegNo));
                     $carAccountId = $engine->createAccount($carAccountCode, "Car A/c - $carRegNo", 'ASSET', 'Inventory', 'CAR', $carId);
+                    $linkedPartnerId = $resolveLinkedCarPartner($date);
                     
                     $db->insert('cars', [
                         'id' => $carId,
@@ -235,34 +296,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'color' => post('car_color'),
                         'purchase_date' => $date,
                         'purchase_price' => $amount,
-                        'purchase_paid_amount' => parseDecimalInput(post('purchase_paid_now', $amount)),
+                        'purchase_paid_amount' => $purchasePaidNow,
                         'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
+                        'partner_id' => $linkedPartnerId,
                         'account_id' => $carAccountId,
                     ]);
+                    $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
+                    Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $carRegNo], "Car $carRegNo created from New Entry", 'transactions');
                 }
                 
-                // Partner funding
-                $partnerFunding = [];
-                if (post('partner_funding_enabled')) {
-                    $pfPartners = $_POST['pf_partner_id'] ?? [];
-                    $pfAmounts = $_POST['pf_amount'] ?? [];
-                    $pfProfitShares = $_POST['pf_profit_share_pct'] ?? [];
-                    foreach ($pfPartners as $i => $pid) {
-                        $pfAmount = parseDecimalInput($pfAmounts[$i] ?? 0);
-                        if (!empty($pid) && $pfAmount > 0) {
-                            $partnerFunding[] = [
-                                'partner_id' => $pid,
-                                'amount' => $pfAmount,
-                                'profit_share_pct' => $pfProfitShares[$i] ?? null,
-                            ];
-                        }
-                    }
-                }
-
                 if ($carId && $gstAmount > 0) {
                     $db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [max(0, $amount - $gstAmount), $carId, $businessId]);
                 }
-                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount, post('seller_name'), parseDecimalInput(post('purchase_paid_now', $amount)));
+                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
                 $attachmentCarId = $carId;
                 break;
 
@@ -467,7 +513,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <section class="entry-workstation">
-    <form method="POST" id="transaction-form" class="entry-form" enctype="multipart/form-data">
+    <form method="POST" id="transaction-form" class="entry-form" enctype="multipart/form-data" data-confirm-submit="Post this entry? Financial entries can only be corrected through reversal.">
         <?= csrfField() ?>
 
         <div class="entry-core-panel">
@@ -604,6 +650,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="1">Yes</option>
                     </select>
                 </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Linked Partner</label>
+                        <select name="linked_partner_id" class="form-control searchable-select">
+                            <option value="">No linked partner</option>
+                            <?php foreach ($allPartners as $partner): ?><option value="<?= clean($partner['id']) ?>"><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php if (Auth::hasEntityAccess('partner', 'write')): ?><div class="form-group"><label class="form-label">Or Add New Partner</label><input type="text" name="new_linked_partner_name" class="form-control" placeholder="New partner full name"></div><?php endif; ?>
+                </div>
+                <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">New Partner Phone</label><input type="text" name="new_linked_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
+                    <div class="form-group"><label class="form-label">New Partner Profit Share %</label><input type="number" name="new_linked_partner_share" class="form-control" min="0" max="100" step="0.01" value="0"></div>
+                </div>
+                <?php endif; ?>
 
                 <div class="form-group">
                     <label class="form-label">Seller Images</label>
