@@ -1056,7 +1056,8 @@ tbody td {
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
     line-height: 1.45;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .table-container td,
@@ -4603,6 +4604,19 @@ table td .form-control {
     .filter-main-field.filter-main-field-wide {
         flex-basis: 100% !important;
         min-width: 0 !important;
+    }
+
+    .filter-bar.filter-bar-chipset {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        scrollbar-gutter: auto;
+    }
+
+    .filter-bar.filter-bar-chipset .btn {
+        width: auto;
+        min-width: max-content;
+        flex: 0 0 auto;
     }
 
     .modal-footer {
