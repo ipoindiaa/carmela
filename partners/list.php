@@ -17,28 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     Auth::requireEntityAccess('partner', 'write');
     verifyCsrf();
     try {
-        $partnerId = Database::uuid();
         $name = trim((string) post('name'));
         $partnerType = strtoupper((string) post('partner_type', 'MAIN'));
-        if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) {
-            throw new Exception('Invalid partner type.');
-        }
-        $phone = validatePhoneNumber(post('phone'), 'Phone number');
-        $email = validateEmailAddress(post('email'), 'Email');
-        $accountSuffix = strtoupper(substr(str_replace('-', '', $partnerId), 0, 7));
-        $capitalAccId = $engine->createAccount('CAP-' . $accountSuffix, "$name - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
-        $currentAccId = $engine->createAccount('CUR-' . $accountSuffix, "$name - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
-
-        $db->insert('partners', [
-            'id' => $partnerId, 'business_id' => $businessId, 'name' => $name,
-            'partner_type' => $partnerType,
-            'phone' => $phone, 'email' => $email, 'pan' => post('pan'),
-            'profit_share_pct' => floatval(post('profit_share_pct', 0)),
-            'capital_account_id' => $capitalAccId, 'current_account_id' => $currentAccId,
-            'joined_date' => post('joined_date'),
-        ]);
-        $createdPartner = $db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $businessId]);
-        Auth::auditCreate('partner', $partnerId, $createdPartner ?: ['name' => $name], "Partner $name added", 'partners');
+        $engine->createPartner($name, $partnerType, post('phone'), post('email'), post('pan'), parseDecimalInput(post('profit_share_pct', 0)), post('joined_date'), 'partners');
         setFlash('success', "Partner $name added successfully!");
         redirect('list.php' . ($partnerType ? '?type=' . urlencode($partnerType) : ''));
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -114,7 +95,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill" style="margin-bottom:20px;">
     <div style="padding:16px 16px 0;font-weight:700;">Main Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($mainPartners)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No main partners yet</td></tr>
@@ -141,7 +122,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill">
     <div style="padding:16px 16px 0;font-weight:700;">Car-wise Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($carWisePartners)): ?>
                 <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No car-wise partners yet</td></tr>
@@ -186,7 +167,7 @@ $pageDescription = $requestedType === 'CARWISE'
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" maxlength="10"></div>
-                    <div class="form-group"><label class="form-label">Default Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="0" step="0.01" min="0" max="100"></div>
+                    <div class="form-group"><label class="form-label">Default Car Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="0" step="0.01" min="0" max="100"><div class="form-hint">Used only when a car-specific share is left blank.</div></div>
                 </div>
                 <div class="form-group"><label class="form-label">Joined Date *</label><input type="date" name="joined_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
                 <button type="submit" class="btn btn-primary btn-block"><i class="ri-save-line"></i> Add Partner</button>

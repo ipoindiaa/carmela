@@ -1,15 +1,4 @@
 <?php
-$logFile = __DIR__ . '/search_debug.log';
-$logDataPre = [
-    'stage' => 'pre-auth',
-    'time' => date('Y-m-d H:i:s'),
-    'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-    'uri' => $_SERVER['REQUEST_URI'] ?? '',
-    'get' => $_GET,
-    'session_exists' => isset($_SESSION),
-];
-file_put_contents($logFile, json_encode($logDataPre) . "\n", FILE_APPEND);
-
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -18,15 +7,6 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 $db = Database::getInstance();
 
 Auth::check();
-
-$logDataPost = [
-    'stage' => 'post-auth',
-    'time' => date('Y-m-d H:i:s'),
-    'user_id' => $_SESSION['user_id'] ?? null,
-    'business_id' => $_SESSION['business_id'] ?? null,
-    'role' => $_SESSION['role'] ?? null,
-];
-file_put_contents($logFile, json_encode($logDataPost) . "\n", FILE_APPEND);
 
 Auth::requireAnyBookAccess(array_keys(BOOK_PERMISSIONS), 'read');
 
@@ -135,12 +115,9 @@ switch ($kind) {
 
     case 'partner':
     case 'main_partner':
-    case 'car_partner':
         $partnerTypeFilter = '';
         if ($kind === 'main_partner') {
             $partnerTypeFilter = " AND partner_type = 'MAIN'";
-        } elseif ($kind === 'car_partner') {
-            $partnerTypeFilter = " AND partner_type = 'CARWISE'";
         }
         $rows = $db->fetchAll(
             "SELECT id, name, phone, profit_share_pct, partner_type
@@ -160,7 +137,7 @@ switch ($kind) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
-                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Share ' . formatPlainNumber($row['profit_share_pct'] ?? 0) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
+                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Default car share ' . formatPlainNumber($row['profit_share_pct'] ?? 0) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
             ];
         }
         break;

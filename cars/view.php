@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $updatedCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$id, $businessId]);
             $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'partner_id', 'notes']));
-            Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details and linked partner updated', 'cars');
+            Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details and primary partner updated', 'cars');
             setFlash('success', 'Car details updated.');
         } elseif ($action === 'upload_car_images') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
@@ -158,13 +158,14 @@ $ledger = $db->fetchAll(
     [$car['account_id'], $car['account_id'], $businessId, $id]
 );
 
-// Partner contributions
+// Current per-car partner terms, including partners with profit share but no cash contribution.
 $contributions = $db->fetchAll(
-    "SELECT cpc.*, p.name as partner_name
-     FROM car_partner_contributions cpc
-     JOIN partners p ON p.id = cpc.partner_id
-     WHERE cpc.car_id = ?
-     ORDER BY cpc.contribution_date DESC, cpc.created_at DESC", [$id]);
+    "SELECT cp.*, cp.funding_amount AS amount, c.purchase_date AS contribution_date, p.name AS partner_name
+     FROM car_partnerships cp
+     JOIN partners p ON p.id = cp.partner_id
+     JOIN cars c ON c.id = cp.car_id
+     WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
+     ORDER BY cp.created_at", [$businessId, $id]);
 ?>
 
 <div class="page-header">
@@ -191,7 +192,7 @@ $contributions = $db->fetchAll(
 <div class="card" style="margin-bottom:20px;">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Car Details</h3></div>
     <div class="card-body">
-        <form method="POST" data-confirm-submit="Save these car details and linked partner? Financial purchase and sale entries will not be changed.">
+        <form method="POST" data-confirm-submit="Save these car details and primary partner? Posted contribution and profit-share terms will not be changed.">
             <?= csrfField() ?><input type="hidden" name="action" value="update_details">
             <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase amount, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use reversal for financial corrections.</div>
             <div class="form-row-3">
@@ -202,7 +203,7 @@ $contributions = $db->fetchAll(
             <div class="form-row-3">
                 <div class="form-group"><label class="form-label">Color</label><input type="text" name="color" class="form-control" value="<?= clean($car['color']) ?>"></div>
                 <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= empty($car['has_second_key']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($car['has_second_key']) ? 'selected' : '' ?>>Yes</option></select></div>
-                <div class="form-group"><label class="form-label">Linked Partner</label><select name="partner_id" class="form-control searchable-select"><option value="">No linked partner</option><?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>" <?= ($car['partner_id'] ?? '') === $partner['id'] ? 'selected' : '' ?>><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?></select></div>
+                <div class="form-group"><label class="form-label">Primary Partner</label><select name="partner_id" class="form-control searchable-select"><option value="">No primary partner</option><?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>" <?= ($car['partner_id'] ?? '') === $partner['id'] ? 'selected' : '' ?>><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?></select><div class="form-hint">Used in car lists and reports. This does not change posted partner contributions or profit shares.</div></div>
             </div>
             <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="3"><?= clean($car['notes']) ?></textarea></div>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button>
@@ -253,7 +254,7 @@ $contributions = $db->fetchAll(
                 <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Linked Partner</td><td><?= $linkedPartner ? '<a href="../partners/view.php?id=' . clean($linkedPartner['id']) . '">' . clean($linkedPartner['name']) . '</a>' : '-' ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Primary Partner</td><td><?= $linkedPartner ? '<a href="../partners/view.php?id=' . clean($linkedPartner['id']) . '">' . clean($linkedPartner['name']) . '</a>' : '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td>
                     <?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
@@ -274,7 +275,7 @@ $contributions = $db->fetchAll(
 
     <!-- Partner Contributions -->
     <div class="card">
-        <div class="card-header"><h3><i class="ri-group-line"></i> Partner Funding & Shares</h3></div>
+        <div class="card-header"><h3><i class="ri-group-line"></i> Car Partner Terms</h3></div>
         <div class="card-body">
             <?php if (empty($contributions)): ?>
                 <p class="text-muted">No partner contributions. Fully business-funded.</p>

@@ -23,7 +23,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Linked Partner</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Primary Partner</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);

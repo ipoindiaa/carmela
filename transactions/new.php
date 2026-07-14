@@ -6,7 +6,8 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 require_once __DIR__ . '/../includes/attachments.php';
 
 $businessId = Auth::user('business_id');
-$engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$userId = Auth::user('user_id');
+$engine = new AccountingEngine($businessId, $userId);
 Auth::requireAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 
 // Get writable primary accounts for dropdowns
@@ -18,43 +19,6 @@ $writableAccountIds = array_values(array_filter(array_map(
     static fn($account) => $account['id'] ?? null,
     $writablePrimaryAccounts
 )));
-$allPartners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
-
-$resolveLinkedCarPartner = function ($date) use ($db, $engine, $businessId) {
-    $partnerId = trim((string) post('linked_partner_id')) ?: null;
-    $newName = trim((string) post('new_linked_partner_name'));
-    if ($partnerId && $newName !== '') {
-        throw new Exception('Select an existing partner or add a new partner, not both.');
-    }
-    if ($newName === '') {
-        if (!$partnerId) return null;
-        $valid = $db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $businessId]);
-        if (!$valid) throw new Exception('Select a valid active partner.');
-        return $partnerId;
-    }
-
-    if (!Auth::hasEntityAccess('partner', 'write')) {
-        throw new Exception('You do not have permission to add a new partner. Select an existing partner instead.');
-    }
-
-    $partnerId = Database::uuid();
-    $phone = validatePhoneNumber(post('new_linked_partner_phone'), 'Partner phone number');
-    $share = round(parseDecimalInput(post('new_linked_partner_share', 0)), 2);
-    if ($share < 0 || $share > 100) throw new Exception('Partner profit share must be between 0 and 100.');
-    $suffix = strtoupper(substr(str_replace('-', '', $partnerId), 0, 7));
-    $capitalAccountId = $engine->createAccount('CAP-' . $suffix, "$newName - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
-    $currentAccountId = $engine->createAccount('CUR-' . $suffix, "$newName - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
-    $db->insert('partners', [
-        'id' => $partnerId, 'business_id' => $businessId, 'name' => $newName,
-        'partner_type' => 'CARWISE', 'phone' => $phone, 'profit_share_pct' => $share,
-        'capital_account_id' => $capitalAccountId, 'current_account_id' => $currentAccountId,
-        'joined_date' => $date,
-    ]);
-    $created = $db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $businessId]);
-    Auth::auditCreate('partner', $partnerId, $created ?: ['name' => $newName], "Partner $newName added while posting car purchase", 'transactions');
-    return $partnerId;
-};
-
 $primaryAccountIcon = static function ($entityType) {
     return match ($entityType) {
         'CASH' => '💵',
@@ -252,24 +216,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'CAR_PURCHASE':
                 $carId = post('car_id');
                 $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
-                $purchasePaidNow = $purchasePaidInput === '' ? $amount : parseDecimalInput($purchasePaidInput);
-                $partnerFunding = [];
-                if (post('partner_funding_enabled')) {
-                    $pfPartners = $_POST['pf_partner_id'] ?? [];
-                    $pfAmounts = $_POST['pf_amount'] ?? [];
-                    $pfProfitShares = $_POST['pf_profit_share_pct'] ?? [];
-                    foreach ($pfPartners as $i => $partnerId) {
-                        $partnerAmount = parseDecimalInput($pfAmounts[$i] ?? 0);
-                        if (!empty($partnerId) && $partnerAmount > 0) {
-                            $partnerFunding[] = [
-                                'partner_id' => $partnerId,
-                                'amount' => $partnerAmount,
-                                'profit_share_pct' => $pfProfitShares[$i] ?? null,
-                            ];
-                        }
+                $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
+                $pfPartners = array_values((array) ($_POST['pf_partner_id'] ?? []));
+                $pfAmounts = array_values((array) ($_POST['pf_amount'] ?? []));
+                $pfProfitShares = array_values((array) ($_POST['pf_profit_share_pct'] ?? []));
+                $newPartnerName = trim((string) post('new_car_partner_name'));
+                if ($newPartnerName !== '' && trim((string) ($pfPartners[0] ?? '')) !== '') {
+                    throw new Exception('Select an existing primary partner or create a new one, not both.');
+                }
+                if ($newPartnerName !== '') {
+                    if (!Auth::hasEntityAccess('partner', 'write')) {
+                        throw new Exception('You do not have permission to add a new partner. Select an existing partner instead.');
+                    }
+                    $newPartnerId = $engine->createPartner($newPartnerName, 'CARWISE', post('new_car_partner_phone'), '', '', 0, $date, 'transactions');
+                    if (empty($pfPartners)) {
+                        $pfPartners[] = $newPartnerId;
+                        $pfAmounts[] = '';
+                        $pfProfitShares[] = '';
+                    } else {
+                        $pfPartners[0] = $newPartnerId;
                     }
                 }
-                $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
+
+                $partnerFunding = [];
+                $seenPartnerIds = [];
+                $primaryPartnerId = null;
+                $partnerRowCount = max(count($pfPartners), count($pfAmounts), count($pfProfitShares));
+                for ($i = 0; $i < $partnerRowCount; $i++) {
+                    $partnerId = trim((string) ($pfPartners[$i] ?? ''));
+                    $partnerAmountInput = trim((string) ($pfAmounts[$i] ?? ''));
+                    $partnerShareInput = trim((string) ($pfProfitShares[$i] ?? ''));
+                    if ($partnerId === '') {
+                        if ($partnerAmountInput !== '' || $partnerShareInput !== '') {
+                            throw new Exception('Select a partner for every contribution or profit share entered.');
+                        }
+                        continue;
+                    }
+                    if (isset($seenPartnerIds[$partnerId])) {
+                        throw new Exception('Each partner can be added to a car only once.');
+                    }
+                    $seenPartnerIds[$partnerId] = true;
+                    $primaryPartnerId ??= $partnerId;
+                    $partnerFunding[] = [
+                        'partner_id' => $partnerId,
+                        'amount' => $partnerAmountInput === '' ? 0 : parseDecimalInput($partnerAmountInput),
+                        'profit_share_pct' => $partnerShareInput === '' ? null : $partnerShareInput,
+                    ];
+                }
+                $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
+                $partnerFunding = $validation['partner_funding'];
+                $purchasePaidNow = $validation['paid_now'];
 
                 if (empty($carId) || $carId === 'new') {
                     // Create new car first
@@ -284,7 +280,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $carRegNo));
                     $carAccountId = $engine->createAccount($carAccountCode, "Car A/c - $carRegNo", 'ASSET', 'Inventory', 'CAR', $carId);
-                    $linkedPartnerId = $resolveLinkedCarPartner($date);
                     
                     $db->insert('cars', [
                         'id' => $carId,
@@ -298,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'purchase_price' => $amount,
                         'purchase_paid_amount' => $purchasePaidNow,
                         'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
-                        'partner_id' => $linkedPartnerId,
+                        'partner_id' => $primaryPartnerId,
                         'account_id' => $carAccountId,
                     ]);
                     $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
@@ -651,23 +646,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </select>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Linked Partner</label>
-                        <select name="linked_partner_id" class="form-control searchable-select">
-                            <option value="">No linked partner</option>
-                            <?php foreach ($allPartners as $partner): ?><option value="<?= clean($partner['id']) ?>"><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?>
-                        </select>
-                    </div>
-                    <?php if (Auth::hasEntityAccess('partner', 'write')): ?><div class="form-group"><label class="form-label">Or Add New Partner</label><input type="text" name="new_linked_partner_name" class="form-control" placeholder="New partner full name"></div><?php endif; ?>
-                </div>
-                <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
-                <div class="form-row">
-                    <div class="form-group"><label class="form-label">New Partner Phone</label><input type="text" name="new_linked_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10"></div>
-                    <div class="form-group"><label class="form-label">New Partner Profit Share %</label><input type="number" name="new_linked_partner_share" class="form-control" min="0" max="100" step="0.01" value="0"></div>
-                </div>
-                <?php endif; ?>
-
                 <div class="form-group">
                     <label class="form-label">Seller Images</label>
                     <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
@@ -675,39 +653,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- PARTNER FUNDING SECTION -->
-	            <div class="txn-section" id="partner-funding-section" style="display:none;">
-                <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-purple);">
-                    <i class="ri-group-line"></i> Partner Funding (Optional)
-                </h4>
-                <div>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer;">
-                        <input type="checkbox" name="partner_funding_enabled" value="1" onchange="document.getElementById('partner-funding-rows').style.display = this.checked ? 'block' : 'none'">
-                        <span style="font-size: 14px;">Partners are contributing to this purchase</span>
-                    </label>
-	                    <div id="partner-funding-rows" style="display: none;">
-	                        <div class="form-row partner-funding-row">
-	                            <div class="form-group">
-	                                <label class="form-label">Partner</label>
-                                    <input type="hidden" name="pf_partner_id[]" class="pf-partner-id">
-	                                <button type="button" class="picker-trigger picker-trigger-wide pf-partner-trigger" onclick="openEntityPicker('car_partner', this)">
-                                        <span>Select partner</span>
-                                        <i class="ri-search-line"></i>
-                                    </button>
+            <div class="txn-section" id="partner-funding-section" style="display:none;">
+                <div style="border-top:1px solid var(--border);padding-top:20px;margin-top:20px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                        <div>
+                            <h4 style="color:var(--accent-purple);"><i class="ri-group-line"></i> Car Partners <span class="text-muted" style="font-weight:500;">(Optional)</span></h4>
+                            <div class="form-hint">The first partner is the Primary Partner shown in car reports. Contribution and profit share apply only to this car.</div>
+                        </div>
+                        <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button type="button" class="btn btn-outline btn-sm" id="quick-car-partner-toggle" onclick="toggleQuickCarPartner()"><i class="ri-user-add-line"></i> Create New Partner</button><?php endif; ?>
+                    </div>
+                    <div id="partner-funding-rows">
+                        <div class="form-row partner-funding-row car-partner-row">
+                            <div class="form-group partner-picker-group">
+                                <label class="form-label partner-role-label">Primary Partner</label>
+                                <input type="hidden" name="pf_partner_id[]" class="pf-partner-id">
+                                <button type="button" class="picker-trigger picker-trigger-wide pf-partner-trigger" onclick="openEntityPicker('partner', this)">
+                                    <span>Select partner</span>
+                                    <i class="ri-search-line"></i>
+                                </button>
                             </div>
-	                            <div class="form-group">
-	                                <label class="form-label">Amount (₹)</label>
-	                                <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
-	                            </div>
-	                            <div class="form-group">
-	                                <label class="form-label">Profit Share %</label>
-	                                <input type="number" name="pf_profit_share_pct[]" class="form-control" placeholder="Auto from funding" step="0.01" min="0">
-	                            </div>
-	                        </div>
-                            <button type="button" class="btn btn-outline btn-sm" onclick="addPartnerFundingRow()"><i class="ri-add-line"></i> Add Partner Row</button>
-	                    </div>
-	                </div>
-	            </div>
+                            <div class="form-group">
+                                <label class="form-label">Contribution (₹)</label>
+                                <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="Optional" inputmode="decimal" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Profit Share %</label>
+                                <input type="number" name="pf_profit_share_pct[]" class="form-control" placeholder="Auto if blank" step="0.01" min="0" max="100">
+                            </div>
+                            <div class="form-group partner-row-action is-placeholder" style="display:flex;visibility:hidden;align-self:end;">
+                                <button type="button" class="btn btn-outline btn-icon" title="Remove partner" onclick="removePartnerFundingRow(this)"><i class="ri-delete-bin-line"></i></button>
+                            </div>
+                        </div>
+                        <div class="partner-funding-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="addPartnerFundingRow()"><i class="ri-add-line"></i> Add Partner</button>
+                            <span class="form-hint">Partner shares may total up to 100%. The business keeps the remainder.</span>
+                        </div>
+                    </div>
+                    <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
+                    <div id="quick-car-partner-fields" class="alert alert-info" style="display:none;margin-top:12px;">
+                        <div class="form-row" style="width:100%;margin-bottom:0;">
+                            <div class="form-group"><label class="form-label">New Primary Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
+                            <div class="form-group"><label class="form-label">Phone</label><input type="text" name="new_car_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
 
             <!-- CAR SELECT SECTION (for expenses / sale) -->
             <div class="txn-section" id="car-select-section" style="display:none;" data-preselected-expense-car="<?= clean($preselectedCarId) ?>">
@@ -1190,9 +1181,9 @@ const entityPickerConfig = {
         triggerId: 'partner-picker-trigger',
         emptyLabel: 'Select partner',
     },
-    car_partner: {
-        title: 'Search Car-wise Partners',
-        subtitle: 'Search partner for this specific car deal.',
+    partner: {
+        title: 'Select Partner',
+        subtitle: 'Search active main and car-wise partners by name or phone number.',
         inputId: 'partner_id',
         triggerId: 'partner-picker-trigger',
         emptyLabel: 'Select partner',
@@ -1268,10 +1259,49 @@ function addPartnerFundingRow() {
     clone.querySelectorAll('.pf-partner-trigger span').forEach((label) => {
         label.textContent = 'Select partner';
     });
+    const roleLabel = clone.querySelector('.partner-role-label');
+    if (roleLabel) roleLabel.textContent = 'Additional Partner';
+    const action = clone.querySelector('.partner-row-action');
+    if (action) {
+        action.classList.remove('is-placeholder');
+        action.style.visibility = 'visible';
+    }
     if (typeof initCurrencyInputs === 'function') {
         initCurrencyInputs(clone);
     }
     container.insertBefore(clone, container.lastElementChild);
+}
+
+function removePartnerFundingRow(button) {
+    button.closest('.partner-funding-row')?.remove();
+}
+
+function toggleQuickCarPartner() {
+    const panel = document.getElementById('quick-car-partner-fields');
+    const button = document.getElementById('quick-car-partner-toggle');
+    const primaryRow = document.querySelector('#partner-funding-rows .partner-funding-row');
+    const pickerGroup = primaryRow?.querySelector('.partner-picker-group');
+    const partnerInput = primaryRow?.querySelector('.pf-partner-id');
+    const triggerLabel = primaryRow?.querySelector('.pf-partner-trigger span');
+    const nameInput = panel?.querySelector('input[name="new_car_partner_name"]');
+    if (!panel || !button || !pickerGroup || !nameInput) return;
+
+    const opening = panel.style.display === 'none';
+    panel.style.display = opening ? 'flex' : 'none';
+    pickerGroup.style.display = opening ? 'none' : '';
+    nameInput.required = opening;
+    if (opening) {
+        if (partnerInput) partnerInput.value = '';
+        if (triggerLabel) triggerLabel.textContent = 'Select partner';
+        nameInput.focus();
+    } else {
+        nameInput.value = '';
+        const phone = panel.querySelector('input[name="new_car_partner_phone"]');
+        if (phone) phone.value = '';
+    }
+    button.innerHTML = opening
+        ? '<i class="ri-close-line"></i> Use Existing Partner'
+        : '<i class="ri-user-add-line"></i> Create New Partner';
 }
 
 // Show/hide debtor vs creditor select
@@ -1705,7 +1735,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
 
 function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '') {
     const triggerButton = activeEntityPicker?.button || null;
-    if ((kind === 'partner' || kind === 'car_partner') && triggerButton?.classList.contains('pf-partner-trigger')) {
+    if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
         const input = row?.querySelector('.pf-partner-id');
         const span = triggerButton.querySelector('span');

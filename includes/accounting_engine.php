@@ -65,6 +65,75 @@ class AccountingEngine {
         return $id;
     }
 
+    public function createPartner($name, $partnerType = 'CARWISE', $phone = '', $email = '', $pan = '', $defaultProfitShare = 0, $joinedDate = null, $module = 'partners') {
+        $name = trim((string) $name);
+        if ($name === '') {
+            throw new Exception('Partner name is required.');
+        }
+
+        $partnerType = strtoupper(trim((string) $partnerType));
+        if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) {
+            throw new Exception('Invalid partner type.');
+        }
+
+        $phone = validatePhoneNumber($phone, 'Partner phone number');
+        $email = validateEmailAddress($email, 'Partner email');
+        $pan = strtoupper(trim((string) $pan));
+        $defaultProfitShare = round(floatval($defaultProfitShare), 2);
+        if ($defaultProfitShare < 0 || $defaultProfitShare > 100) {
+            throw new Exception('Default car profit share must be between 0 and 100.');
+        }
+
+        $joinedDate = trim((string) ($joinedDate ?: date('Y-m-d')));
+        $date = DateTime::createFromFormat('!Y-m-d', $joinedDate);
+        if (!$date || $date->format('Y-m-d') !== $joinedDate) {
+            throw new Exception('A valid partner joined date is required.');
+        }
+
+        $existing = $this->db->fetch(
+            "SELECT id, name FROM partners
+             WHERE business_id = ?
+               AND LOWER(TRIM(name)) = LOWER(?)
+               AND ((COALESCE(phone, '') = '' AND ? = '') OR phone = ?)
+             LIMIT 1",
+            [$this->businessId, $name, $phone, $phone]
+        );
+        if ($existing) {
+            throw new Exception("Partner {$existing['name']} already exists. Select the existing partner instead.");
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $partnerId = Database::uuid();
+            $suffix = strtoupper(substr(str_replace('-', '', $partnerId), 0, 7));
+            $capitalAccountId = $this->createAccount('CAP-' . $suffix, "$name - Capital A/c", 'EQUITY', 'Capital Accounts', 'PARTNER', $partnerId);
+            $currentAccountId = $this->createAccount('CUR-' . $suffix, "$name - Current A/c", 'LIABILITY', 'Current Liabilities', 'PARTNER', $partnerId);
+            $this->db->insert('partners', [
+                'id' => $partnerId,
+                'business_id' => $this->businessId,
+                'name' => $name,
+                'partner_type' => $partnerType,
+                'phone' => $phone,
+                'email' => $email,
+                'pan' => $pan,
+                'profit_share_pct' => $defaultProfitShare,
+                'capital_account_id' => $capitalAccountId,
+                'current_account_id' => $currentAccountId,
+                'joined_date' => $joinedDate,
+            ]);
+
+            $created = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
+            if (class_exists('Auth') && Auth::isLoggedIn()) {
+                Auth::auditCreate('partner', $partnerId, $created ?: ['name' => $name], "Partner $name added", $module);
+            }
+            $this->db->commit();
+            return $partnerId;
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     public function setOpeningBalance($accountId, $amount, $balanceType, $date, $reason = '') {
         $amount = round(floatval($amount), 2);
         $balanceType = strtoupper((string) $balanceType) === 'CR' ? 'CR' : 'DR';
@@ -685,6 +754,7 @@ class AccountingEngine {
         $sellerOutstanding = $validation['seller_outstanding'];
         $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
+        $businessGst = 0.0;
         if ($businessAmount > 0) {
             $businessGst = $grossAmount > 0 ? round(($gstAmount * $businessAmount) / $grossAmount, 2) : 0.0;
             $businessBase = round($businessAmount - $businessGst, 2);
@@ -711,39 +781,41 @@ class AccountingEngine {
 
         // Partner funding entries
         $partnerGstAllocated = 0.0;
-        $partnerRowsRemaining = count($partnerFunding);
+        $partnerGstTarget = round($gstAmount - $businessGst, 2);
+        $partnerRowsRemaining = count(array_filter($partnerFunding, static fn($row) => floatval($row['amount'] ?? 0) > 0));
         foreach ($partnerFunding as $pf) {
             $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$pf['partner_id'], $this->businessId]);
             if (!$partner) continue;
 
-            $partnerRowsRemaining--;
-            $partnerGst = $partnerRowsRemaining === 0
-                ? round($gstAmount - $partnerGstAllocated, 2)
-                : ($grossAmount > 0 ? round(($gstAmount * $pf['amount']) / $grossAmount, 2) : 0.0);
-            $partnerGstAllocated += $partnerGst;
-            $partnerBase = round($pf['amount'] - $partnerGst, 2);
+            if ($pf['amount'] > 0) {
+                $partnerRowsRemaining--;
+                $partnerGst = $partnerRowsRemaining === 0
+                    ? round($partnerGstTarget - $partnerGstAllocated, 2)
+                    : ($grossAmount > 0 ? round(($gstAmount * $pf['amount']) / $grossAmount, 2) : 0.0);
+                $partnerGstAllocated += $partnerGst;
+                $partnerBase = round($pf['amount'] - $partnerGst, 2);
 
-            $partnerLines = [];
-            if ($partnerBase > 0) {
-                $partnerLines[] = ['account_id' => $carAccountId, 'amount' => $partnerBase, 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"];
-            }
-            if ($partnerGst > 0 && !empty($gstInputAccount['id'])) {
-                $partnerLines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $partnerGst, 'type' => 'DR', 'narration' => "GST input on {$car['registration_no']}"];
-            }
-            $partnerLines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $pf['amount'], 'type' => 'CR', 'narration' => "Investment in car {$car['registration_no']}"];
-            $partnerEntryId = $this->postJournalEntry('PARTNER_INVEST', $date, "Partner {$partner['name']} invested in {$car['registration_no']}", $partnerLines, ['car_id' => $carId, 'partner_id' => $pf['partner_id']]);
+                $partnerLines = [];
+                if ($partnerBase > 0) {
+                    $partnerLines[] = ['account_id' => $carAccountId, 'amount' => $partnerBase, 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"];
+                }
+                if ($partnerGst > 0 && !empty($gstInputAccount['id'])) {
+                    $partnerLines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $partnerGst, 'type' => 'DR', 'narration' => "GST input on {$car['registration_no']}"];
+                }
+                $partnerLines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $pf['amount'], 'type' => 'CR', 'narration' => "Investment in car {$car['registration_no']}"];
+                $partnerEntryId = $this->postJournalEntry('PARTNER_INVEST', $date, "Partner {$partner['name']} invested in {$car['registration_no']}", $partnerLines, ['car_id' => $carId, 'partner_id' => $pf['partner_id']]);
 
-            // Record contribution
-            $this->db->insert('car_partner_contributions', [
-                'id' => Database::uuid(),
-                'car_id' => $carId,
-                'partner_id' => $pf['partner_id'],
-                'amount' => $pf['amount'],
-                'funding_pct' => $pf['funding_pct'],
-                'profit_share_pct' => $pf['profit_share_pct'],
-                'contribution_date' => $date,
-                'journal_entry_id' => $partnerEntryId,
-            ]);
+                $this->db->insert('car_partner_contributions', [
+                    'id' => Database::uuid(),
+                    'car_id' => $carId,
+                    'partner_id' => $pf['partner_id'],
+                    'amount' => $pf['amount'],
+                    'funding_pct' => $pf['funding_pct'],
+                    'profit_share_pct' => $pf['profit_share_pct'],
+                    'contribution_date' => $date,
+                    'journal_entry_id' => $partnerEntryId,
+                ]);
+            }
 
             $existingPartnership = $this->db->fetch(
                 "SELECT id FROM car_partnerships WHERE car_id = ? AND partner_id = ?",
@@ -763,10 +835,14 @@ class AccountingEngine {
             ];
 
             if ($existingPartnership) {
+                $oldPartnership = $this->db->fetch("SELECT * FROM car_partnerships WHERE id = ?", [$existingPartnership['id']]);
                 $this->db->update('car_partnerships', $partnershipData, 'id = ?', [$existingPartnership['id']]);
+                $updatedPartnership = $this->db->fetch("SELECT * FROM car_partnerships WHERE id = ?", [$existingPartnership['id']]);
+                Auth::auditUpdate('car', $carId, ['partner_terms' => $oldPartnership ?: []], ['partner_terms' => $updatedPartnership ?: []], "Car partner terms updated for {$car['registration_no']}", 'cars');
             } else {
                 $partnershipData['id'] = Database::uuid();
                 $this->db->insert('car_partnerships', $partnershipData);
+                Auth::auditUpdate('car', $carId, ['partner_terms' => []], ['partner_terms' => $partnershipData], "Car partner terms added for {$car['registration_no']}", 'cars');
             }
         }
 
@@ -2845,7 +2921,7 @@ class AccountingEngine {
             "SELECT cp.*, p.name as partner_name, p.current_account_id, p.capital_account_id
              FROM car_partnerships cp
              JOIN partners p ON p.id = cp.partner_id
-             WHERE cp.business_id = ? AND cp.car_id = ?
+             WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
              ORDER BY cp.created_at",
             [$this->businessId, $carId]
         );
@@ -3278,8 +3354,11 @@ class AccountingEngine {
         foreach ((array) $partnerFunding as $row) {
             $partnerId = $row['partner_id'] ?? null;
             $amount = round(floatval($row['amount'] ?? 0), 2);
-            if (!$partnerId || $amount <= 0) {
+            if (!$partnerId) {
                 continue;
+            }
+            if ($amount < 0) {
+                throw new Exception('Partner contribution cannot be negative.');
             }
 
             if (!isset($grouped[$partnerId])) {
@@ -3297,7 +3376,11 @@ class AccountingEngine {
 
             $grouped[$partnerId]['amount'] += $amount;
             if (isset($row['profit_share_pct']) && $row['profit_share_pct'] !== '') {
-                $grouped[$partnerId]['profit_share_pct'] = floatval($row['profit_share_pct']);
+                $share = floatval($row['profit_share_pct']);
+                if ($share < 0 || $share > 100) {
+                    throw new Exception('Each partner profit share must be between 0 and 100%.');
+                }
+                $grouped[$partnerId]['profit_share_pct'] = $share;
             }
         }
 
@@ -3306,7 +3389,7 @@ class AccountingEngine {
         foreach ($grouped as $partnerId => $row) {
             $fundingPct = $purchaseAmount > 0 ? round(($row['amount'] / $purchaseAmount) * 100, 4) : 0.0;
             $profitPct = $row['profit_share_pct'];
-            if ($profitPct === null || $profitPct <= 0) {
+            if ($profitPct === null) {
                 $profitPct = $row['partner_default_pct'] > 0 ? $row['partner_default_pct'] : $fundingPct;
             }
             $profitPct = max(0, round($profitPct, 4));
@@ -3319,11 +3402,8 @@ class AccountingEngine {
             ];
         }
 
-        if (!empty($normalized) && $profitShareTotal > 0 && abs($profitShareTotal - 100) > 0.01) {
-            foreach ($normalized as &$row) {
-                $row['profit_share_pct'] = round(($row['profit_share_pct'] / $profitShareTotal) * 100, 4);
-            }
-            unset($row);
+        if ($profitShareTotal > 100.0001) {
+            throw new Exception('Total partner profit share cannot exceed 100%. The business keeps any remaining percentage.');
         }
 
         return $normalized;
@@ -3342,19 +3422,13 @@ class AccountingEngine {
 
         $lines = [];
         $settlements = [];
-        $distributedTotal = 0.0;
-        $remainingRows = count($partnerships);
         foreach ($partnerships as $partnership) {
-            $remainingRows--;
-            $shareAmount = $remainingRows === 0
-                ? round($profit - $distributedTotal, 2)
-                : round($profit * (floatval($partnership['profit_share_pct']) / 100), 2);
+            $shareAmount = round($profit * (floatval($partnership['profit_share_pct']) / 100), 2);
 
             if (abs($shareAmount) < 0.01) {
                 continue;
             }
 
-            $distributedTotal += $shareAmount;
             $partnerAccountId = $partnership['current_account_id'] ?: $partnership['capital_account_id'];
 
             if ($shareAmount > 0) {

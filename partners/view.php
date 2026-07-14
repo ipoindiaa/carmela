@@ -99,7 +99,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                 <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" value="<?= clean($partner['pan']) ?>" maxlength="10"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Default Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="<?= clean($partner['profit_share_pct']) ?>" step="0.01" min="0" max="100"></div>
+                <div class="form-group"><label class="form-label">Default Car Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="<?= clean($partner['profit_share_pct']) ?>" step="0.01" min="0" max="100"><div class="form-hint">Used only when a car-specific share is left blank.</div></div>
                 <div class="form-group"><label class="form-label">Joined Date *</label><input type="date" name="joined_date" class="form-control" value="<?= clean($partner['joined_date']) ?>" required></div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Partner</button>
@@ -118,11 +118,11 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 </div>
 
 <div class="card">
-    <div class="card-header"><h3>Directly Linked Cars</h3></div>
+    <div class="card-header"><h3>Primary Cars</h3></div>
     <div class="card-body card-body-flush">
         <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
         <?php foreach ($linkedCars as $linkedCar): ?><tr><td class="text-bold"><?= clean(formatRegistrationNo($linkedCar['registration_no'])) ?></td><td><?= clean(trim(($linkedCar['make'] ?? '') . ' ' . ($linkedCar['model'] ?? '')) ?: '-') ?></td><td><span class="badge badge-blue"><?= clean($linkedCar['status']) ?></span></td><td><?= formatDate($linkedCar['purchase_date']) ?></td><td class="text-center"><a href="../cars/view.php?id=<?= $linkedCar['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-eye-line"></i></a></td></tr><?php endforeach; ?>
-        <?php if (empty($linkedCars)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No cars directly linked to this partner.</td></tr><?php endif; ?>
+        <?php if (empty($linkedCars)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">This partner is not the primary partner on any car.</td></tr><?php endif; ?>
         </tbody></table>
     </div>
 </div>
