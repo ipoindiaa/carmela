@@ -55,7 +55,7 @@ $advanceLedger = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> <?= clean($emp['name']) ?></h1>
-    <div style="display:flex;gap:10px;">
+    <div class="page-actions">
         <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $emp['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $emp['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $emp['advance_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Advance</a><?php endif; ?>
@@ -69,7 +69,7 @@ $advanceLedger = $db->fetchAll(
 </div>
 
 <?php if (get('edit') === '1' && Auth::hasEntityAccess('employee', 'write')): ?>
-<div class="card" style="margin-bottom:20px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Employee Details</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these employee changes? Salary, status, and contact details will be added to Change History.">
@@ -101,7 +101,7 @@ $advanceLedger = $db->fetchAll(
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-bottom:20px;">
+<div class="card">
     <div class="card-header"><h3>Employee Details</h3></div>
     <div class="card-body">
         <div class="grid-2">
@@ -113,7 +113,7 @@ $advanceLedger = $db->fetchAll(
     </div>
 </div>
 
-<div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
+<div class="stats-grid">
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($emp['monthly_salary']) ?></div><div class="stat-label">Monthly Salary</div></div>
     <div class="stat-card"><div class="stat-value <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></div><div class="stat-label">Advance Outstanding</div></div>
     <div class="stat-card"><div class="stat-value"><?= clean($emp['role'] ?: 'N/A') ?></div><div class="stat-label">Role</div></div>
@@ -122,7 +122,7 @@ $advanceLedger = $db->fetchAll(
 <div class="grid-2">
     <div class="card">
         <div class="card-header"><h3>Salary History</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body card-body-flush">
             <table><thead><tr><th>Month</th><th class="text-right">Gross</th><th class="text-right">Advance Ded.</th><th class="text-right">Net Paid</th><th>Mode</th><th>Date / Time</th></tr></thead>
             <tbody>
             <?php foreach ($salaryHistory as $s): ?>
@@ -131,13 +131,13 @@ $advanceLedger = $db->fetchAll(
                 <td class="text-right amount flow-out"><?= formatAmount($s['net_paid']) ?></td>
                 <td><span class="badge badge-blue"><?= $s['payment_mode'] ?></span></td><td><?= renderDateTimeStack($s['processed_date'], $s['created_at']) ?></td></tr>
             <?php endforeach; ?>
-            <?php if (empty($salaryHistory)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No salary records</td></tr><?php endif; ?>
+            <?php if (empty($salaryHistory)): ?><tr><td colspan="6" class="text-center text-muted empty-table-cell">No salary records</td></tr><?php endif; ?>
             </tbody></table>
         </div>
     </div>
     <div class="card">
         <div class="card-header"><h3>Advance Ledger</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body card-body-flush">
             <table><thead><tr><th>Date / Time</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
             <tbody>
             <?php foreach ($advanceLedger as $l): ?>
@@ -145,7 +145,7 @@ $advanceLedger = $db->fetchAll(
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
-            <?php if (empty($advanceLedger)): ?><tr><td colspan="4" class="text-center text-muted" style="padding: 30px;">No advance entries</td></tr><?php endif; ?>
+            <?php if (empty($advanceLedger)): ?><tr><td colspan="4" class="text-center text-muted empty-table-cell">No advance entries</td></tr><?php endif; ?>
             </tbody></table>
         </div>
     </div>

@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initCurrencyInputs();
     initRegistrationInputs();
     initTableShells();
-    syncViewportTableHeights();
     initScrollMemory();
     enhanceSearchableSelects();
     initLazyTables();
@@ -129,10 +128,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    window.addEventListener('resize', syncViewportTableHeights, { passive: true });
-    window.addEventListener('orientationchange', function() {
-        setTimeout(syncViewportTableHeights, 120);
-    });
 });
 
 function restoreSidebarState() {
@@ -317,25 +312,32 @@ function initLazyTables() {
 
 function initTableShells(scope = document) {
     scope.querySelectorAll('table').forEach((table) => {
-        if (table.closest('.table-container')) return;
         if (!table.querySelector('thead')) return;
         if (table.dataset.staticTable === '1') return;
 
-        const wrapper = document.createElement('div');
-        wrapper.className = 'table-container table-container-inline';
-        table.parentNode.insertBefore(wrapper, table);
-        wrapper.appendChild(table);
+        let wrapper = table.closest('.table-container');
+        if (!wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'table-container table-container-inline';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+        }
+
+        classifyTableShell(table, wrapper);
     });
 }
 
-function syncViewportTableHeights() {
-    const viewportHeight = window.innerHeight;
-    document.querySelectorAll('.table-container-fill').forEach((container) => {
-        const rect = container.getBoundingClientRect();
-        const bottomOffset = window.innerWidth <= 768 ? 12 : 18;
-        const targetHeight = Math.max(260, Math.floor(viewportHeight - rect.top - bottomOffset));
-        container.style.height = `${targetHeight}px`;
-    });
+function classifyTableShell(table, wrapper) {
+    const columnCount = table.querySelectorAll('thead tr:first-child th').length;
+    wrapper.classList.remove('table-columns-compact', 'table-columns-medium', 'table-columns-wide');
+
+    if (columnCount <= 4) {
+        wrapper.classList.add('table-columns-compact');
+    } else if (columnCount <= 7) {
+        wrapper.classList.add('table-columns-medium');
+    } else {
+        wrapper.classList.add('table-columns-wide');
+    }
 }
 
 function initScrollMemory() {
@@ -356,8 +358,6 @@ function initScrollMemory() {
 
     const saveState = () => {
         const payload = {
-            windowY: Math.max(window.scrollY, 0),
-            windowX: Math.max(window.scrollX, 0),
             containers: {},
             savedAt: Date.now(),
         };
@@ -394,15 +394,12 @@ function initScrollMemory() {
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             getTrackedScrollContainers().forEach(tryRestoreContainerScroll);
-            if (savedState && typeof savedState.windowY === 'number') {
-                window.scrollTo(savedState.windowX || 0, savedState.windowY || 0);
-            }
         });
     });
 }
 
 function getTrackedScrollContainers() {
-    return Array.from(document.querySelectorAll('.table-container, [data-scroll-memory]'))
+    return Array.from(document.querySelectorAll('[data-scroll-memory], [data-lazy-list]'))
         .filter((container) => !container.classList.contains('sidebar-nav'));
 }
 

@@ -73,8 +73,8 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 ?>
 
 <div class="page-header">
-    <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?> <span class="badge badge-purple" style="vertical-align:middle;"><?= clean($partnerTypeLabel) ?></span></h1>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?> <span class="badge badge-purple"><?= clean($partnerTypeLabel) ?></span></h1>
+    <div class="page-actions">
         <?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $partner['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $partner['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $partner['capital_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Capital</a><?php endif; ?>
@@ -83,7 +83,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 </div>
 
 <?php if (get('edit') === '1' && Auth::hasEntityAccess('partner', 'write')): ?>
-<div class="card" style="margin-bottom:20px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Partner</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these partner changes? The field-level changes will be recorded.">
@@ -109,7 +109,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 </div>
 <?php endif; ?>
 
-<div class="stats-grid" style="grid-template-columns: repeat(3,1fr);">
+<div class="stats-grid">
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Total Invested</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Total Withdrawn</div></div>
     <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
@@ -117,12 +117,12 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
 </div>
 
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header"><h3>Directly Linked Cars</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
         <?php foreach ($linkedCars as $linkedCar): ?><tr><td class="text-bold"><?= clean(formatRegistrationNo($linkedCar['registration_no'])) ?></td><td><?= clean(trim(($linkedCar['make'] ?? '') . ' ' . ($linkedCar['model'] ?? '')) ?: '-') ?></td><td><span class="badge badge-blue"><?= clean($linkedCar['status']) ?></span></td><td><?= formatDate($linkedCar['purchase_date']) ?></td><td class="text-center"><a href="../cars/view.php?id=<?= $linkedCar['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-eye-line"></i></a></td></tr><?php endforeach; ?>
-        <?php if (empty($linkedCars)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:28px;">No cars directly linked to this partner.</td></tr><?php endif; ?>
+        <?php if (empty($linkedCars)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No cars directly linked to this partner.</td></tr><?php endif; ?>
         </tbody></table>
     </div>
 </div>
@@ -130,7 +130,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 <div class="grid-2">
     <div class="card">
         <div class="card-header"><h3>Capital Account Ledger</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body card-body-flush">
             <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
                 <tbody>
                 <?php foreach ($capitalLedger as $l): ?>
@@ -138,29 +138,29 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                     <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                     <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
                 <?php endforeach; ?>
-                <?php if (empty($capitalLedger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No entries</td></tr><?php endif; ?>
+                <?php if (empty($capitalLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
     </div>
     <div class="card">
         <div class="card-header"><h3>Car Contributions</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body card-body-flush">
             <table><thead><tr><th>Car</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date / Time</th></tr></thead>
                 <tbody>
                 <?php foreach ($carContribs as $c): ?>
                 <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean(formatRegistrationNo($c['registration_no'])) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td><td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td><td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td></tr>
                 <?php endforeach; ?>
-                <?php if (empty($carContribs)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No contributions</td></tr><?php endif; ?>
+                <?php if (empty($carContribs)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No contributions</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header"><h3>Current Account Ledger</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>
             <?php foreach ($currentLedger as $l): ?>
@@ -168,7 +168,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
-            <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding: 30px;">No entries</td></tr><?php endif; ?>
+            <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>

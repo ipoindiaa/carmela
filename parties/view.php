@@ -64,7 +64,7 @@ $ledger = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> <?= clean($party['name']) ?></h1>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <div class="page-actions">
         <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
@@ -76,7 +76,7 @@ $ledger = $db->fetchAll(
 </div>
 
 <?php if (get('edit') === '1' && Auth::hasEntityAccess('party', 'write')): ?>
-<div class="card" style="margin-bottom:20px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Party</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these party changes? The changes will be added to the audit log.">
@@ -99,16 +99,16 @@ $ledger = $db->fetchAll(
 </div>
 <?php endif; ?>
 
-<div class="stats-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+<div class="stats-grid">
     <div class="stat-card"><div class="stat-value"><?= $party['type'] ?></div><div class="stat-label">Type</div></div>
     <div class="stat-card"><div class="stat-value"><?= formatAmount($openOutstanding) ?></div><div class="stat-label">Open Outstanding</div></div>
     <div class="stat-card"><div class="stat-value"><?= clean($party['phone'] ?: 'N/A') ?></div><div class="stat-label">Contact</div></div>
     <div class="stat-card"><div class="stat-value"><?= count($openItems) ?></div><div class="stat-label">Open Items</div></div>
 </div>
 
-<div class="card" style="margin-bottom:16px;">
+<div class="card">
     <div class="card-header"><h3>Open Items</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Pending</th><th class="text-right">Age</th></tr></thead>
             <tbody>
@@ -122,7 +122,7 @@ $ledger = $db->fetchAll(
                     <td class="text-right"><?= $days ?> days</td>
                 </tr>
             <?php endforeach; ?>
-            <?php if (empty($openItems)): ?><tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No open items.</td></tr><?php endif; ?>
+            <?php if (empty($openItems)): ?><tr><td colspan="6" class="text-center text-muted empty-table-cell">No open items.</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -130,7 +130,7 @@ $ledger = $db->fetchAll(
 
 <div class="card">
     <div class="card-header"><h3>Account Ledger</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>
@@ -139,7 +139,7 @@ $ledger = $db->fetchAll(
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
-            <?php if (empty($ledger)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:30px;">No entries</td></tr><?php endif; ?>
+            <?php if (empty($ledger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
