@@ -3944,6 +3944,10 @@ textarea {
     letter-spacing: 0;
 }
 
+.page-content.animate-fade {
+    animation: none;
+}
+
 img,
 svg,
 video,
