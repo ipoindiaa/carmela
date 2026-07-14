@@ -19,6 +19,7 @@ $paymentAccountIds = array_values(array_filter(array_map(
 
 // The first selected car partner is the primary partner used in car lists and reports.
 $partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+$formError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -131,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
         redirect("view.php?id=$carId");
     } catch (Exception $e) {
-        setFlash('error', $e->getMessage());
+        $formError = $e->getMessage();
     }
 }
 ?>
@@ -140,6 +141,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1><i class="ri-car-line"></i> Add New Car</h1>
     <a href="list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
+
+<?php if ($formError !== ''): ?>
+<div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($formError) ?></div>
+<?php endif; ?>
 
 <div class="card" style="max-width: 800px;">
     <div class="card-body">

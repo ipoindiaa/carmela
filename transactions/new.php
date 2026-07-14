@@ -183,6 +183,8 @@ $resolveRtoRecord = function () use ($db, $businessId, $userId) {
     return $record;
 };
 
+$formError = '';
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -475,7 +477,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect('list.php');
     } catch (Exception $e) {
-        setFlash('error', $e->getMessage());
+        $formError = $e->getMessage();
     }
 }
 ?>
@@ -488,6 +490,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <span><i class="ri-bill-line"></i> Split Bill</span>
     </div>
 </div>
+
+<?php if ($formError !== ''): ?>
+<div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($formError) ?></div>
+<?php endif; ?>
 
 <div class="simple-entry-switch">
     <button type="button" class="simple-entry-option money-in" data-money-flow="in">
