@@ -4377,6 +4377,17 @@ canvas {
     min-width: 980px;
 }
 
+.table-container.table-columns-wide tbody td {
+    white-space: nowrap;
+}
+
+.table-container.table-columns-wide .narration-tooltip {
+    display: block;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .car-profitability-table table {
     min-width: 1100px;
 }
