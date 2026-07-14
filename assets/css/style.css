@@ -4061,6 +4061,30 @@ canvas {
     font-size: 20px;
 }
 
+.environment-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    padding: 2px 8px;
+    border: 1px solid #d97706;
+    border-radius: var(--radius-control);
+    background: #fffbeb;
+    color: #92400e;
+    font-size: var(--font-size-xs);
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.environment-badge-login {
+    margin: var(--space-2) 0;
+}
+
+body.env-testing .top-header {
+    border-top: 3px solid #d97706;
+}
+
 .header-btn,
 .btn {
     min-height: var(--control-height-md);

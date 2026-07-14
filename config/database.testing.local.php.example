@@ -1,0 +1,9 @@
+<?php
+
+return [
+    'host' => '127.0.0.1',
+    'name' => 'autobooks_pro_testing',
+    'user' => 'root',
+    'pass' => '',
+    'charset' => 'utf8mb4',
+];

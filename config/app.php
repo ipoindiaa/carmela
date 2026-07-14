@@ -1,5 +1,7 @@
 <?php
 // Application Configuration
+define('APP_ENV', strtolower(trim((string) (getenv('APP_ENV') ?: 'production'))));
+define('APP_IS_TESTING', APP_ENV === 'testing');
 define('APP_NAME', 'Tiranga Car World');
 define('APP_VERSION', '1.0');
 define('APP_CURRENCY', '₹');

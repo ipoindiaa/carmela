@@ -306,4 +306,6 @@ echo "🚗 Cars: {$totalCars['cnt']}\n";
 echo "👥 Partners: {$totalPartners['cnt']}\n";
 echo "👷 Employees: {$totalEmployees['cnt']}\n";
 echo "═══════════════════════════════════════\n";
-echo "\n🌐 Open http://localhost:8000 to see your data!\n";
+$appHost = APP_IS_TESTING ? (getenv('TEST_APP_HOST') ?: '127.0.0.1') : 'localhost';
+$appPort = APP_IS_TESTING ? (getenv('TEST_APP_PORT') ?: '8788') : '8000';
+echo "\n🌐 Open http://{$appHost}:{$appPort} to see your data!\n";

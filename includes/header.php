@@ -18,14 +18,14 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
+    <title><?= APP_IS_TESTING ? '[TEST] ' : '' ?><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
     <link rel="icon" type="image/png" href="<?= APP_URL ?>logo.png">
     <link rel="apple-touch-icon" href="<?= APP_URL ?>logo.png">
     <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css?v=<?= $cssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
-<body>
+<body class="<?= APP_IS_TESTING ? 'env-testing' : '' ?>">
 <div class="app-container">
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
@@ -236,6 +236,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 <div class="page-title">
                     <span class="title-icon"><?= $pageIcon ?? '<i class="ri-dashboard-3-line"></i>' ?></span>
                     <?= $pageTitle ?? 'Dashboard' ?>
+                    <?php if (APP_IS_TESTING): ?><span class="environment-badge">TEST</span><?php endif; ?>
                 </div>
             </div>
             <div class="header-right">

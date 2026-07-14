@@ -2,8 +2,11 @@
 // Database Configuration
 // Order of preference:
 // 1. Environment variables
-// 2. config/database.local.php (not committed)
+// 2. Environment-specific local config (not committed)
 // 3. Local development defaults
+
+$dbEnvironment = strtolower(trim((string) (getenv('APP_ENV') ?: 'production')));
+$isTestingDatabase = $dbEnvironment === 'testing';
 
 $dbDefaults = [
     'host' => '127.0.0.1',
@@ -14,7 +17,7 @@ $dbDefaults = [
 ];
 
 $dbOverrides = [];
-$localConfigFile = __DIR__ . '/database.local.php';
+$localConfigFile = __DIR__ . ($isTestingDatabase ? '/database.testing.local.php' : '/database.local.php');
 if (file_exists($localConfigFile)) {
     $localConfig = require $localConfigFile;
     if (is_array($localConfig)) {
@@ -30,6 +33,10 @@ if ($dbPass === false) {
     $dbPass = $dbOverrides['pass'] ?? $dbDefaults['pass'];
 }
 $dbCharset = getenv('DB_CHARSET') ?: ($dbOverrides['charset'] ?? $dbDefaults['charset']);
+
+if ($isTestingDatabase && stripos($dbName, 'test') === false) {
+    throw new RuntimeException('Testing mode refused a database whose name does not contain "test".');
+}
 
 define('DB_HOST', $dbHost);
 define('DB_NAME', $dbName);
