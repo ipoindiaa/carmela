@@ -152,7 +152,7 @@ $rtoEntries = $db->fetchAll(
     <div class="stat-card"><div class="stat-value"><?= intval($stats['total_cases'] ?? 0) ?></div><div class="stat-label">RTO Entries</div></div>
 </div>
 
-<div class="entry-menu-legend" style="margin-bottom:12px;">
+<div class="entry-menu-legend page-helper-strip">
     <span><i class="ri-arrow-down-circle-line"></i> Buyer gives RTO money = income in that car</span>
     <span><i class="ri-arrow-up-circle-line"></i> You pay agent / office = expense of that car</span>
     <span><i class="ri-attachment-2"></i> Images or PDF vouchers can be attached in every case</span>
@@ -168,10 +168,10 @@ $rtoEntries = $db->fetchAll(
 </div>
 
 <?php if ($canWriteRto): ?>
-<div class="card" id="rto-form" style="margin-bottom:16px;">
+<div class="card" id="rto-form">
     <div class="card-header"><h3><i class="ri-add-box-line"></i> Add RTO Money</h3></div>
     <div class="card-body">
-        <div class="entry-menu-legend" style="margin:0 0 14px;">
+        <div class="entry-menu-legend entry-menu-legend-inset">
             <span><i class="ri-arrow-down-circle-line"></i> Receive = buyer/customer gave RTO money</span>
             <span><i class="ri-arrow-up-circle-line"></i> Expense = you paid agent / RTO office</span>
         </div>
@@ -240,9 +240,10 @@ $rtoEntries = $db->fetchAll(
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-bottom:16px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-list-check-3"></i> RTO Money History</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
+        <div class="table-container table-container-inline table-columns-medium">
         <table>
             <thead>
                 <tr>
@@ -290,12 +291,14 @@ $rtoEntries = $db->fetchAll(
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 
 <div class="card">
     <div class="card-header"><h3><i class="ri-exchange-funds-line"></i> All RTO Transactions</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
+        <div class="table-container table-container-inline table-columns-medium">
         <table>
             <thead>
                 <tr>
@@ -328,6 +331,7 @@ $rtoEntries = $db->fetchAll(
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 
