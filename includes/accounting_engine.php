@@ -90,13 +90,18 @@ class AccountingEngine {
             throw new Exception('A valid partner joined date is required.');
         }
 
+        $phoneMatchSql = $phone === '' ? "COALESCE(phone, '') = ''" : 'phone = ?';
+        $existingParams = [$this->businessId, $name];
+        if ($phone !== '') {
+            $existingParams[] = $phone;
+        }
         $existing = $this->db->fetch(
             "SELECT id, name FROM partners
              WHERE business_id = ?
                AND LOWER(TRIM(name)) = LOWER(?)
-               AND ((COALESCE(phone, '') = '' AND ? = '') OR phone = ?)
+               AND $phoneMatchSql
              LIMIT 1",
-            [$this->businessId, $name, $phone, $phone]
+            $existingParams
         );
         if ($existing) {
             throw new Exception("Partner {$existing['name']} already exists. Select the existing partner instead.");
