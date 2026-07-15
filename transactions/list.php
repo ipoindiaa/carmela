@@ -63,7 +63,7 @@ function renderTransactionRows($entries) {
             </td>
             <td style="max-width: 250px;">
                 <?php $fullNarration = trim((string) ($entry['narration'] ?? '')); ?>
-                <span class="narration-tooltip" data-full-text="<?= clean($fullNarration) ?>">
+                <span class="narration-tooltip" data-full-text="<?= clean($fullNarration) ?>" tabindex="0">
                     <?= clean(mb_strimwidth($fullNarration, 0, 58, '…')) ?>
                 </span>
             </td>

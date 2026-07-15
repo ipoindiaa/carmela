@@ -1470,10 +1470,14 @@ function selectMoneyFlow(flow) {
 
 function initTransactionTypePicker() {
     const select = document.getElementById('transaction_type');
+    const picker = document.getElementById('txn-type-picker');
     const trigger = document.getElementById('txn-type-trigger');
     const menu = document.getElementById('txn-type-menu');
     const search = document.getElementById('txn-type-search');
-    if (!select || !trigger || !menu || !search) return;
+    if (!select || !picker || !trigger || !menu || !search) return;
+
+    // Keep the menu outside cards and scrolling form shells so no ancestor can clip it.
+    document.body.appendChild(menu);
 
     transactionTypeOptions = Array.from(select.options)
         .filter((option) => option.value && option.value !== 'CATEGORY_ENTRY')
@@ -1497,11 +1501,18 @@ function initTransactionTypePicker() {
             menu.hidden = false;
             trigger.setAttribute('aria-expanded', 'true');
             renderTransactionTypePicker();
-            setTimeout(() => search.focus(), 30);
+            positionTransactionTypePicker();
+            requestAnimationFrame(() => {
+                positionTransactionTypePicker();
+                search.focus();
+            });
         }
     });
 
-    search.addEventListener('input', renderTransactionTypePicker);
+    search.addEventListener('input', () => {
+        renderTransactionTypePicker();
+        positionTransactionTypePicker();
+    });
     select.addEventListener('change', () => {
         const chosen = transactionTypeOptions.find((option) => getTransactionOptionKey(option) === getSelectedTransactionKey());
         if (chosen && (chosen.flow === 'in' || chosen.flow === 'out')) {
@@ -1515,10 +1526,15 @@ function initTransactionTypePicker() {
     });
 
     document.addEventListener('click', (event) => {
-        if (!event.target.closest('#txn-type-picker')) {
+        if (!picker.contains(event.target) && !menu.contains(event.target)) {
             closeTransactionTypePicker();
         }
     });
+
+    window.addEventListener('resize', positionTransactionTypePicker);
+    window.addEventListener('scroll', positionTransactionTypePicker, true);
+    window.visualViewport?.addEventListener('resize', positionTransactionTypePicker);
+    window.visualViewport?.addEventListener('scroll', positionTransactionTypePicker);
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
@@ -1546,6 +1562,7 @@ function renderTransactionTypePicker() {
 
     if (!visible.length) {
         list.innerHTML = '<div class="txn-type-empty">No matching entry type.</div>';
+        positionTransactionTypePicker();
         return;
     }
 
@@ -1576,6 +1593,21 @@ function renderTransactionTypePicker() {
             closeTransactionTypePicker();
         });
     });
+    positionTransactionTypePicker();
+}
+
+function positionTransactionTypePicker() {
+    const menu = document.getElementById('txn-type-menu');
+    const trigger = document.getElementById('txn-type-trigger');
+    if (!menu || !trigger || menu.hidden || typeof window.positionFloatingPopover !== 'function') return;
+    const positioned = window.positionFloatingPopover(trigger, menu, {
+        minWidth: 300,
+        maxWidth: 620,
+        minHeight: 220,
+        maxHeight: 560,
+        gap: 8,
+    });
+    if (!positioned) closeTransactionTypePicker();
 }
 
 function closeTransactionTypePicker() {

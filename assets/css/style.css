@@ -156,6 +156,10 @@ body.sidebar-open {
     overflow: hidden;
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 /* ============ SCROLLBAR ============ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
@@ -1374,21 +1378,27 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     background: rgba(15, 23, 42, 0.18);
     z-index: 1000;
     align-items: center; justify-content: center;
+    padding: 12px;
+    overflow: hidden;
 }
 
 .modal-overlay.active { display: flex; }
 
 .modal {
+    display: flex;
+    flex-direction: column;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     width: 90%; max-width: 560px;
-    max-height: 85vh; overflow-y: auto;
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
     box-shadow: var(--shadow-lg);
     animation: modalIn 0.3s ease;
 }
 
 .modal-header {
+    flex: 0 0 auto;
     padding: 20px 24px;
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
@@ -1402,8 +1412,14 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     cursor: pointer; padding: 4px;
 }
 
-.modal-body { padding: 24px; }
+.modal-body {
+    min-height: 0;
+    padding: 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
 .modal-footer {
+    flex: 0 0 auto;
     padding: 16px 24px;
     border-top: 1px solid var(--border);
     display: flex; gap: 10px; justify-content: flex-end;
@@ -1757,12 +1773,12 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 }
 
 .txn-type-menu {
-    position: absolute;
-    z-index: 30;
-    top: calc(100% + 8px);
-    left: 0;
-    right: 0;
+    position: fixed;
+    z-index: 10030;
+    display: flex;
+    flex-direction: column;
     padding: 10px;
+    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: #ffffff;
@@ -1788,9 +1804,13 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 
 .txn-type-list {
     display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
     gap: 6px;
-    max-height: 360px;
-    overflow: auto;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .txn-type-group {
@@ -1965,6 +1985,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 18px 48px rgba(28, 45, 70, 0.18), 0 3px 10px rgba(28, 45, 70, 0.08);
     backdrop-filter: blur(18px) saturate(1.2);
+    overscroll-behavior: contain;
 }
 
 .custom-select-popover[hidden] {
@@ -2503,6 +2524,30 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     gap: 8px;
     max-height: 52vh;
     overflow: auto;
+}
+
+.modal-picker .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.txn-type-menu[hidden] {
+    display: none;
+}
+
+.modal-picker .picker-search {
+    flex: 0 0 auto;
+}
+
+.modal-picker .picker-results {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .picker-result {
@@ -3542,13 +3587,15 @@ html.js .pagination.no-js-pagination { display: none; }
     border-bottom: 1px dashed rgba(114, 129, 150, 0.45);
 }
 
-.narration-tooltip::after {
-    content: attr(data-full-text);
-    position: absolute;
-    left: 0;
-    top: calc(100% + 8px);
-    z-index: 18;
-    width: min(360px, 48vw);
+.narration-tooltip:focus-visible {
+    border-radius: 4px;
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.floating-tooltip {
+    position: fixed;
+    z-index: 10040;
     padding: 10px 12px;
     border-radius: 12px;
     background: rgba(15, 23, 42, 0.96);
@@ -3556,16 +3603,25 @@ html.js .pagination.no-js-pagination { display: none; }
     font-size: 12px;
     line-height: 1.5;
     box-shadow: 0 12px 26px rgba(15, 23, 42, 0.24);
-    opacity: 0;
     pointer-events: none;
-    transform: translateY(4px);
-    transition: 0.18s ease;
     white-space: normal;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
 }
 
-.narration-tooltip:hover::after {
-    opacity: 1;
-    transform: translateY(0);
+.floating-tooltip[hidden] {
+    display: none;
+}
+
+.app-toast {
+    position: fixed;
+    z-index: 10050;
+    top: calc(var(--header-height) + 12px);
+    right: 16px;
+    width: min(380px, calc(100vw - 32px));
+    min-width: 0;
+    margin: 0;
+    box-shadow: var(--shadow-3);
 }
 
 .filter-bar form {
@@ -4630,7 +4686,7 @@ body.env-testing .top-header {
 
 .page-content {
     padding: var(--page-gutter);
-    overflow-x: hidden;
+    overflow-x: clip;
 }
 
 .page-header {

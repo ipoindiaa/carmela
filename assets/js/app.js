@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initLazyTables();
     initSmartBackLinks();
     initBreadcrumbs();
+    initFloatingTooltips();
 
     // Auto-dismiss alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(alert => {
@@ -478,6 +479,60 @@ function shouldUseHistoryBack() {
 const customSelectInstances = new WeakMap();
 let activeCustomSelect = null;
 
+function getVisibleViewport() {
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft || 0;
+    const top = viewport?.offsetTop || 0;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
+    return { left, top, right: left + width, bottom: top + height, width, height };
+}
+
+function positionFloatingPopover(trigger, popover, options = {}) {
+    if (!trigger || !popover || popover.hidden) return false;
+
+    const viewport = getVisibleViewport();
+    const rect = trigger.getBoundingClientRect();
+    const gutter = Math.max(6, Number(options.gutter ?? 10));
+    const gap = Math.max(0, Number(options.gap ?? 6));
+    if (rect.bottom < viewport.top || rect.top > viewport.bottom || rect.right < viewport.left || rect.left > viewport.right) {
+        return false;
+    }
+
+    const availableWidth = Math.max(0, viewport.width - gutter * 2);
+    const requestedWidth = Number(options.width || rect.width);
+    const minWidth = Math.min(Number(options.minWidth ?? 220), availableWidth);
+    const maxWidth = Math.min(Number(options.maxWidth ?? 620), availableWidth);
+    const width = Math.min(maxWidth, Math.max(minWidth, requestedWidth));
+    const left = Math.max(viewport.left + gutter, Math.min(rect.left, viewport.right - width - gutter));
+
+    const roomBelow = Math.max(0, viewport.bottom - rect.bottom - gap - gutter);
+    const roomAbove = Math.max(0, rect.top - viewport.top - gap - gutter);
+    const preferredMaxHeight = Math.max(1, Number(options.maxHeight ?? 420));
+    const preferredMinHeight = Math.max(1, Number(options.minHeight ?? 160));
+    const idealHeight = Math.min(preferredMaxHeight, Math.max(preferredMinHeight, popover.scrollHeight || preferredMinHeight));
+    const openAbove = roomBelow < Math.min(preferredMinHeight, idealHeight) && roomAbove > roomBelow;
+    const availableHeight = openAbove ? roomAbove : roomBelow;
+    const maxHeight = Math.max(1, Math.min(preferredMaxHeight, availableHeight));
+
+    popover.style.position = 'fixed';
+    popover.style.width = `${width}px`;
+    popover.style.maxHeight = `${maxHeight}px`;
+    popover.style.left = `${left}px`;
+    popover.style.right = 'auto';
+    popover.style.bottom = 'auto';
+    popover.style.top = `${viewport.top + gutter}px`;
+    popover.dataset.placement = openAbove ? 'top' : 'bottom';
+
+    const panelHeight = Math.min(popover.getBoundingClientRect().height, maxHeight);
+    const desiredTop = openAbove ? rect.top - gap - panelHeight : rect.bottom + gap;
+    const top = Math.max(viewport.top + gutter, Math.min(desiredTop, viewport.bottom - panelHeight - gutter));
+    popover.style.top = `${top}px`;
+    return true;
+}
+
+window.positionFloatingPopover = positionFloatingPopover;
+
 function enhanceSelects(scope = document) {
     const candidates = [];
     if (scope instanceof Element && scope.matches('select')) candidates.push(scope);
@@ -698,18 +753,13 @@ function focusCustomSelectOption(instance, direction = 1) {
 
 function positionCustomSelect(instance) {
     if (instance.popover.hidden) return;
-    const rect = instance.trigger.getBoundingClientRect();
-    const gutter = 8;
-    const width = Math.min(Math.max(rect.width, 220), window.innerWidth - gutter * 2);
-    const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - width - gutter));
-    const roomBelow = window.innerHeight - rect.bottom - gutter;
-    const roomAbove = rect.top - gutter;
-    const openAbove = roomBelow < 220 && roomAbove > roomBelow;
-    instance.popover.style.width = `${width}px`;
-    instance.popover.style.left = `${left}px`;
-    instance.popover.style.maxHeight = `${Math.max(160, Math.min(360, openAbove ? roomAbove : roomBelow))}px`;
-    instance.popover.style.top = openAbove ? 'auto' : `${rect.bottom + 6}px`;
-    instance.popover.style.bottom = openAbove ? `${window.innerHeight - rect.top + 6}px` : 'auto';
+    const positioned = positionFloatingPopover(instance.trigger, instance.popover, {
+        minWidth: 220,
+        maxWidth: 620,
+        minHeight: 160,
+        maxHeight: 420,
+    });
+    if (!positioned) closeCustomSelect(instance);
 }
 
 function escapeSelectText(value) {
@@ -728,6 +778,8 @@ document.addEventListener('keydown', (event) => {
 });
 window.addEventListener('resize', () => activeCustomSelect && positionCustomSelect(activeCustomSelect));
 window.addEventListener('scroll', () => activeCustomSelect && positionCustomSelect(activeCustomSelect), true);
+window.visualViewport?.addEventListener('resize', () => activeCustomSelect && positionCustomSelect(activeCustomSelect));
+window.visualViewport?.addEventListener('scroll', () => activeCustomSelect && positionCustomSelect(activeCustomSelect));
 
 window.enhanceSelects = enhanceSelects;
 window.enhanceSearchableSelects = enhanceSelects;
@@ -737,30 +789,99 @@ window.refreshCustomSelect = refreshCustomSelect;
 function openModal(id) {
     const modal = document.getElementById(id);
     if (!modal) return;
+    if (activeCustomSelect) closeCustomSelect(activeCustomSelect);
     modal.classList.add('active');
+    document.body.classList.add('modal-open');
     enhanceSelects(modal);
     modal.querySelectorAll('select').forEach((select) => refreshCustomSelect(select));
 }
 
 function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    if (activeCustomSelect && modal.contains(activeCustomSelect.wrapper)) closeCustomSelect(activeCustomSelect);
+    modal.classList.remove('active');
+    if (!document.querySelector('.modal-overlay.active')) document.body.classList.remove('modal-open');
 }
 
 // Toast notification
 function showToast(message, type = 'success') {
     const toast = document.createElement('div');
-    toast.className = `alert alert-${type}`;
-    toast.style.position = 'fixed';
-    toast.style.top = '80px';
-    toast.style.right = '20px';
-    toast.style.zIndex = '9999';
-    toast.style.minWidth = '300px';
-    toast.innerHTML = `<i class="ri-${type === 'success' ? 'check' : 'error-warning'}-line"></i> ${message}`;
+    toast.className = `alert alert-${type} app-toast`;
+    const icon = document.createElement('i');
+    icon.className = `ri-${type === 'success' ? 'check' : 'error-warning'}-line`;
+    const copy = document.createElement('span');
+    copy.textContent = message;
+    toast.append(icon, copy);
     document.body.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+let floatingTooltip = null;
+let floatingTooltipTarget = null;
+
+function initFloatingTooltips() {
+    document.addEventListener('pointerover', (event) => {
+        const target = event.target.closest('.narration-tooltip[data-full-text]');
+        if (target) showFloatingTooltip(target);
+    });
+    document.addEventListener('pointerout', (event) => {
+        if (!floatingTooltipTarget || event.target.closest('.narration-tooltip') !== floatingTooltipTarget) return;
+        if (floatingTooltipTarget.contains(event.relatedTarget)) return;
+        hideFloatingTooltip();
+    });
+    document.addEventListener('focusin', (event) => {
+        const target = event.target.closest('.narration-tooltip[data-full-text]');
+        if (target) showFloatingTooltip(target);
+    });
+    document.addEventListener('focusout', (event) => {
+        if (event.target.closest('.narration-tooltip') === floatingTooltipTarget) hideFloatingTooltip();
+    });
+    window.addEventListener('resize', repositionFloatingTooltip);
+    window.addEventListener('scroll', repositionFloatingTooltip, true);
+    window.visualViewport?.addEventListener('resize', repositionFloatingTooltip);
+    window.visualViewport?.addEventListener('scroll', repositionFloatingTooltip);
+}
+
+function showFloatingTooltip(target) {
+    const text = (target.dataset.fullText || '').trim();
+    if (!text) return;
+    if (!floatingTooltip) {
+        floatingTooltip = document.createElement('div');
+        floatingTooltip.className = 'floating-tooltip';
+        floatingTooltip.setAttribute('role', 'tooltip');
+        floatingTooltip.hidden = true;
+        document.body.appendChild(floatingTooltip);
+    }
+    floatingTooltipTarget = target;
+    floatingTooltip.textContent = text;
+    floatingTooltip.hidden = false;
+    target.setAttribute('aria-describedby', 'active-floating-tooltip');
+    floatingTooltip.id = 'active-floating-tooltip';
+    repositionFloatingTooltip();
+}
+
+function repositionFloatingTooltip() {
+    if (!floatingTooltipTarget || !floatingTooltip || floatingTooltip.hidden) return;
+    const viewport = getVisibleViewport();
+    const positioned = positionFloatingPopover(floatingTooltipTarget, floatingTooltip, {
+        width: Math.min(360, viewport.width - 20),
+        minWidth: Math.min(220, viewport.width - 20),
+        maxWidth: 360,
+        minHeight: 48,
+        maxHeight: 240,
+        gap: 8,
+    });
+    if (!positioned) hideFloatingTooltip();
+}
+
+function hideFloatingTooltip() {
+    if (floatingTooltipTarget) floatingTooltipTarget.removeAttribute('aria-describedby');
+    if (floatingTooltip) floatingTooltip.hidden = true;
+    floatingTooltipTarget = null;
 }
 
 // Format number as Indian currency
