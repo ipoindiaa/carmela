@@ -1,6 +1,25 @@
 Options -Indexes
 RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8
 RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8
+AddType image/heic .heic .heif
+AddType image/tiff .tif .tiff
+AddType application/pdf .pdf
+AddType application/msword .doc
+AddType application/vnd.openxmlformats-officedocument.wordprocessingml.document .docx
+AddType application/vnd.ms-excel .xls
+AddType application/vnd.openxmlformats-officedocument.spreadsheetml.sheet .xlsx
+AddType application/vnd.ms-powerpoint .ppt
+AddType application/vnd.openxmlformats-officedocument.presentationml.presentation .pptx
+AddType text/csv .csv
+AddType text/plain .txt
+AddType application/rtf .rtf
+AddType application/vnd.oasis.opendocument.text .odt
+AddType application/vnd.oasis.opendocument.spreadsheet .ods
+AddType application/zip .zip
+AddType application/vnd.rar .rar
+AddType application/x-7z-compressed .7z
+AddType application/x-tar .tar
+AddType application/gzip .gz
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
 </IfModule>
