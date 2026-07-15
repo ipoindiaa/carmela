@@ -2,8 +2,10 @@
 $pageTitle = 'Dashboard';
 $pageIcon = '<i class="ri-dashboard-3-line"></i>';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $todayDate = date('Y-m-d');
 $dashboardMinimumRows = 8;
 

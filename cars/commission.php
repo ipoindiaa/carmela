@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $businessId = Auth::user('business_id');
 Auth::requireEntityAccess('car', 'read');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $status = strtoupper(trim((string) get('status', '')));
 $search = trim((string) get('q', ''));
 $where = "WHERE c.business_id = ? AND c.ownership_type = 'COMMISSION'";
