@@ -73,7 +73,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="stat-card"><div class="stat-value text-red"><?= formatAmount($outstanding) ?></div><div class="stat-label">Current Outstanding</div></div>
         </div>
 
-        <form method="POST">
+        <form method="POST" data-confirm-submit="Post this bad debt write-off? It will create a financial entry and can only be corrected through reversal.">
             <?= csrfField() ?>
             <div class="form-row">
                 <div class="form-group">

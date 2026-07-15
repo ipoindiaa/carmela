@@ -22,6 +22,8 @@ $formError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
+    $ownsTransaction = !$db->inTransaction();
+    if ($ownsTransaction) $db->beginTransaction();
     try {
         $carId = Database::uuid();
         $regNo = normalizeRegistrationNo(post('registration_no'));
@@ -118,6 +120,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Auto-create the CAR_PURCHASE journal entry via accounting engine
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
         $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
+        $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
+        Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo], "Car $regNo added with purchase entry", 'cars');
+        if ($ownsTransaction) $db->commit();
+
         $uploadWarning = '';
         try {
             uploadEntityAttachments($businessId, 'CAR', $carId, 'SELLER', 'seller_images', Auth::user('user_id'), 'documents');
@@ -125,11 +131,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $uploadWarning = ' Seller file upload failed: ' . $uploadError->getMessage();
         }
 
-        $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
-        Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo], "Car $regNo added with purchase entry", 'cars');
         setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
         redirect("view.php?id=$carId");
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
+        if ($ownsTransaction && $db->inTransaction()) $db->rollBack();
         $formError = $e->getMessage();
     }
 }

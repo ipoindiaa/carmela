@@ -59,7 +59,7 @@ $debtorOutstanding = in_array($party['type'], ['DEBTOR', 'BUYER'], true) && ($pa
 $ledger = $db->fetchAll(
     "SELECT je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
+     WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
 $partyTokens = $db->fetchAll(
     "SELECT ct.*, c.registration_no, je.reference_no
      FROM car_tokens ct
@@ -122,7 +122,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 <?php if (!empty($partyTokens)): ?>
 <div class="card">
     <div class="card-header"><h3><i class="ri-hand-coin-line"></i> Car Tokens</h3></div>
-    <div class="card-body card-body-flush">
+    <div class="card-body card-body-flush table-container">
         <table>
             <thead><tr><th>Date</th><th>Car</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Available</th><th>Status</th></tr></thead>
             <tbody><?php foreach ($partyTokens as $token): ?><tr>
@@ -140,7 +140,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 
 <div class="card">
     <div class="card-header"><h3>Open Items</h3></div>
-    <div class="card-body card-body-flush">
+    <div class="card-body card-body-flush table-container">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right">Pending</th><th class="text-right">Age</th></tr></thead>
             <tbody>
@@ -162,7 +162,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 
 <div class="card">
     <div class="card-header"><h3>Account Ledger</h3></div>
-    <div class="card-body card-body-flush">
+    <div class="card-body card-body-flush table-container">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>

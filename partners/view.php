@@ -53,12 +53,12 @@ $position = $engine->getPartnerPosition($id);
 $capitalLedger = $db->fetchAll(
     "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['capital_account_id']]);
+     WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['capital_account_id']]);
 
 $currentLedger = $db->fetchAll(
     "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['current_account_id']]);
+     WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['current_account_id']]);
 
 $portfolioCars = $db->fetchAll(
     "SELECT cp.*, c.registration_no, c.make, c.model, c.status AS car_status, c.purchase_date, c.sold_date,

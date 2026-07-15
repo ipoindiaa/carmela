@@ -53,7 +53,7 @@ if ($activeAccountId) {
         "SELECT jl.*, je.business_id, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, je.id as entry_id
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
-         WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date = ?
+         WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date = ?
          ORDER BY je.entry_date DESC, je.created_at DESC
          LIMIT 24",
         [$activeAccountId, $todayDate]
@@ -65,7 +65,7 @@ if ($activeAccountId) {
             "SELECT jl.*, je.business_id, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, je.id as entry_id
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
-             WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date <> ?
+             WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date <> ?
              ORDER BY je.entry_date DESC, je.created_at DESC
              LIMIT ?",
             [$activeAccountId, $todayDate, $remainingLedger]
@@ -104,7 +104,7 @@ if (!empty($accessibleAccountIds)) {
         "SELECT je.*, u.full_name as created_by_name
          FROM journal_entries je
          LEFT JOIN users u ON u.id = je.created_by
-         WHERE je.business_id = ? AND je.status = 'POSTED' AND je.entry_date = ?
+         WHERE je.business_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date = ?
            AND EXISTS (
                SELECT 1
                FROM journal_lines jl_filter
@@ -122,7 +122,7 @@ if (!empty($accessibleAccountIds)) {
             "SELECT je.*, u.full_name as created_by_name
              FROM journal_entries je
              LEFT JOIN users u ON u.id = je.created_by
-             WHERE je.business_id = ? AND je.status = 'POSTED' AND je.entry_date <> ?
+             WHERE je.business_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date <> ?
                AND EXISTS (
                    SELECT 1
                    FROM journal_lines jl_filter
@@ -149,7 +149,7 @@ $monthIncome = $db->fetch(
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_entry_id
      JOIN accounts a ON a.id = jl.account_id
-     WHERE je.business_id = ? AND a.group_name = 'INCOME' AND je.status = 'POSTED'
+     WHERE je.business_id = ? AND a.group_name = 'INCOME' AND je.status IN ('POSTED','REVERSED')
      AND je.entry_date BETWEEN ? AND ?",
     [$businessId, $monthStart, $monthEnd]
 );
@@ -158,7 +158,7 @@ $monthExpense = $db->fetch(
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_entry_id
      JOIN accounts a ON a.id = jl.account_id
-     WHERE je.business_id = ? AND a.group_name = 'EXPENSE' AND je.status = 'POSTED'
+     WHERE je.business_id = ? AND a.group_name = 'EXPENSE' AND je.status IN ('POSTED','REVERSED')
      AND je.entry_date BETWEEN ? AND ?",
     [$businessId, $monthStart, $monthEnd]
 );

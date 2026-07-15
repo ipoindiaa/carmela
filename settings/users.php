@@ -35,15 +35,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add') {
         $password = post('password');
+        $passwordConfirmation = post('password_confirmation');
         $email = trim(post('user_email'));
+        $fullName = trim((string) post('full_name'));
+        $role = strtoupper((string) post('role'));
+
+        if ($fullName === '') {
+            setFlash('error', 'Full name is required.');
+            redirect('users.php');
+        }
+
+        if (!in_array($role, [ROLE_ADMIN, ROLE_PARTNER, ROLE_ACCOUNTANT, ROLE_OPERATOR], true)) {
+            setFlash('error', 'Select a valid role.');
+            redirect('users.php');
+        }
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             setFlash('error', 'Please enter a valid email address.');
             redirect('users.php');
         }
 
-        if (strlen($password) < 6) {
-            setFlash('error', 'Password must be at least 6 characters.');
+        if (strlen($password) < 8) {
+            setFlash('error', 'Password must be at least 8 characters.');
+            redirect('users.php');
+        }
+        if (!hash_equals($password, $passwordConfirmation)) {
+            setFlash('error', 'Password confirmation does not match.');
             redirect('users.php');
         }
 
@@ -57,27 +74,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
+            $db->beginTransaction();
             $userId = Database::uuid();
-            $generatedUsername = Auth::generateUsername($email, post('full_name'));
+            $generatedUsername = Auth::generateUsername($email, $fullName);
 
             $db->insert('users', [
                 'id' => $userId,
                 'business_id' => $businessId,
                 'username' => $generatedUsername,
-                'password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
-                'full_name' => post('full_name'),
+                'password_hash' => Auth::hashPassword($password),
+                'full_name' => $fullName,
                 'email' => $email,
-                'role' => post('role'),
+                'role' => $role,
             ]);
 
-            if (post('role') !== ROLE_ADMIN) {
+            if ($role !== ROLE_ADMIN) {
                 Auth::saveBookPermissions($userId, $businessId, $_POST['permissions'] ?? []);
             }
 
             $createdUser = $db->fetch("SELECT id, full_name, email, role, is_active FROM users WHERE id = ? AND business_id = ?", [$userId, $businessId]);
-            Auth::auditCreate('user', $userId, $createdUser ?: ['full_name' => post('full_name'), 'email' => $email, 'role' => post('role')], 'User created: ' . $email, 'users');
+            Auth::auditCreate('user', $userId, $createdUser ?: ['full_name' => $fullName, 'email' => $email, 'role' => $role], 'User created: ' . $email, 'users');
+            $db->commit();
             setFlash('success', 'User created successfully.');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
             setFlash('error', $e->getMessage());
         }
     } elseif ($action === 'toggle') {
@@ -117,15 +137,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'reset_password') {
         $userId = post('user_id');
         $newPass = post('new_password');
+        $newPassConfirmation = post('new_password_confirmation');
 
-        if (strlen($newPass) < 6) {
-            setFlash('error', 'Password must be at least 6 characters.');
+        if (strlen($newPass) < 8) {
+            setFlash('error', 'Password must be at least 8 characters.');
+            redirect('users.php');
+        }
+        if (!hash_equals($newPass, $newPassConfirmation)) {
+            setFlash('error', 'Password confirmation does not match.');
             redirect('users.php');
         }
 
+        $targetUser = $db->fetch("SELECT id FROM users WHERE id = ? AND business_id = ?", [$userId, $businessId]);
+        if (!$targetUser) { setFlash('error', 'User not found.'); redirect('users.php'); }
+
         $db->query(
             "UPDATE users SET password_hash = ? WHERE id = ? AND business_id = ?",
-            [password_hash($newPass, PASSWORD_BCRYPT, ['cost' => 12]), $userId, $businessId]
+            [Auth::hashPassword($newPass), $userId, $businessId]
         );
         Auth::auditLog('UPDATE', 'user', $userId, 'Password reset', ['password' => 'set'], ['password' => 'changed'], 'users');
         setFlash('success', 'Password reset successfully.');
@@ -223,7 +251,7 @@ foreach ($users as $user) {
                             <i class="ri-book-open-line"></i>
                         </button>
                     <?php endif; ?>
-                    <form method="POST" style="display:inline;">
+                    <form method="POST" style="display:inline;" data-confirm-submit="Change this user's active status?">
                         <?= csrfField() ?>
                         <input type="hidden" name="action" value="toggle">
                         <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
@@ -287,7 +315,11 @@ foreach ($users as $user) {
 
                 <div class="form-group">
                     <label class="form-label">Password *</label>
-                    <input type="password" name="password" class="form-control" required minlength="6">
+                    <input type="password" name="password" class="form-control" required minlength="8" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirm Password *</label>
+                    <input type="password" name="password_confirmation" class="form-control" required minlength="8" autocomplete="new-password">
                 </div>
 
                 <div id="new-user-permissions">
@@ -389,7 +421,11 @@ foreach ($users as $user) {
                 <input type="hidden" name="user_id" id="reset-uid">
                 <div class="form-group">
                     <label class="form-label">New Password *</label>
-                    <input type="password" name="new_password" class="form-control" required minlength="6">
+                    <input type="password" name="new_password" class="form-control" required minlength="8" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirm New Password *</label>
+                    <input type="password" name="new_password_confirmation" class="form-control" required minlength="8" autocomplete="new-password">
                 </div>
                 <button type="submit" class="btn btn-primary btn-block"><i class="ri-lock-line"></i> Reset Password</button>
             </form>

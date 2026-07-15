@@ -46,14 +46,16 @@ if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
     <div class="card-body">
         <div class="alert alert-warning"><i class="ri-alert-line"></i> This will create a mirror-image reversal entry. The original entry will be marked as REVERSED.</div>
 
-        <table style="width: 100%; margin-bottom: 20px;">
-            <tr><td class="text-muted" style="padding: 8px 0;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
-            <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
-            <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td></tr>
-            <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
-        </table>
+        <div class="table-container" style="margin-bottom:20px;">
+            <table style="width:100%;">
+                <tr><td class="text-muted" style="padding: 8px 0;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td></tr>
+                <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
+            </table>
+        </div>
 
-        <form method="POST">
+        <form method="POST" data-confirm-submit="Create the reversal entry now? The original record will remain in history and cannot be restored silently.">
             <?= csrfField() ?>
             <div class="form-group">
                 <label class="form-label">Reason for Reversal *</label>

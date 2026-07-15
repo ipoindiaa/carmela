@@ -5,22 +5,42 @@ require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/accounting_engine.php';
 require_once __DIR__ . '/includes/auth.php';
 
-session_start();
-
 $db = Database::getInstance();
 $error = '';
 $step = intval(post('step') ?: get('step', 1));
+$businessCount = intval(($db->fetch("SELECT COUNT(*) AS cnt FROM businesses")['cnt'] ?? 0));
+$userCount = intval(($db->fetch("SELECT COUNT(*) AS cnt FROM users")['cnt'] ?? 0));
+
+if ($businessCount > 0 && empty($_SESSION['setup_business_id'])) {
+    if ($userCount > 0) {
+        redirect('login.php');
+    }
+
+    $unfinishedBusiness = $db->fetch("SELECT id FROM businesses ORDER BY created_at DESC LIMIT 1");
+    if ($unfinishedBusiness) {
+        $_SESSION['setup_business_id'] = $unfinishedBusiness['id'];
+        $step = 2;
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
     try {
         if ($step === 1) {
             // Create Business
+            if ($businessCount > 0) {
+                throw new Exception('Setup is already in progress or complete.');
+            }
+            $businessName = trim((string) post('business_name'));
+            if ($businessName === '') {
+                throw new Exception('Business name is required.');
+            }
             $businessId = Database::uuid();
             $phone = validatePhoneNumber(post('phone'), 'Phone number');
             $email = validateEmailAddress(post('email'), 'Email');
             $db->insert('businesses', [
                 'id' => $businessId,
-                'name' => post('business_name'),
+                'name' => $businessName,
                 'gstin' => post('gstin') ?: null,
                 'address' => post('address') ?: null,
                 'phone' => $phone,
@@ -32,40 +52,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $step = 2;
         } elseif ($step === 2) {
             // Create Admin User
-            $businessId = $_SESSION['setup_business_id'];
+            $businessId = $_SESSION['setup_business_id'] ?? '';
+            $business = $db->fetch("SELECT id FROM businesses WHERE id = ?", [$businessId]);
+            if (!$business) {
+                throw new Exception('Setup session expired. Restart the setup process.');
+            }
+            $existingAdmin = $db->fetch("SELECT id FROM users WHERE business_id = ? LIMIT 1", [$businessId]);
+            if ($existingAdmin) {
+                unset($_SESSION['setup_business_id']);
+                redirect('login.php');
+            }
+            $fullName = trim((string) post('full_name'));
+            if ($fullName === '') {
+                throw new Exception('Administrator name is required.');
+            }
             $email = trim(post('admin_email'));
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 throw new Exception('Please enter a valid admin email address.');
             }
+            $password = (string) post('password');
+            if (strlen($password) < 8) {
+                throw new Exception('Password must be at least 8 characters.');
+            }
+            if (!hash_equals($password, (string) post('confirm_password'))) {
+                throw new Exception('Password and confirmation do not match.');
+            }
             $userId = Database::uuid();
-            $db->insert('users', [
-                'id' => $userId,
-                'business_id' => $businessId,
-                'username' => Auth::generateUsername($email, post('full_name')),
-                'password_hash' => password_hash(post('password'), PASSWORD_BCRYPT, ['cost' => 12]),
-                'full_name' => post('full_name'),
-                'email' => $email,
-                'role' => 'ADMIN',
-            ]);
-
-            // Setup default accounts
             $engine = new AccountingEngine($businessId, $userId);
-            $engine->setupDefaultAccounts();
+            $db->beginTransaction();
+            try {
+                $db->insert('users', [
+                    'id' => $userId,
+                    'business_id' => $businessId,
+                    'username' => Auth::generateUsername($email, $fullName),
+                    'password_hash' => Auth::hashPassword($password),
+                    'full_name' => $fullName,
+                    'email' => $email,
+                    'role' => 'ADMIN',
+                ]);
 
-            // Create default financial year
-            $fy = getCurrentFY();
-            $db->insert('financial_years', [
-                'id' => Database::uuid(),
-                'business_id' => $businessId,
-                'year_label' => getFYLabel($fy),
-                'start_date' => $fy . '-04-01',
-                'end_date' => ($fy + 1) . '-03-31',
-                'is_active' => 1,
-            ]);
+                $engine->setupDefaultAccounts();
+
+                $fy = getCurrentFY();
+                $db->insert('financial_years', [
+                    'id' => Database::uuid(),
+                    'business_id' => $businessId,
+                    'year_label' => getFYLabel($fy),
+                    'start_date' => $fy . '-04-01',
+                    'end_date' => ($fy + 1) . '-03-31',
+                    'is_active' => 1,
+                ]);
+                $db->commit();
+            } catch (Throwable $setupError) {
+                if ($db->inTransaction()) $db->rollBack();
+                throw $setupError;
+            }
 
             // Auto-login
             unset($_SESSION['setup_business_id']);
-            Auth::login($email, post('password'));
+            Auth::login($email, $password);
             
             setFlash('success', 'Welcome to ' . APP_NAME . '! Your business has been set up successfully.');
             redirect('dashboard.php');
@@ -113,6 +158,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Set up your car trading business</p>
         
         <form method="POST">
+            <?= csrfField() ?>
             <input type="hidden" name="step" value="1">
             <div class="form-group">
                 <label class="form-label">Business / Firm Name *</label>
@@ -156,6 +202,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Create your admin login credentials</p>
         
         <form method="POST">
+            <?= csrfField() ?>
             <input type="hidden" name="step" value="2">
             <div class="form-group">
                 <label class="form-label">Full Name *</label>
@@ -168,7 +215,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Password *</label>
-                    <input type="password" name="password" class="form-control" placeholder="Min 6 characters" required minlength="6">
+                <input type="password" name="password" class="form-control" placeholder="Min 8 characters" required minlength="8">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Confirm Password *</label>

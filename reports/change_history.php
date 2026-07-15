@@ -97,7 +97,7 @@ function renderAuditLines($lines) {
                     <?php if (!empty($log['request_uri'])): ?><span class="text-muted" style="font-size:11px;max-width:300px;word-break:break-all;"><?= clean($log['request_uri']) ?></span><?php endif; ?>
                 </div>
                 <?php if (!empty($changes)): ?>
-                    <div class="card-body" style="padding:0;">
+                    <div class="card-body table-container" style="padding:0;">
                         <table data-static-table="1">
                             <thead><tr><th>Field</th><th>Old Value</th><th>New Value</th></tr></thead>
                             <tbody>

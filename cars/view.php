@@ -96,7 +96,7 @@ $buyerHistory = $buyerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.account_id = ?
-     WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
+     WHERE je.business_id = ? AND je.status IN ('POSTED','REVERSED') AND je.car_id = ?
      ORDER BY je.entry_date DESC, je.created_at DESC LIMIT 12",
     [$buyerParty['account_id'], $businessId, $id]
 ) : [];
@@ -104,7 +104,7 @@ $sellerHistory = $sellerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.account_id = ?
-     WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
+     WHERE je.business_id = ? AND je.status IN ('POSTED','REVERSED') AND je.car_id = ?
      ORDER BY je.entry_date DESC, je.created_at DESC LIMIT 12",
     [$sellerParty['account_id'], $businessId, $id]
 ) : [];
@@ -154,6 +154,27 @@ $keyEvents = $db->fetchAll(
     [$businessId, $id]
 );
 $tokenSummary = $engine->getCarTokenSummary($id);
+
+$carSummaryValue = 'In Stock';
+$carSummaryLabel = 'Sale Price: N/A';
+$carSummaryTone = 'var(--accent-green)';
+$carSummaryGlow = 'var(--accent-green-glow)';
+if ($car['status'] === 'SOLD') {
+    $carSummaryValue = formatAmount($profit ?? 0, true);
+    $carSummaryLabel = 'Profit / Loss';
+    $carSummaryTone = ($profit ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    $carSummaryGlow = ($profit ?? 0) >= 0 ? 'var(--accent-green-glow)' : 'var(--accent-red-glow)';
+} elseif ($car['status'] === 'PENDING_PAYMENT') {
+    $carSummaryValue = formatAmount((float) ($car['sale_price'] ?? 0));
+    $carSummaryLabel = 'Sale Agreed - Payment Pending';
+    $carSummaryTone = 'var(--accent-yellow)';
+    $carSummaryGlow = 'var(--accent-yellow-glow)';
+} elseif ($car['status'] === 'CANCELLED') {
+    $carSummaryValue = 'Cancelled';
+    $carSummaryLabel = 'Purchase Reversed';
+    $carSummaryTone = 'var(--text-muted)';
+    $carSummaryGlow = 'var(--bg-muted)';
+}
 
 // Includes direct car entries and the car's exact allocation from multi-account bills.
 $ledger = $engine->getCarTimeline($id);
@@ -231,9 +252,9 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: <?= ($profit ?? 0) >= 0 ? 'var(--accent-green-glow)' : 'var(--accent-red-glow)' ?>; color: <?= ($profit ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' ?>;"><i class="ri-line-chart-line"></i></div></div>
-        <div class="stat-value" style="color: <?= ($profit ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' ?>;"><?= $profit !== null ? formatAmount($profit, true) : 'In Stock' ?></div>
-        <div class="stat-label"><?= $car['status'] === 'SOLD' ? 'Profit / Loss' : 'Sale Price: N/A' ?></div>
+        <div class="stat-header"><div class="stat-icon" style="background: <?= $carSummaryGlow ?>; color: <?= $carSummaryTone ?>;"><i class="ri-line-chart-line"></i></div></div>
+        <div class="stat-value" style="color: <?= $carSummaryTone ?>;"><?= $carSummaryValue ?></div>
+        <div class="stat-label"><?= $carSummaryLabel ?></div>
     </div>
 </div>
 
@@ -250,6 +271,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
     <div class="card">
         <div class="card-header"><h3><i class="ri-car-line"></i> Car Details</h3></div>
         <div class="card-body">
+            <div class="table-container table-container-inline table-columns-compact">
             <table style="width: 100%;">
                 <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
@@ -270,6 +292,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
                 <?php if ($sellerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Seller Payable</td><td class="amount flow-out"><?= formatAmount($sellerOutstanding) ?></td></tr><?php endif; ?>
                 <tr><td class="text-muted" style="padding: 8px 0;">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
             </table>
+            </div>
         </div>
     </div>
 
@@ -394,6 +417,7 @@ function removeFundingEditRow(button) {
         <h3><i class="ri-attachment-2"></i> Car Files</h3>
     </div>
     <div class="card-body">
+        <?php if (Auth::hasEntityAccess('car', 'write')): ?>
         <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel car-images-upload-panel">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="upload_car_images">
@@ -411,6 +435,7 @@ function removeFundingEditRow(button) {
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload</button>
         </form>
+        <?php endif; ?>
 
         <div class="attachment-columns car-images-columns">
             <?php foreach ([['title' => 'From Seller', 'items' => $sellerImages], ['title' => 'From Buyer', 'items' => $buyerImages]] as $group): ?>
@@ -437,12 +462,12 @@ function removeFundingEditRow(button) {
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                                        <form method="POST" onsubmit="return confirm('Delete this file?');" style="display:inline-flex;">
+                                        <?php if (Auth::hasEntityAccess('car', 'write')): ?><form method="POST" data-confirm-submit="Delete this file? The deletion will be recorded in History." style="display:inline-flex;">
                                             <?= csrfField() ?>
                                             <input type="hidden" name="action" value="delete_car_image">
                                             <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
                                             <button type="submit" class="btn btn-sm btn-outline text-red"><i class="ri-delete-bin-line"></i> Delete</button>
-                                        </form>
+                                        </form><?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

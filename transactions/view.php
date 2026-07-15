@@ -46,6 +46,10 @@ $tokenRecord = $entry['transaction_type'] === 'CAR_TOKEN_RECEIVED' ? $db->fetch(
 ) : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_vouchers') {
+    if (!$canEditEntry) {
+        setFlash('error', 'You do not have permission to add files to this transaction.');
+        redirect("view.php?id=$id");
+    }
     verifyCsrf();
     try {
         $count = uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'documents');
@@ -199,6 +203,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 <div class="card" style="margin-top: 24px;">
     <div class="card-header"><h3><i class="ri-attachment-2"></i> Physical Vouchers</h3></div>
     <div class="card-body">
+        <?php if ($canEditEntry): ?>
         <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="upload_vouchers">
@@ -209,6 +214,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload Voucher</button>
         </form>
+        <?php endif; ?>
 
         <?php if (empty($vouchers)): ?>
             <div class="empty-state compact">No vouchers uploaded.</div>

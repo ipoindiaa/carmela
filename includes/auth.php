@@ -10,7 +10,14 @@ class Auth {
     public static function init() {
         if (session_status() === PHP_SESSION_NONE) {
             ini_set('session.gc_maxlifetime', SESSION_LIFETIME);
-            session_set_cookie_params(SESSION_LIFETIME);
+            $secureCookie = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+            session_set_cookie_params([
+                'lifetime' => SESSION_LIFETIME,
+                'path' => '/',
+                'secure' => $secureCookie,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
             session_start();
         }
         self::ensurePermissionSchema();
@@ -30,6 +37,7 @@ class Auth {
         );
         
         if ($user && password_verify($password, $user['password_hash'])) {
+            session_regenerate_id(true);
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['business_id'] = $user['business_id'];
             $_SESSION['username'] = $user['username'];
@@ -48,6 +56,11 @@ class Auth {
     public static function logout() {
         if (isset($_SESSION['user_id'])) {
             self::auditLog('LOGOUT', 'user', $_SESSION['user_id'], 'User logged out');
+        }
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
         }
         session_destroy();
         header('Location: ' . APP_URL . 'login.php');
@@ -212,10 +225,13 @@ class Auth {
 
         $entityBooks = [
             'car' => ['car_profitability', 'cash_book', 'bank_book'],
+            'car_token' => ['car_profitability', 'cash_book', 'bank_book'],
+            'commission_car_settlement' => ['car_profitability', 'cash_book', 'bank_book'],
             'partner' => ['partner_accounts'],
             'employee' => ['employee_advances'],
             'party' => ['outstanding_summary', 'debtor_ageing', 'creditors_report'],
             'journal_entry' => array_merge(self::getPrimaryBookKeys(), ['jv_register']),
+            'journal_voucher' => ['jv_register'],
             'account' => ['general_ledger'],
             'rto_record' => ['rto_book'],
         ];
@@ -380,7 +396,8 @@ class Auth {
         self::ensurePermissionSchema();
 
         $db = Database::getInstance();
-        $db->beginTransaction();
+        $ownsTransaction = !$db->inTransaction();
+        if ($ownsTransaction) $db->beginTransaction();
 
         try {
             $db->query(
@@ -404,10 +421,10 @@ class Auth {
                 ]);
             }
 
-            $db->commit();
+            if ($ownsTransaction) $db->commit();
             self::clearBookPermissionCache($targetUserId, $businessId);
         } catch (\Throwable $e) {
-            $db->rollBack();
+            if ($ownsTransaction && $db->inTransaction()) $db->rollBack();
             throw $e;
         }
     }

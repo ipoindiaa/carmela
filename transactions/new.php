@@ -220,6 +220,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'CAR_PURCHASE':
+                $ownsPurchaseTransaction = !$db->inTransaction();
+                if ($ownsPurchaseTransaction) $db->beginTransaction();
+                try {
                 $carId = post('car_id');
                 $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
                 $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
@@ -310,6 +313,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
                 $attachmentCarId = $carId;
+                if ($ownsPurchaseTransaction) $db->commit();
+                } catch (Throwable $purchaseError) {
+                    if ($ownsPurchaseTransaction && $db->inTransaction()) $db->rollBack();
+                    throw $purchaseError;
+                }
                 break;
 
             case 'CAR_SALE':
@@ -388,13 +396,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'RTO_EXPENSE':
-                $rtoRecord = $resolveRtoRecord();
-                $entryId = $engine->rtoExpense($rtoRecord['id'], $rtoRecord['car_id'], $amount, $date, $paymentAccountId, $narration);
+                $ownsRtoTransaction = !$db->inTransaction();
+                if ($ownsRtoTransaction) $db->beginTransaction();
+                try {
+                    $rtoRecord = $resolveRtoRecord();
+                    Auth::auditCreate('rto_record', $rtoRecord['id'], $rtoRecord, 'RTO record created: ' . $rtoRecord['rto_type'], 'rto');
+                    $entryId = $engine->rtoExpense($rtoRecord['id'], $rtoRecord['car_id'], $amount, $date, $paymentAccountId, $narration);
+                    if ($ownsRtoTransaction) $db->commit();
+                } catch (Throwable $rtoError) {
+                    if ($ownsRtoTransaction && $db->inTransaction()) $db->rollBack();
+                    throw $rtoError;
+                }
                 break;
 
             case 'RTO_RECOVERY':
-                $rtoRecord = $resolveRtoRecord();
-                $entryId = $engine->rtoRecovery($rtoRecord['id'], $amount, $date, $paymentAccountId, $narration);
+                $ownsRtoTransaction = !$db->inTransaction();
+                if ($ownsRtoTransaction) $db->beginTransaction();
+                try {
+                    $rtoRecord = $resolveRtoRecord();
+                    Auth::auditCreate('rto_record', $rtoRecord['id'], $rtoRecord, 'RTO record created: ' . $rtoRecord['rto_type'], 'rto');
+                    $entryId = $engine->rtoRecovery($rtoRecord['id'], $amount, $date, $paymentAccountId, $narration);
+                    if ($ownsRtoTransaction) $db->commit();
+                } catch (Throwable $rtoError) {
+                    if ($ownsRtoTransaction && $db->inTransaction()) $db->rollBack();
+                    throw $rtoError;
+                }
                 break;
 
             case 'CONTRA_TRANSFER':

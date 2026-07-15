@@ -10,6 +10,7 @@ if (Auth::isLoggedIn()) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
     $identifier = trim(post('identifier'));
     $password = post('password');
     
@@ -19,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (Auth::login($identifier, $password)) {
             redirect('dashboard.php');
         } else {
+            usleep(300000);
             $error = 'Invalid email/username or password.';
         }
     }
@@ -64,6 +66,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         <?php endif; ?>
 
         <form method="POST" action="">
+            <?= csrfField() ?>
             <div class="form-group">
                 <label class="form-label" for="identifier"><i class="ri-mail-line"></i> Email or Username</label>
                 <input type="text" id="identifier" name="identifier" class="form-control" placeholder="Enter your email or username" value="<?= clean(post('identifier')) ?>" autofocus required>

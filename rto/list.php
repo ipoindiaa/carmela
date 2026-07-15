@@ -64,21 +64,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $entryAmount = parseDecimalInput(post('amount'));
             if ($entryAmount <= 0) throw new Exception('Amount must be greater than zero.');
 
-            $rto = $resolveRtoCase();
-            $narration = post('narration') ?: ($entryMode === 'RECEIVE' ? 'RTO money received - ' . $rto['rto_type'] : 'RTO expense - ' . $rto['rto_type']);
+            $ownsTransaction = !$db->inTransaction();
+            if ($ownsTransaction) $db->beginTransaction();
+            try {
+                $rto = $resolveRtoCase();
+                $narration = post('narration') ?: ($entryMode === 'RECEIVE' ? 'RTO money received - ' . $rto['rto_type'] : 'RTO expense - ' . $rto['rto_type']);
 
-            if ($entryMode === 'RECEIVE') {
-                $engine->rtoRecovery($rto['id'], $entryAmount, $entryDate, $accountId, $narration);
-                setFlash('success', 'RTO money received.');
-            } else {
-                $engine->rtoExpense($rto['id'], $rto['car_id'], $entryAmount, $entryDate, $accountId, $narration);
-                setFlash('success', 'RTO expense posted.');
+                if ($entryMode === 'RECEIVE') {
+                    $engine->rtoRecovery($rto['id'], $entryAmount, $entryDate, $accountId, $narration);
+                } else {
+                    $engine->rtoExpense($rto['id'], $rto['car_id'], $entryAmount, $entryDate, $accountId, $narration);
+                }
+                if ($ownsTransaction) $db->commit();
+            } catch (Throwable $postingError) {
+                if ($ownsTransaction && $db->inTransaction()) $db->rollBack();
+                throw $postingError;
             }
 
-            uploadEntityAttachments($businessId, 'RTO_RECORD', $rto['id'], 'RTO_DOC', 'rto_docs', $userId, 'documents');
+            $uploadWarning = '';
+            try {
+                uploadEntityAttachments($businessId, 'RTO_RECORD', $rto['id'], 'RTO_DOC', 'rto_docs', $userId, 'documents');
+            } catch (Throwable $uploadError) {
+                $uploadWarning = ' Entry was posted, but the file upload failed: ' . $uploadError->getMessage();
+            }
+            setFlash($uploadWarning ? 'warning' : 'success', ($entryMode === 'RECEIVE' ? 'RTO money received.' : 'RTO expense posted.') . $uploadWarning);
             redirect('list.php?car_id=' . urlencode($rto['car_id']));
         }
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         setFlash('error', $e->getMessage());
     }
 }
@@ -130,7 +142,7 @@ $rtoEntries = $db->fetchAll(
      FROM journal_entries je
      LEFT JOIN cars c ON c.id = je.car_id
      WHERE je.business_id = ?
-       AND je.status = 'POSTED'
+       AND je.status IN ('POSTED','REVERSED')
        AND je.transaction_type IN ('RTO_EXPENSE', 'RTO_RECOVERY')
        " . ($selectedCarId !== '' ? "AND je.car_id = ?" : "") . "
      ORDER BY je.entry_date DESC, je.created_at DESC

@@ -35,13 +35,27 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('submit', function(e) {
-        const form = e.target.closest('form[data-confirm-submit]');
-        if (!form || form.dataset.confirmed === '1') return;
-        if (!confirm(form.dataset.confirmSubmit)) {
+        const form = e.target.closest('form');
+        if (!form) return;
+        if (form.dataset.submitting === '1') {
             e.preventDefault();
             return;
         }
-        form.dataset.confirmed = '1';
+        if (form.matches('[data-confirm-submit]') && form.dataset.confirmed !== '1') {
+            if (!confirm(form.dataset.confirmSubmit)) {
+                e.preventDefault();
+                return;
+            }
+            form.dataset.confirmed = '1';
+        }
+        form.dataset.submitting = '1';
+        form.classList.add('is-submitting');
+        setTimeout(() => {
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((control) => {
+                control.disabled = true;
+                control.setAttribute('aria-busy', 'true');
+            });
+        }, 0);
     });
 
     document.addEventListener('click', async function(e) {

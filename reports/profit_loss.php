@@ -28,7 +28,7 @@ $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
 <div class="grid-2">
     <div class="card">
         <div class="card-header"><h3 class="text-green"><i class="ri-arrow-down-circle-line"></i> Income</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body table-container" style="padding:0;">
             <table data-static-table="1">
                 <tbody>
                     <?php foreach ($pnl['income'] as $item): ?>
@@ -42,7 +42,7 @@ $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
     </div>
     <div class="card">
         <div class="card-header"><h3 class="text-red"><i class="ri-arrow-up-circle-line"></i> Expenses</h3></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-body table-container" style="padding:0;">
             <table data-static-table="1">
                 <tbody>
                     <?php foreach ($pnl['expenses'] as $item): ?>

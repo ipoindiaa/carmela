@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
         $beforeParty = $existingParty ?: $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $businessId]);
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
-        $db->query("UPDATE debtors_creditors SET phone = ?, email = ?, address = ?, pan_gstin = ? WHERE id = ?",
-            [$phone, $email, post('address'), post('pan_gstin'), $partyId]);
+        $db->query("UPDATE debtors_creditors SET phone = ?, email = ?, address = ?, pan_gstin = ? WHERE id = ? AND business_id = ?",
+            [$phone, $email, post('address'), strtoupper(trim((string) post('pan_gstin'))), $partyId, $businessId]);
         $createdParty = $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $businessId]);
         Auth::auditUpdate('party', $partyId, $beforeParty ?: [], $createdParty ?: [], 'Party contact details saved: ' . post('name'), 'parties');
         setFlash('success', 'Party added!');

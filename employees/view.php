@@ -50,7 +50,7 @@ $salaryHistory = $db->fetchAll("SELECT * FROM salary_records WHERE employee_id =
 $advanceLedger = $db->fetchAll(
     "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-     WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$emp['advance_account_id']]);
+     WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$emp['advance_account_id']]);
 ?>
 
 <div class="page-header">
@@ -122,7 +122,7 @@ $advanceLedger = $db->fetchAll(
 <div class="grid-2">
     <div class="card">
         <div class="card-header"><h3>Salary History</h3></div>
-        <div class="card-body card-body-flush">
+        <div class="card-body card-body-flush table-container">
             <table><thead><tr><th>Month</th><th class="text-right">Gross</th><th class="text-right">Advance Ded.</th><th class="text-right">Net Paid</th><th>Mode</th><th>Date / Time</th></tr></thead>
             <tbody>
             <?php foreach ($salaryHistory as $s): ?>
@@ -137,7 +137,7 @@ $advanceLedger = $db->fetchAll(
     </div>
     <div class="card">
         <div class="card-header"><h3>Advance Ledger</h3></div>
-        <div class="card-body card-body-flush">
+        <div class="card-body card-body-flush table-container">
             <table><thead><tr><th>Date / Time</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
             <tbody>
             <?php foreach ($advanceLedger as $l): ?>

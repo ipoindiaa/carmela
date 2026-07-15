@@ -21,7 +21,7 @@ if ($accountId) {
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
              WHERE jl.account_id = ?
-               AND je.status = 'POSTED'
+               AND je.status IN ('POSTED','REVERSED')
                AND je.entry_date < ?",
             [$accountId, $dateFrom]
         );
@@ -31,7 +31,7 @@ if ($accountId) {
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
              WHERE jl.account_id = ?
-               AND je.status = 'POSTED'
+               AND je.status IN ('POSTED','REVERSED')
                AND je.entry_date <= ?",
             [$accountId, $dateTo]
         );
@@ -49,7 +49,7 @@ if ($accountId) {
         $entries = $db->fetchAll(
             "SELECT je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
              FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
-             WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date BETWEEN ? AND ?
+             WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date BETWEEN ? AND ?
              ORDER BY je.entry_date, je.created_at", [$accountId, $dateFrom, $dateTo]);
     }
 }
