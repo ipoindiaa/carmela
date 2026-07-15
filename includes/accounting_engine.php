@@ -486,24 +486,27 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `version_no` INT NOT NULL DEFAULT 1 AFTER `correction_reason`");
             }
             $this->addIndexIfMissing('journal_entries', 'idx_correction_from', '`corrected_from_id`');
-            $this->ensureEntryTypeIdentitySchema();
-            if (!$this->columnExists('cars', 'sale_gst_amount')) {
-                $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
-            }
+
+            // Entry-type backfill reads these car fields. Older databases must
+            // receive them before ensureEntryTypeIdentitySchema() runs.
             if (!$this->columnExists('cars', 'sale_commission_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
-            }
-            if (!$this->columnExists('cars', 'buyer_party_id')) {
-                $this->db->query("ALTER TABLE `cars` ADD COLUMN `buyer_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_contact`");
-            }
-            if (!$this->columnExists('cars', 'seller_party_id')) {
-                $this->db->query("ALTER TABLE `cars` ADD COLUMN `seller_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_party_id`");
             }
             if (!$this->columnExists('cars', 'purchase_paid_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `purchase_price`");
             }
             if (!$this->columnExists('cars', 'ownership_type')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED' AFTER `purchase_paid_amount`");
+            }
+            $this->ensureEntryTypeIdentitySchema();
+            if (!$this->columnExists('cars', 'sale_gst_amount')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
+            }
+            if (!$this->columnExists('cars', 'buyer_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `buyer_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_contact`");
+            }
+            if (!$this->columnExists('cars', 'seller_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `seller_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_party_id`");
             }
             if (!$this->columnExists('cars', 'commission_owner_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `commission_owner_party_id` CHAR(36) DEFAULT NULL AFTER `ownership_type`");
