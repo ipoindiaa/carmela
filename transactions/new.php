@@ -473,15 +473,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         if ($entryId) {
             try {
-                uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $entryId, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'vouchers');
+                uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $entryId, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'documents');
                 if ($type === 'CAR_PURCHASE' && $attachmentCarId) {
-                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'SELLER', 'seller_images', Auth::user('user_id'), 'images');
+                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'SELLER', 'seller_images', Auth::user('user_id'), 'documents');
                 }
                 if ($type === 'CAR_SALE' && $attachmentCarId) {
-                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'images');
+                    uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'documents');
                 }
                 if (in_array($type, ['RTO_EXPENSE', 'RTO_RECOVERY'], true) && !empty($rtoRecord['id'])) {
-                    uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'vouchers');
+                    uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'documents');
                 }
             } catch (Exception $uploadError) {
                 $uploadWarning = $postedEntryLabel . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
@@ -672,9 +672,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Seller Images</label>
-                    <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
-                    <div class="form-hint">Optional. Upload seller-side car photos or documents.</div>
+                    <label class="form-label">Seller Files</label>
+                    <input type="file" name="seller_images[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                    <div class="form-hint">Optional photos, PDF, Office documents, text/CSV, or archives.</div>
                 </div>
             </div>
 
@@ -804,9 +804,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Buyer Images</label>
-                    <input type="file" name="buyer_images[]" class="form-control" accept="image/*" multiple>
-                    <div class="form-hint">Optional. Upload buyer-side delivery or party photos.</div>
+                    <label class="form-label">Buyer Files</label>
+                    <input type="file" name="buyer_images[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                    <div class="form-hint">Optional delivery photos, PDF, Office documents, text/CSV, or archives.</div>
                 </div>
             </div>
 
@@ -958,9 +958,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">RTO Images / Vouchers</label>
-                    <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
-                    <div class="form-hint">Upload agent slips, RTO receipts, transfer papers, or proof images for this car.</div>
+                    <label class="form-label">RTO Files / Vouchers</label>
+                    <input type="file" name="rto_docs[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                    <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
                 </div>
             </div>
 
@@ -1073,15 +1073,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="attachment-upload-panel">
                 <div class="attachment-upload-copy">
-                    <label class="form-label"><i class="ri-attachment-2"></i> Voucher / Bill Photos</label>
-                    <div class="form-hint">Optional proof for this entry. Images and PDFs can be shared from transaction detail.</div>
+                    <label class="form-label"><i class="ri-attachment-2"></i> Voucher / Bill Files</label>
+                    <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
                 </div>
                 <label class="voucher-dropzone">
-                    <input type="file" name="vouchers[]" accept="image/*,application/pdf" multiple>
+                    <input type="file" name="vouchers[]" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
                     <span class="voucher-dropzone-icon"><i class="ri-upload-cloud-2-line"></i></span>
                     <span>
                         <strong>Upload vouchers</strong>
-                        <small class="voucher-file-status">Images or PDF</small>
+                        <small class="voucher-file-status">Photos, documents, or archives</small>
                     </span>
                 </label>
             </div>
@@ -1999,7 +1999,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('input[name="vouchers[]"]')?.addEventListener('change', (event) => {
         const status = document.querySelector('.voucher-file-status');
         const count = event.target.files ? event.target.files.length : 0;
-        if (status) status.textContent = count ? `${count} file${count === 1 ? '' : 's'} selected` : 'Images or PDF';
+        if (status) status.textContent = count ? `${count} file${count === 1 ? '' : 's'} selected` : 'Photos, documents, or archives';
     });
     document.querySelectorAll('.simple-entry-option[data-money-flow]').forEach((button) => {
         button.addEventListener('click', () => selectMoneyFlow(button.dataset.moneyFlow || ''));

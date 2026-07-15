@@ -48,8 +48,8 @@ $tokenRecord = $entry['transaction_type'] === 'CAR_TOKEN_RECEIVED' ? $db->fetch(
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_vouchers') {
     verifyCsrf();
     try {
-        $count = uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'vouchers');
-        setFlash('success', $count > 0 ? "$count voucher uploaded." : 'No voucher selected.');
+        $count = uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'documents');
+        setFlash('success', $count > 0 ? "$count file uploaded." : 'No file selected.');
         redirect("view.php?id=$id");
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
@@ -203,9 +203,9 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
             <?= csrfField() ?>
             <input type="hidden" name="action" value="upload_vouchers">
             <div class="form-group">
-                <label class="form-label">Upload Bill / Voucher</label>
-                <input type="file" name="vouchers[]" class="form-control" accept="image/*,application/pdf" multiple>
-                <div class="form-hint">Upload bill photos or PDF. Open/share links work on mobile.</div>
+                <label class="form-label">Upload Bill / Voucher Files</label>
+                <input type="file" name="vouchers[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload Voucher</button>
         </form>
@@ -215,13 +215,13 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <?php else: ?>
             <div class="attachment-grid">
                 <?php foreach ($vouchers as $attachment): ?>
-                    <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); $isImage = str_starts_with($attachment['mime_type'], 'image/'); ?>
+                    <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); $isImage = attachmentIsImage($attachment); ?>
                     <div class="attachment-card">
                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="attachment-preview">
                             <?php if ($isImage): ?>
                                 <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
                             <?php else: ?>
-                                <div class="attachment-file-icon"><i class="ri-file-pdf-2-line"></i><span>PDF</span></div>
+                                <div class="attachment-file-icon"><i class="<?= clean(attachmentIconClass($attachment)) ?>"></i><span><?= clean(attachmentTypeLabel($attachment)) ?></span></div>
                             <?php endif; ?>
                         </a>
                         <div class="attachment-meta">

@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setFlash('success', 'RTO expense posted.');
             }
 
-            uploadEntityAttachments($businessId, 'RTO_RECORD', $rto['id'], 'RTO_DOC', 'rto_docs', $userId, 'vouchers');
+            uploadEntityAttachments($businessId, 'RTO_RECORD', $rto['id'], 'RTO_DOC', 'rto_docs', $userId, 'documents');
             redirect('list.php?car_id=' . urlencode($rto['car_id']));
         }
     } catch (Exception $e) {
@@ -155,7 +155,7 @@ $rtoEntries = $db->fetchAll(
 <div class="entry-menu-legend page-helper-strip">
     <span><i class="ri-arrow-down-circle-line"></i> Buyer gives RTO money = income in that car</span>
     <span><i class="ri-arrow-up-circle-line"></i> You pay agent / office = expense of that car</span>
-    <span><i class="ri-attachment-2"></i> Images or PDF vouchers can be attached in every case</span>
+    <span><i class="ri-attachment-2"></i> Photos, documents, and archives can be attached to every case</span>
 </div>
 
 <div class="filter-bar compact-filter-bar">
@@ -230,9 +230,9 @@ $rtoEntries = $db->fetchAll(
                 <input name="narration" class="form-control" placeholder="Short note for this RTO entry">
             </div>
             <div class="form-group rto-span-2">
-                <label class="form-label">Images / Vouchers</label>
-                <input type="file" name="rto_docs[]" class="form-control" accept="image/*,application/pdf" multiple>
-                <div class="form-hint">Upload receipt photos, slips, transfer papers, or proof documents.</div>
+                <label class="form-label">Files / Vouchers</label>
+                <input type="file" name="rto_docs[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
             <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Money</button></div>
         </form>

@@ -120,9 +120,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
         $uploadWarning = '';
         try {
-            uploadEntityAttachments($businessId, 'CAR', $carId, 'SELLER', 'seller_images', Auth::user('user_id'), 'images');
+            uploadEntityAttachments($businessId, 'CAR', $carId, 'SELLER', 'seller_images', Auth::user('user_id'), 'documents');
         } catch (Exception $uploadError) {
-            $uploadWarning = ' Seller image upload failed: ' . $uploadError->getMessage();
+            $uploadWarning = ' Seller file upload failed: ' . $uploadError->getMessage();
         }
 
         $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
@@ -226,9 +226,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-group">
-                <label class="form-label">Seller Images</label>
-                <input type="file" name="seller_images[]" class="form-control" accept="image/*" multiple>
-                <div class="form-hint">Optional. Upload photos or documents received from seller.</div>
+                <label class="form-label">Seller Files</label>
+                <input type="file" name="seller_images[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
 
             <hr style="border-color: var(--border); margin: 24px 0;">

@@ -45,17 +45,85 @@ function attachmentUploadRoot() {
 
 function attachmentAllowedTypes($mode = 'images') {
     $imageTypes = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-        'image/gif' => 'gif',
+        'jpg' => ['image/jpeg', 'image/pjpeg'],
+        'jpeg' => ['image/jpeg', 'image/pjpeg'],
+        'png' => ['image/png'],
+        'webp' => ['image/webp'],
+        'gif' => ['image/gif'],
+        'heic' => ['image/heic', 'image/heif'],
+        'heif' => ['image/heic', 'image/heif'],
+        'tif' => ['image/tiff'],
+        'tiff' => ['image/tiff'],
     ];
 
-    if ($mode === 'vouchers') {
-        $imageTypes['application/pdf'] = 'pdf';
-    }
+    if ($mode === 'images') return $imageTypes;
 
-    return $imageTypes;
+    $officeContainerTypes = ['application/x-ole-storage', 'application/vnd.ms-office', 'application/cdfv2'];
+    $zipContainerTypes = ['application/zip', 'application/x-zip', 'application/x-zip-compressed'];
+
+    return array_merge($imageTypes, [
+        'pdf' => ['application/pdf'],
+        'doc' => array_merge(['application/msword'], $officeContainerTypes),
+        'docx' => array_merge(['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], $zipContainerTypes),
+        'xls' => array_merge(['application/vnd.ms-excel'], $officeContainerTypes),
+        'xlsx' => array_merge(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], $zipContainerTypes),
+        'ppt' => array_merge(['application/vnd.ms-powerpoint'], $officeContainerTypes),
+        'pptx' => array_merge(['application/vnd.openxmlformats-officedocument.presentationml.presentation'], $zipContainerTypes),
+        'csv' => ['text/csv', 'application/csv', 'text/plain', 'application/vnd.ms-excel'],
+        'txt' => ['text/plain'],
+        'rtf' => ['application/rtf', 'text/rtf'],
+        'odt' => array_merge(['application/vnd.oasis.opendocument.text'], $zipContainerTypes),
+        'ods' => array_merge(['application/vnd.oasis.opendocument.spreadsheet'], $zipContainerTypes),
+        'zip' => array_merge($zipContainerTypes, ['multipart/x-zip']),
+        'rar' => ['application/vnd.rar', 'application/x-rar', 'application/x-rar-compressed'],
+        '7z' => ['application/x-7z-compressed'],
+        'tar' => ['application/x-tar'],
+        'gz' => ['application/gzip', 'application/x-gzip'],
+    ]);
+}
+
+function attachmentAcceptAttribute($mode = 'documents') {
+    return implode(',', array_map(static fn($extension) => '.' . $extension, array_keys(attachmentAllowedTypes($mode))));
+}
+
+function resolveAttachmentExtension($originalName, $mimeType, $mode = 'documents') {
+    $extension = strtolower((string) pathinfo((string) $originalName, PATHINFO_EXTENSION));
+    $mimeType = strtolower(trim((string) $mimeType));
+    $allowedTypes = attachmentAllowedTypes($mode === 'vouchers' ? 'documents' : $mode);
+    if ($extension === '' || !isset($allowedTypes[$extension]) || !in_array($mimeType, $allowedTypes[$extension], true)) {
+        if ($mode === 'images') {
+            throw new Exception('Only JPG, PNG, WebP, GIF, HEIC, or TIFF images are allowed.');
+        }
+        throw new Exception('Unsupported file. Upload an image, PDF, Office document, text/CSV file, or ZIP/RAR/7z/TAR/GZ archive.');
+    }
+    return $extension;
+}
+
+function attachmentFileExtension($attachment) {
+    $name = $attachment['original_name'] ?? ($attachment['stored_name'] ?? '');
+    return strtolower((string) pathinfo((string) $name, PATHINFO_EXTENSION));
+}
+
+function attachmentIsImage($attachment) {
+    return str_starts_with(strtolower((string) ($attachment['mime_type'] ?? '')), 'image/');
+}
+
+function attachmentTypeLabel($attachment) {
+    $extension = attachmentFileExtension($attachment);
+    return $extension !== '' ? strtoupper($extension) : 'FILE';
+}
+
+function attachmentIconClass($attachment) {
+    if (attachmentIsImage($attachment)) return 'ri-image-line';
+    return match (attachmentFileExtension($attachment)) {
+        'pdf' => 'ri-file-pdf-2-line',
+        'doc', 'docx', 'odt', 'rtf' => 'ri-file-word-2-line',
+        'xls', 'xlsx', 'ods', 'csv' => 'ri-file-excel-2-line',
+        'ppt', 'pptx' => 'ri-file-ppt-2-line',
+        'zip', 'rar', '7z', 'tar', 'gz' => 'ri-file-zip-line',
+        'txt' => 'ri-file-text-line',
+        default => 'ri-file-3-line',
+    };
 }
 
 function normalizeFilesArray($fieldName) {
@@ -84,7 +152,6 @@ function uploadEntityAttachments($businessId, $entityType, $entityId, $attachmen
         return 0;
     }
 
-    $allowedTypes = attachmentAllowedTypes($mode);
     $businessFolder = preg_replace('/[^a-zA-Z0-9-]/', '', (string) $businessId);
     $targetDir = attachmentUploadRoot() . '/' . $businessFolder;
     if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
@@ -108,11 +175,7 @@ function uploadEntityAttachments($businessId, $entityType, $entityId, $attachmen
 
         $tmpName = $file['tmp_name'] ?? '';
         $mimeType = $tmpName ? $finfo->file($tmpName) : '';
-        if (!isset($allowedTypes[$mimeType])) {
-            throw new Exception($mode === 'vouchers' ? 'Only images or PDF vouchers are allowed.' : 'Only image uploads are allowed.');
-        }
-
-        $extension = $allowedTypes[$mimeType];
+        $extension = resolveAttachmentExtension($file['name'] ?? '', $mimeType, $mode);
         $storedName = bin2hex(random_bytes(16)) . '.' . $extension;
         $targetPath = $targetDir . '/' . $storedName;
         if (!move_uploaded_file($tmpName, $targetPath)) {

@@ -59,11 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', 'Partner funding updated. Financial corrections and field changes are preserved in History.');
         } elseif ($action === 'upload_car_images') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
-            $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'images');
-            setFlash('success', $count > 0 ? "$count image uploaded." : 'No image selected.');
+            $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'documents');
+            setFlash('success', $count > 0 ? "$count file uploaded." : 'No file selected.');
         } elseif ($action === 'delete_car_image') {
             deleteAttachment($businessId, post('attachment_id'), 'CAR', $id);
-            setFlash('success', 'Car image deleted.');
+            setFlash('success', 'Car file deleted.');
         } elseif ($action === 'return_car') {
             $engine->returnSoldCar($id, post('return_reason'));
             setFlash('success', 'Car return recorded. Car is back in stock.');
@@ -391,23 +391,23 @@ function removeFundingEditRow(button) {
 
 <div class="card car-images-card" style="margin-top: 24px;">
     <div class="card-header">
-        <h3><i class="ri-image-add-line"></i> Car Images</h3>
+        <h3><i class="ri-attachment-2"></i> Car Files</h3>
     </div>
     <div class="card-body">
         <form method="POST" enctype="multipart/form-data" class="attachment-upload-panel car-images-upload-panel">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="upload_car_images">
             <div class="form-group">
-                <label class="form-label">Image Type</label>
+                <label class="form-label">File Source</label>
                 <select name="image_type" class="form-control searchable-select">
                     <option value="SELLER">From Seller</option>
                     <option value="BUYER">From Buyer</option>
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">Upload Images</label>
-                <input type="file" name="car_images[]" class="form-control" accept="image/*" multiple>
-                <div class="form-hint">Upload RC, delivery, car condition, or party photos. Each image can be opened or shared on mobile.</div>
+                <label class="form-label">Upload Files</label>
+                <input type="file" name="car_images[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
+                <div class="form-hint">Photos, RC, delivery proofs, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-upload-cloud-2-line"></i> Upload</button>
         </form>
@@ -417,14 +417,18 @@ function removeFundingEditRow(button) {
                 <div>
                     <h4 class="attachment-group-title"><?= clean($group['title']) ?></h4>
                     <?php if (empty($group['items'])): ?>
-                        <div class="empty-state compact">No images uploaded.</div>
+                        <div class="empty-state compact">No files uploaded.</div>
                     <?php else: ?>
                         <div class="attachment-grid">
                             <?php foreach ($group['items'] as $attachment): ?>
-                                <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); ?>
+                                <?php $url = attachmentUrl($attachment); $shareUrl = attachmentUrl($attachment, true); $isImage = attachmentIsImage($attachment); ?>
                                 <div class="attachment-card">
-                                    <a href="<?= clean($url) ?>" target="_blank" rel="noopener">
-                                        <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
+                                    <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="attachment-preview">
+                                        <?php if ($isImage): ?>
+                                            <img src="<?= clean($url) ?>" alt="<?= clean($attachment['original_name']) ?>">
+                                        <?php else: ?>
+                                            <div class="attachment-file-icon"><i class="<?= clean(attachmentIconClass($attachment)) ?>"></i><span><?= clean(attachmentTypeLabel($attachment)) ?></span></div>
+                                        <?php endif; ?>
                                     </a>
                                     <div class="attachment-meta">
                                         <strong><?= clean($attachment['original_name']) ?></strong>
@@ -433,7 +437,7 @@ function removeFundingEditRow(button) {
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                                        <form method="POST" onsubmit="return confirm('Delete this image?');" style="display:inline-flex;">
+                                        <form method="POST" onsubmit="return confirm('Delete this file?');" style="display:inline-flex;">
                                             <?= csrfField() ?>
                                             <input type="hidden" name="action" value="delete_car_image">
                                             <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
