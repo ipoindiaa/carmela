@@ -92,8 +92,8 @@ $bookViewMoreUrl = match ($activeBookKey) {
     default => 'transactions/list.php',
 };
 
-$totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'IN_STOCK'", [$businessId]);
-$totalSold = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND status = 'SOLD'", [$businessId]);
+$totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND COALESCE(ownership_type, 'OWNED') = 'OWNED' AND status = 'IN_STOCK'", [$businessId]);
+$totalSold = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND COALESCE(ownership_type, 'OWNED') = 'OWNED' AND status = 'SOLD'", [$businessId]);
 
 $recentTxns = [];
 if (!empty($accessibleAccountIds)) {

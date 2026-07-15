@@ -94,7 +94,7 @@ function renderCarRows($cars, $engine) {
     return trim(ob_get_clean());
 }
 
-$where = "WHERE c.business_id = ?";
+$where = "WHERE c.business_id = ? AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED'";
 $params = [$businessId];
 if ($filter) { $where .= " AND c.status = ?"; $params[] = $filter; }
 if ($search !== '') {

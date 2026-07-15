@@ -108,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'purchase_date' => $purchaseDate,
             'purchase_price' => max(0, $purchasePrice - $gstAmount),
             'purchase_paid_amount' => $purchasePaidNow,
+            'ownership_type' => 'OWNED',
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
             'partner_id' => null,
             'account_id' => $carAccountId,

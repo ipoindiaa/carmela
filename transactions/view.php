@@ -19,7 +19,7 @@ $canReverseEntry = Auth::canAccessTransactionEntry($id, $businessId, 'delete');
 $canEditEntry = Auth::canAccessTransactionEntry($id, $businessId, 'write');
 
 $entry = $db->fetch(
-    "SELECT je.*, u.full_name as created_by_name, c.registration_no as car_reg, p.name as partner_name, e.name as employee_name,
+    "SELECT je.*, u.full_name as created_by_name, c.registration_no as car_reg, c.ownership_type AS car_ownership_type, p.name as partner_name, e.name as employee_name,
             dc.name AS party_name, dc.type AS party_type, dc.phone AS party_phone,
             jv.reference_no as voucher_reference_no, previous.reference_no AS corrected_from_reference,
             replacement.reference_no AS corrected_by_reference, reversal.reference_no AS reversal_reference,

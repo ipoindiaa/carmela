@@ -17,7 +17,7 @@ $cars = $db->fetchAll(
         WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
         GROUP BY cp.car_id
      ) partner_rollup ON partner_rollup.car_id = c.id
-     WHERE c.business_id = ? ORDER BY c.created_at DESC", [$businessId, $businessId]);
+     WHERE c.business_id = ? AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED' ORDER BY c.created_at DESC", [$businessId, $businessId]);
 
 $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 ?>

@@ -384,6 +384,48 @@ class AccountingEngine {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
 
+            $this->db->query(
+                "CREATE TABLE IF NOT EXISTS `commission_car_settlements` (
+                    `id` CHAR(36) NOT NULL,
+                    `business_id` CHAR(36) NOT NULL,
+                    `car_id` CHAR(36) NOT NULL,
+                    `owner_party_id` CHAR(36) NOT NULL,
+                    `buyer_party_id` CHAR(36) NOT NULL,
+                    `sale_entry_id` CHAR(36) NOT NULL,
+                    `sale_date` DATE NOT NULL,
+                    `gross_sale_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `owner_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `buyer_outstanding_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `payment_handling` ENUM('COMMISSION_ONLY','FULL_AMOUNT') NOT NULL DEFAULT 'COMMISSION_ONLY',
+                    `paid_to_owner_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `status` ENUM('NOT_APPLICABLE','PENDING','PARTIAL','PAID','REVERSED') NOT NULL DEFAULT 'NOT_APPLICABLE',
+                    `created_by` CHAR(36) NOT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `uk_commission_car_sale` (`sale_entry_id`),
+                    KEY `idx_commission_car` (`business_id`, `car_id`, `status`),
+                    KEY `idx_commission_owner` (`business_id`, `owner_party_id`, `status`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
+            $this->db->query(
+                "CREATE TABLE IF NOT EXISTS `commission_owner_payments` (
+                    `id` CHAR(36) NOT NULL,
+                    `business_id` CHAR(36) NOT NULL,
+                    `settlement_id` CHAR(36) NOT NULL,
+                    `journal_entry_id` CHAR(36) NOT NULL,
+                    `payment_date` DATE NOT NULL,
+                    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `created_by` CHAR(36) NOT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `uk_commission_owner_payment_entry` (`journal_entry_id`),
+                    KEY `idx_commission_owner_payment` (`business_id`, `settlement_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
             if (!$this->columnExists('journal_entries', 'journal_voucher_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `journal_voucher_id` CHAR(36) DEFAULT NULL AFTER `party_id`");
             }
@@ -414,6 +456,18 @@ class AccountingEngine {
             }
             if (!$this->columnExists('cars', 'purchase_paid_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `purchase_price`");
+            }
+            if (!$this->columnExists('cars', 'ownership_type')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED' AFTER `purchase_paid_amount`");
+            }
+            if (!$this->columnExists('cars', 'commission_owner_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `commission_owner_party_id` CHAR(36) DEFAULT NULL AFTER `ownership_type`");
+            }
+            if (!$this->columnExists('cars', 'expected_sale_price')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `expected_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `commission_owner_party_id`");
+            }
+            if (!$this->columnExists('cars', 'expected_commission_amount')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `expected_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `expected_sale_price`");
             }
             if (!$this->columnExists('cars', 'has_second_key')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `has_second_key` TINYINT(1) NOT NULL DEFAULT 0 AFTER `seller_party_id`");
@@ -987,6 +1041,7 @@ class AccountingEngine {
     public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0, $commissionAmount = 0, $buyerPartyId = null, $buyerPhone = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception('Car not found.');
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Use the Commission Cars section to sell a customer-owned car.');
         if ($car['status'] !== 'IN_STOCK') throw new Exception('Only in-stock cars can be sold from this entry. Use buyer payment clearing for a pending sale.');
         if ($salePrice <= 0) throw new Exception('Sale price must be greater than zero.');
         $commissionAmount = round(floatval($commissionAmount), 2);
@@ -1068,6 +1123,213 @@ class AccountingEngine {
             return $entryId;
         } catch (Throwable $e) {
             if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    public function createCommissionCar(array $data) {
+        $registrationNo = normalizeRegistrationNo($data['registration_no'] ?? '');
+        if (!isValidRegistrationNo($registrationNo)) {
+            throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
+        }
+        $existing = $this->db->fetch(
+            "SELECT id FROM cars WHERE business_id = ? AND registration_no = ?",
+            [$this->businessId, $registrationNo]
+        );
+        if ($existing) throw new Exception('A car with this registration number already exists.');
+
+        $receivedDate = trim((string) ($data['received_date'] ?? ''));
+        $date = DateTime::createFromFormat('!Y-m-d', $receivedDate);
+        if (!$date || $date->format('Y-m-d') !== $receivedDate) throw new Exception('A valid received date is required.');
+
+        $owner = $this->resolveParty(
+            $data['owner_party_id'] ?? '',
+            $data['owner_name'] ?? '',
+            $data['owner_phone'] ?? '',
+            'SELLER',
+            ['SELLER', 'CREDITOR']
+        );
+        $expectedSale = round(floatval($data['expected_sale_price'] ?? 0), 2);
+        $expectedCommission = round(floatval($data['expected_commission_amount'] ?? 0), 2);
+        if ($expectedSale < 0 || $expectedCommission < 0) throw new Exception('Expected amounts cannot be negative.');
+        if ($expectedSale > 0 && $expectedCommission - $expectedSale > 0.01) {
+            throw new Exception('Expected commission cannot exceed the expected sale value.');
+        }
+
+        $year = intval($data['year'] ?? 0) ?: null;
+        if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
+        $carId = Database::uuid();
+        $record = [
+            'id' => $carId,
+            'business_id' => $this->businessId,
+            'registration_no' => $registrationNo,
+            'make' => trim((string) ($data['make'] ?? '')),
+            'model' => trim((string) ($data['model'] ?? '')),
+            'year' => $year,
+            'color' => trim((string) ($data['color'] ?? '')),
+            'purchase_date' => $receivedDate,
+            'purchase_price' => 0,
+            'purchase_paid_amount' => 0,
+            'ownership_type' => 'COMMISSION',
+            'commission_owner_party_id' => $owner['id'],
+            'seller_party_id' => $owner['id'],
+            'expected_sale_price' => $expectedSale,
+            'expected_commission_amount' => $expectedCommission,
+            'has_second_key' => !empty($data['has_second_key']) ? 1 : 0,
+            'notes' => trim((string) ($data['notes'] ?? '')),
+        ];
+        $this->db->insert('cars', $record);
+        Auth::auditCreate('car', $carId, $record, "Commission car $registrationNo received from {$owner['name']}", 'commission_cars');
+        return $carId;
+    }
+
+    public function commissionCarSale($carId, $grossSaleAmount, $commissionAmount, $date, $receivingAccount, $paymentHandling, $narration, $buyerPartyId = null, $buyerName = null, $buyerPhone = null, $amountReceived = null) {
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ? FOR UPDATE", [$carId, $this->businessId]);
+        if (!$car) throw new Exception('Commission car not found.');
+        if (($car['ownership_type'] ?? 'OWNED') !== 'COMMISSION') throw new Exception('This is not a commission car.');
+        if ($car['status'] !== 'IN_STOCK') throw new Exception('Only an in-stock commission car can be sold.');
+
+        $grossSaleAmount = round(floatval($grossSaleAmount), 2);
+        $commissionAmount = round(floatval($commissionAmount), 2);
+        if ($grossSaleAmount <= 0) throw new Exception('Gross sale value must be greater than zero.');
+        if ($commissionAmount <= 0) throw new Exception('Commission income must be greater than zero.');
+        if ($commissionAmount - $grossSaleAmount > 0.01) throw new Exception('Commission cannot exceed the gross sale value.');
+        $paymentHandling = strtoupper(trim((string) $paymentHandling));
+        if (!in_array($paymentHandling, ['COMMISSION_ONLY', 'FULL_AMOUNT'], true)) throw new Exception('Select how buyer money was handled.');
+
+        $owner = $this->db->fetch(
+            "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
+            [$car['commission_owner_party_id'], $this->businessId]
+        );
+        if (!$owner || !in_array($owner['type'], ['SELLER', 'CREDITOR'], true)) throw new Exception('The commission car owner account is missing or inactive.');
+        $buyer = $this->resolveParty($buyerPartyId, $buyerName, $buyerPhone, 'BUYER', ['BUYER', 'DEBTOR']);
+        $tokenSummary = $this->getCarTokenSummary($carId);
+        if ($tokenSummary['available'] > 0.009 && $tokenSummary['party_id'] !== $buyer['id']) {
+            throw new Exception("This car has an open token from {$tokenSummary['party_name']}. Select that buyer or reverse the token first.");
+        }
+        if ($paymentHandling === 'COMMISSION_ONLY' && $tokenSummary['available'] > 0.009) {
+            throw new Exception('The business already holds a buyer token for this car. Select Full sale amount handled by business so the owner payable remains correct.');
+        }
+
+        $targetReceipt = $paymentHandling === 'FULL_AMOUNT' ? $grossSaleAmount : $commissionAmount;
+        $tokenApplied = $paymentHandling === 'FULL_AMOUNT' ? round(min($tokenSummary['available'], $targetReceipt), 2) : 0.0;
+        $remainingAfterToken = round($targetReceipt - $tokenApplied, 2);
+        $receivedNow = $amountReceived === null ? $remainingAfterToken : round(floatval($amountReceived), 2);
+        if ($receivedNow < 0 || $receivedNow - $remainingAfterToken > 0.01) {
+            throw new Exception('Amount received now must be between zero and the amount remaining after token adjustment.');
+        }
+        if ($paymentHandling === 'COMMISSION_ONLY' && abs($receivedNow - $commissionAmount) > 0.01) {
+            throw new Exception('When the owner receives the car sale amount directly, record this sale after the full commission has been received.');
+        }
+        $buyerOutstanding = round($remainingAfterToken - $receivedNow, 2);
+        $ownerAmount = round($grossSaleAmount - $commissionAmount, 2);
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $lines = [];
+            if ($receivedNow > 0) {
+                $lines[] = ['account_id' => $receivingAccount, 'amount' => $receivedNow, 'type' => 'DR', 'narration' => 'Money received from commission car buyer'];
+            }
+            if ($tokenApplied > 0) {
+                $advanceAccount = $this->getOrCreateSystemAccount('CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities');
+                $lines[] = ['account_id' => $advanceAccount['id'], 'amount' => $tokenApplied, 'type' => 'DR', 'narration' => "Token adjusted for {$car['registration_no']}"];
+            }
+            if ($buyerOutstanding > 0) {
+                $lines[] = ['account_id' => $buyer['account_id'], 'amount' => $buyerOutstanding, 'type' => 'DR', 'narration' => "Outstanding from {$buyer['name']}"];
+            }
+            $commissionIncome = $this->getOrCreateSystemAccount('SALE-COMM', 'Car Sale Commission Income', 'INCOME', 'Direct Income');
+            $lines[] = ['account_id' => $commissionIncome['id'], 'amount' => $commissionAmount, 'type' => 'CR', 'narration' => "Commission income - {$car['registration_no']}"];
+            if ($paymentHandling === 'FULL_AMOUNT' && $ownerAmount > 0) {
+                $lines[] = ['account_id' => $owner['account_id'], 'amount' => $ownerAmount, 'type' => 'CR', 'narration' => "Amount payable to owner {$owner['name']}"];
+            }
+
+            $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration ?: "Commission car sold - {$car['registration_no']}", $lines, ['car_id' => $carId, 'party_id' => $buyer['id']]);
+            if ($tokenApplied > 0) $this->applyCarTokensToSale($carId, $buyer['id'], $tokenApplied, $entryId);
+
+            $settlementId = Database::uuid();
+            $settlementStatus = $paymentHandling === 'COMMISSION_ONLY' ? 'NOT_APPLICABLE' : ($ownerAmount > 0 ? 'PENDING' : 'PAID');
+            $settlement = [
+                'id' => $settlementId,
+                'business_id' => $this->businessId,
+                'car_id' => $carId,
+                'owner_party_id' => $owner['id'],
+                'buyer_party_id' => $buyer['id'],
+                'sale_entry_id' => $entryId,
+                'sale_date' => $date,
+                'gross_sale_amount' => $grossSaleAmount,
+                'commission_amount' => $commissionAmount,
+                'owner_amount' => $ownerAmount,
+                'buyer_outstanding_amount' => $buyerOutstanding,
+                'payment_handling' => $paymentHandling,
+                'paid_to_owner_amount' => 0,
+                'status' => $settlementStatus,
+                'created_by' => $this->userId,
+            ];
+            $this->db->insert('commission_car_settlements', $settlement);
+            $newStatus = $buyerOutstanding > 0.009 ? 'PENDING_PAYMENT' : 'SOLD';
+            $this->db->query(
+                "UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, buyer_name = ?, buyer_party_id = ? WHERE id = ? AND business_id = ?",
+                [$newStatus, $date, $grossSaleAmount, $commissionAmount, $buyer['name'], $buyer['id'], $carId, $this->businessId]
+            );
+            $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            Auth::auditCreate('commission_car_settlement', $settlementId, $settlement, 'Commission sale and owner settlement created', 'commission_cars');
+            Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Commission car sold; gross value kept as memorandum and commission posted as income', 'commission_cars');
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    public function getCommissionSettlement($carId) {
+        return $this->db->fetch(
+            "SELECT ccs.*, owner.name AS owner_name, buyer.name AS buyer_name
+             FROM commission_car_settlements ccs
+             JOIN debtors_creditors owner ON owner.id = ccs.owner_party_id
+             JOIN debtors_creditors buyer ON buyer.id = ccs.buyer_party_id
+             WHERE ccs.business_id = ? AND ccs.car_id = ? AND ccs.status <> 'REVERSED'
+             ORDER BY ccs.created_at DESC LIMIT 1",
+            [$this->businessId, $carId]
+        );
+    }
+
+    public function payCommissionCarOwner($carId, $amount, $date, $paymentAccount, $narration = '') {
+        $settlement = $this->getCommissionSettlement($carId);
+        if (!$settlement || $settlement['payment_handling'] !== 'FULL_AMOUNT') throw new Exception('This commission sale has no owner amount payable by the business.');
+        $amount = round(floatval($amount), 2);
+        $outstanding = round(floatval($settlement['owner_amount']) - floatval($settlement['paid_to_owner_amount']), 2);
+        if ($amount <= 0) throw new Exception('Owner payment must be greater than zero.');
+        if ($amount - $outstanding > 0.01) throw new Exception('Owner payment cannot exceed ' . formatAmount($outstanding) . '.');
+        $owner = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$settlement['owner_party_id'], $this->businessId]);
+        if (!$owner) throw new Exception('Commission car owner not found.');
+        $this->validateCashAvailable($paymentAccount, $amount);
+
+        $this->db->beginTransaction();
+        try {
+            $entryId = $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: "Paid commission car owner - {$owner['name']}", [
+                ['account_id' => $owner['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Owner settlement for commission car"],
+                ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid to {$owner['name']}"],
+            ], ['party_id' => $owner['id'], 'car_id' => $carId]);
+            $applicationId = Database::uuid();
+            $this->db->insert('commission_owner_payments', [
+                'id' => $applicationId,
+                'business_id' => $this->businessId,
+                'settlement_id' => $settlement['id'],
+                'journal_entry_id' => $entryId,
+                'payment_date' => $date,
+                'amount' => $amount,
+                'created_by' => $this->userId,
+            ]);
+            $newPaid = round(floatval($settlement['paid_to_owner_amount']) + $amount, 2);
+            $newStatus = $newPaid >= floatval($settlement['owner_amount']) - 0.009 ? 'PAID' : 'PARTIAL';
+            $this->db->query("UPDATE commission_car_settlements SET paid_to_owner_amount = ?, status = ? WHERE id = ? AND business_id = ?", [$newPaid, $newStatus, $settlement['id'], $this->businessId]);
+            Auth::auditUpdate('commission_car_settlement', $settlement['id'], $settlement, array_merge($settlement, ['paid_to_owner_amount' => $newPaid, 'status' => $newStatus]), 'Commission car owner payment recorded', 'commission_cars');
+            if ($this->db->inTransaction()) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) $this->db->rollBack();
             throw $e;
         }
     }
@@ -1164,17 +1426,6 @@ class AccountingEngine {
             return 0.0;
         }
 
-        $initialReceived = $this->db->fetch(
-            "SELECT COALESCE(SUM(jl.amount), 0) AS total
-             FROM journal_lines jl
-             JOIN accounts a ON a.id = jl.account_id
-             WHERE jl.journal_entry_id = ?
-               AND jl.entry_type = 'DR'
-               AND a.entity_type IN ('CASH', 'BANK')",
-            [$saleEntry['id']]
-        );
-        $settledAgainstSale = min($salePrice, floatval($initialReceived['total'] ?? 0));
-
         if (!empty($car['buyer_party_id'])) {
             $buyer = $this->db->fetch(
                 "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
@@ -1182,6 +1433,12 @@ class AccountingEngine {
             );
 
             if (!empty($buyer['account_id'])) {
+                $initialOutstanding = $this->db->fetch(
+                    "SELECT COALESCE(SUM(amount), 0) AS total
+                     FROM journal_lines
+                     WHERE journal_entry_id = ? AND account_id = ? AND entry_type = 'DR'",
+                    [$saleEntry['id'], $buyer['account_id']]
+                );
                 $laterCredits = $this->db->fetch(
                     "SELECT COALESCE(SUM(jl.amount), 0) AS total
                      FROM journal_lines jl
@@ -1206,11 +1463,11 @@ class AccountingEngine {
                         $saleEntry['created_at'],
                     ]
                 );
-                $settledAgainstSale += floatval($laterCredits['total'] ?? 0);
+                return round(max(0, floatval($initialOutstanding['total'] ?? 0) - floatval($laterCredits['total'] ?? 0)), 2);
             }
         }
 
-        return round(max(0, $salePrice - min($salePrice, $settledAgainstSale)), 2);
+        return 0.0;
     }
 
     public function getCarPendingAmounts($carId) {
@@ -1857,6 +2114,14 @@ class AccountingEngine {
         if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
             throw new Exception("Loan repayment is allowed only against creditor or seller balances.");
         }
+        $commissionOwnerBalance = $this->db->fetch(
+            "SELECT COUNT(*) AS cnt FROM commission_car_settlements
+             WHERE business_id = ? AND owner_party_id = ? AND status IN ('PENDING','PARTIAL')",
+            [$this->businessId, $partyId]
+        );
+        if (($commissionOwnerBalance['cnt'] ?? 0) > 0) {
+            throw new Exception('This party has a commission car settlement. Open Commission Cars and use Pay Vehicle Owner so the per-car balance and history remain correct.');
+        }
         if ($carId) {
             $car = $this->db->fetch("SELECT id, registration_no, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             if (!$car) {
@@ -2467,6 +2732,13 @@ class AccountingEngine {
         }
 
         if ($allowLinkedGuard && $entry['transaction_type'] === 'CAR_SALE' && $this->isPrimaryCarSaleEntry($entry, $lines)) {
+            $commissionSettlement = $this->db->fetch(
+                "SELECT paid_to_owner_amount FROM commission_car_settlements WHERE business_id = ? AND sale_entry_id = ? AND status <> 'REVERSED'",
+                [$this->businessId, $entry['id']]
+            );
+            if (floatval($commissionSettlement['paid_to_owner_amount'] ?? 0) > 0.009) {
+                throw new Exception('This commission sale already has owner payments. Reverse those owner payments first, then reverse the sale.');
+            }
             $settled = $this->db->fetch(
                 "SELECT COUNT(*) AS cnt
                  FROM partner_profit_settlements
@@ -2634,6 +2906,42 @@ class AccountingEngine {
                          WHERE id = ? AND business_id = ?",
                         [$entry['car_id'], $this->businessId]
                     );
+                    $commissionSettlement = $this->db->fetch(
+                        "SELECT * FROM commission_car_settlements WHERE business_id = ? AND sale_entry_id = ? AND status <> 'REVERSED'",
+                        [$this->businessId, $entry['id']]
+                    );
+                    if ($commissionSettlement) {
+                        $this->db->query(
+                            "UPDATE commission_car_settlements SET status = 'REVERSED' WHERE id = ? AND business_id = ?",
+                            [$commissionSettlement['id'], $this->businessId]
+                        );
+                        Auth::auditUpdate('commission_car_settlement', $commissionSettlement['id'], $commissionSettlement, array_merge($commissionSettlement, ['status' => 'REVERSED']), 'Commission car sale reversed', 'commission_cars');
+                    }
+                }
+                break;
+
+            case 'LOAN_REPAID':
+                $ownerPayment = $this->db->fetch(
+                    "SELECT cop.*, ccs.owner_amount, ccs.paid_to_owner_amount, ccs.status AS settlement_status
+                     FROM commission_owner_payments cop
+                     JOIN commission_car_settlements ccs ON ccs.id = cop.settlement_id
+                     WHERE cop.business_id = ? AND cop.journal_entry_id = ?",
+                    [$this->businessId, $entry['id']]
+                );
+                if ($ownerPayment) {
+                    $newPaid = round(max(0, floatval($ownerPayment['paid_to_owner_amount']) - floatval($ownerPayment['amount'])), 2);
+                    $newStatus = $newPaid <= 0.009 ? 'PENDING' : ($newPaid >= floatval($ownerPayment['owner_amount']) - 0.009 ? 'PAID' : 'PARTIAL');
+                    $this->db->query(
+                        "UPDATE commission_car_settlements SET paid_to_owner_amount = ?, status = ? WHERE id = ? AND business_id = ?",
+                        [$newPaid, $newStatus, $ownerPayment['settlement_id'], $this->businessId]
+                    );
+                    Auth::auditUpdate('commission_car_settlement', $ownerPayment['settlement_id'], [
+                        'paid_to_owner_amount' => $ownerPayment['paid_to_owner_amount'],
+                        'status' => $ownerPayment['settlement_status'],
+                    ], [
+                        'paid_to_owner_amount' => $newPaid,
+                        'status' => $newStatus,
+                    ], 'Commission car owner payment reversed', 'commission_cars');
                 }
                 break;
 

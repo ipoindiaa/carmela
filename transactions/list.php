@@ -117,7 +117,7 @@ $pagination = paginate($total['cnt'], $perPage, $page);
 
 $entries = $db->fetchAll(
     "SELECT je.*, u.full_name as created_by_name,
-            c.registration_no as car_reg,
+            c.registration_no as car_reg, c.ownership_type AS car_ownership_type,
             p.name as partner_name,
             e.name as employee_name
      FROM journal_entries je

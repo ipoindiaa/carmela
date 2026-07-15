@@ -143,6 +143,10 @@ CREATE TABLE `cars` (
     `purchase_date` DATE NOT NULL,
     `purchase_price` DECIMAL(15,2) NOT NULL,
     `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED',
+    `commission_owner_party_id` CHAR(36) DEFAULT NULL,
+    `expected_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `expected_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `status` ENUM('IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED') NOT NULL DEFAULT 'IN_STOCK',
     `account_id` CHAR(36) DEFAULT NULL,
     `sold_date` DATE DEFAULT NULL,
@@ -371,6 +375,48 @@ CREATE TABLE `car_tokens` (
     UNIQUE KEY `uk_car_token_entry` (`journal_entry_id`),
     KEY `idx_car_tokens_car_status` (`business_id`, `car_id`, `status`),
     KEY `idx_car_tokens_party` (`business_id`, `party_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: commission_car_settlements
+-- Gross sale value is memorandum data. Only commission is income.
+-- ============================================================
+CREATE TABLE `commission_car_settlements` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `car_id` CHAR(36) NOT NULL,
+    `owner_party_id` CHAR(36) NOT NULL,
+    `buyer_party_id` CHAR(36) NOT NULL,
+    `sale_entry_id` CHAR(36) NOT NULL,
+    `sale_date` DATE NOT NULL,
+    `gross_sale_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `owner_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `buyer_outstanding_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `payment_handling` ENUM('COMMISSION_ONLY','FULL_AMOUNT') NOT NULL DEFAULT 'COMMISSION_ONLY',
+    `paid_to_owner_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `status` ENUM('NOT_APPLICABLE','PENDING','PARTIAL','PAID','REVERSED') NOT NULL DEFAULT 'NOT_APPLICABLE',
+    `created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_commission_car_sale` (`sale_entry_id`),
+    KEY `idx_commission_car` (`business_id`, `car_id`, `status`),
+    KEY `idx_commission_owner` (`business_id`, `owner_party_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `commission_owner_payments` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `settlement_id` CHAR(36) NOT NULL,
+    `journal_entry_id` CHAR(36) NOT NULL,
+    `payment_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_commission_owner_payment_entry` (`journal_entry_id`),
+    KEY `idx_commission_owner_payment` (`business_id`, `settlement_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

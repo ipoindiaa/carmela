@@ -13,6 +13,7 @@ $engine->syncCarPartyLinks($id);
 
 $car = $db->fetch("SELECT c.*, a.current_balance as total_cost FROM cars c LEFT JOIN accounts a ON a.id = c.account_id WHERE c.id = ? AND c.business_id = ?", [$id, $businessId]);
 if (!$car) { setFlash('error', 'Car not found.'); redirect('list.php'); }
+if (($car['ownership_type'] ?? 'OWNED') === 'COMMISSION') { redirect('commission_view.php?id=' . urlencode($id)); }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::requireEntityAccess('car', 'write');

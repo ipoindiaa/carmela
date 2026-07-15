@@ -66,6 +66,10 @@ switch ($kind) {
         } elseif ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
             $statusFilterSql = "AND status IN ('IN_STOCK', 'PENDING_PAYMENT', 'SOLD')";
         }
+        $ownershipFilterSql = '';
+        if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true) || ($kind === 'payment_car' && $context === 'LOAN_REPAID')) {
+            $ownershipFilterSql = "AND COALESCE(ownership_type, 'OWNED') = 'OWNED'";
+        }
         $rows = $db->fetchAll(
             "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,
                     buyer.id AS buyer_party_id, buyer.name AS buyer_name,
@@ -84,6 +88,7 @@ switch ($kind) {
              LEFT JOIN debtors_creditors token_party ON token_party.id = tokens.party_id AND token_party.business_id = c.business_id
              WHERE c.business_id = ?
                $statusFilterSql
+               $ownershipFilterSql
                AND (
                    c.registration_no LIKE ?
                    OR c.make LIKE ?
