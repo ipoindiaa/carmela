@@ -20,22 +20,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = post('action');
         if ($action === 'update_details') {
-            $partnerId = trim((string) post('partner_id')) ?: null;
-            if ($partnerId) {
-                $validPartner = $db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $businessId]);
-                if (!$validPartner) throw new Exception('Select a valid active partner.');
-            }
             $year = intval(post('year')) ?: null;
             if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
-            $oldDetails = array_intersect_key($car, array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'partner_id', 'notes']));
+            $oldDetails = array_intersect_key($car, array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'notes']));
             $db->query(
-                "UPDATE cars SET make = ?, model = ?, year = ?, color = ?, has_second_key = ?, partner_id = ?, notes = ? WHERE id = ? AND business_id = ?",
-                [post('make'), post('model'), $year, post('color'), post('has_second_key') === '1' ? 1 : 0, $partnerId, post('notes'), $id, $businessId]
+                "UPDATE cars SET make = ?, model = ?, year = ?, color = ?, has_second_key = ?, partner_id = NULL, notes = ? WHERE id = ? AND business_id = ?",
+                [post('make'), post('model'), $year, post('color'), post('has_second_key') === '1' ? 1 : 0, post('notes'), $id, $businessId]
             );
             $updatedCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$id, $businessId]);
-            $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'partner_id', 'notes']));
-            Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details and primary partner updated', 'cars');
+            $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'notes']));
+            Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details updated', 'cars');
             setFlash('success', 'Car details updated.');
+        } elseif ($action === 'correct_partner_funding') {
+            $partnerIds = array_values((array) ($_POST['partner_ids'] ?? []));
+            $amounts = array_values((array) ($_POST['partner_amounts'] ?? []));
+            $shares = array_values((array) ($_POST['partner_profit_share_pcts'] ?? []));
+            $partnerFunding = [];
+            $seen = [];
+            $rowCount = max(count($partnerIds), count($amounts), count($shares));
+            for ($index = 0; $index < $rowCount; $index++) {
+                $partnerId = trim((string) ($partnerIds[$index] ?? ''));
+                $amountInput = trim((string) ($amounts[$index] ?? ''));
+                $shareInput = trim((string) ($shares[$index] ?? ''));
+                if ($partnerId === '') {
+                    if ($amountInput !== '' || $shareInput !== '') throw new Exception('Select a partner for every funding row.');
+                    continue;
+                }
+                if (isset($seen[$partnerId])) throw new Exception('Each partner can appear only once.');
+                $seen[$partnerId] = true;
+                $partnerFunding[] = [
+                    'partner_id' => $partnerId,
+                    'amount' => $amountInput === '' ? 0 : parseDecimalInput($amountInput),
+                    'profit_share_pct' => $shareInput,
+                ];
+            }
+            $engine->correctCarPartnerFunding($id, $partnerFunding, post('correction_date'), post('correction_reason'));
+            setFlash('success', 'Partner funding updated. Financial corrections and field changes are preserved in History.');
         } elseif ($action === 'upload_car_images') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
             $count = uploadEntityAttachments($businessId, 'CAR', $id, $imageType, 'car_images', Auth::user('user_id'), 'images');
@@ -63,7 +83,6 @@ $expenses = $profitability['total_expenses'];
 $carTotalCost = $profitability['total_cost'] ?? $car['purchase_price'];
 $partnerships = $profitability['partnerships'];
 $partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
-$linkedPartner = !empty($car['partner_id']) ? $db->fetch("SELECT id, name, partner_type FROM partners WHERE id = ? AND business_id = ?", [$car['partner_id'], $businessId]) : null;
 $buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
 $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
@@ -166,11 +185,12 @@ $contributions = $db->fetchAll(
      JOIN cars c ON c.id = cp.car_id
      WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
      ORDER BY cp.created_at", [$businessId, $id]);
+$totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $contributions)), 2);
 ?>
 
 <div class="page-header">
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
-    <div style="display: flex; gap: 10px;">
+    <div class="page-actions car-detail-actions">
         <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
@@ -189,10 +209,10 @@ $contributions = $db->fetchAll(
 </div>
 
 <?php if (get('edit') === '1' && Auth::hasEntityAccess('car', 'write')): ?>
-<div class="card" style="margin-bottom:20px;">
+<div class="card car-edit-card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Car Details</h3></div>
     <div class="card-body">
-        <form method="POST" data-confirm-submit="Save these car details and primary partner? Posted contribution and profit-share terms will not be changed.">
+        <form method="POST" data-confirm-submit="Save these car detail changes? Every changed field will be recorded in History.">
             <?= csrfField() ?><input type="hidden" name="action" value="update_details">
             <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase amount, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use reversal for financial corrections.</div>
             <div class="form-row-3">
@@ -200,14 +220,12 @@ $contributions = $db->fetchAll(
                 <div class="form-group"><label class="form-label">Model</label><input type="text" name="model" class="form-control" value="<?= clean($car['model']) ?>"></div>
                 <div class="form-group"><label class="form-label">Year</label><input type="number" name="year" class="form-control" value="<?= clean($car['year']) ?>" min="1900" max="<?= date('Y') + 1 ?>"></div>
             </div>
-            <div class="form-row-3">
+            <div class="form-row">
                 <div class="form-group"><label class="form-label">Color</label><input type="text" name="color" class="form-control" value="<?= clean($car['color']) ?>"></div>
                 <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= empty($car['has_second_key']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($car['has_second_key']) ? 'selected' : '' ?>>Yes</option></select></div>
-                <div class="form-group"><label class="form-label">Primary Partner</label><select name="partner_id" class="form-control searchable-select"><option value="">No primary partner</option><?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>" <?= ($car['partner_id'] ?? '') === $partner['id'] ? 'selected' : '' ?>><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?></select><div class="form-hint">Used in car lists and reports. This does not change posted partner contributions or profit shares.</div></div>
             </div>
-            <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="3"><?= clean($car['notes']) ?></textarea></div>
-            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button>
-            <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a>
+            <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"><?= clean($car['notes']) ?></textarea></div>
+            <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button><a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a></div>
         </form>
     </div>
 </div>
@@ -254,7 +272,6 @@ $contributions = $db->fetchAll(
                 <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Primary Partner</td><td><?= $linkedPartner ? '<a href="../partners/view.php?id=' . clean($linkedPartner['id']) . '">' . clean($linkedPartner['name']) . '</a>' : '-' ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
                 <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td>
                     <?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
@@ -273,31 +290,121 @@ $contributions = $db->fetchAll(
         </div>
     </div>
 
-    <!-- Partner Contributions -->
-    <div class="card">
-        <div class="card-header"><h3><i class="ri-group-line"></i> Car Partner Terms</h3></div>
-        <div class="card-body">
-            <?php if (empty($contributions)): ?>
-                <p class="text-muted">No partner contributions. Fully business-funded.</p>
-            <?php else: ?>
-                <table style="width: 100%;">
-                    <thead><tr><th>Partner</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date / Time</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($contributions as $c): ?>
-                        <tr>
-                            <td><?= clean($c['partner_name']) ?></td>
-                            <td class="text-right amount"><?= formatAmount($c['amount']) ?></td>
-                            <td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td>
-                            <td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td>
-                            <td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
+    <!-- Partner Funding -->
+    <div class="card" id="car-partner-terms">
+        <div class="card-header">
+            <div><h3><i class="ri-group-line"></i> Partner Funding</h3><div class="card-header-note">Partners, invested amount, and profit ownership for this car.</div></div>
+            <div class="card-header-actions">
+                <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
+                <?php if ($car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write') && get('edit_funding') !== '1'): ?>
+                    <a href="view.php?id=<?= clean($car['id']) ?>&amp;edit_funding=1#car-partner-terms" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit Funding</a>
+                <?php endif; ?>
+            </div>
         </div>
+        <?php if (get('edit_funding') === '1' && $car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
+            <?php $fundingRows = $contributions ?: [['partner_id' => '', 'amount' => '', 'profit_share_pct' => '']]; ?>
+            <div class="card-body partner-funding-editor">
+                <div class="correction-notice compact-correction-notice">
+                    <i class="ri-shield-check-line"></i>
+                    <div><strong>Posted funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Reallocate this total between partners. Amount changes create reversing and replacement entries; profit-share-only changes update terms without changing the ledger.</span></div>
+                </div>
+                <form method="POST" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
+                    <?= csrfField() ?><input type="hidden" name="action" value="correct_partner_funding">
+                    <div id="partner-funding-editor-rows">
+                        <?php foreach ($fundingRows as $fundingRow): ?>
+                            <div class="form-row partner-row car-partner-row partner-funding-edit-row">
+                                <div class="form-group partner-select-group">
+                                    <label class="form-label">Partner *</label>
+                                    <select name="partner_ids[]" class="form-control" data-search-placeholder="Search partners">
+                                        <option value="">Select partner</option>
+                                        <?php foreach ($partners as $partner): ?><option value="<?= clean($partner['id']) ?>" <?= ($fundingRow['partner_id'] ?? '') === $partner['id'] ? 'selected' : '' ?>><?= clean($partner['name']) ?> (<?= $partner['partner_type'] === 'CARWISE' ? 'Car-wise' : 'Main' ?>)</option><?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Funding Amount</label>
+                                    <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="partner_amounts[]" class="form-control currency-input" value="<?= clean($fundingRow['amount'] ?? '') ?>" inputmode="decimal" autocomplete="off"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Profit Share %</label>
+                                    <input type="number" name="partner_profit_share_pcts[]" class="form-control" value="<?= clean($fundingRow['profit_share_pct'] ?? '') ?>" min="0" max="100" step="0.01">
+                                </div>
+                                <div class="form-group partner-row-action"><button type="button" class="btn btn-outline btn-icon" title="Remove partner" aria-label="Remove partner" onclick="removeFundingEditRow(this)"><i class="ri-delete-bin-line"></i></button></div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-sm partner-add-row" onclick="addFundingEditRow()"><i class="ri-add-line"></i> Add Partner</button>
+                    <div class="form-row partner-correction-meta">
+                        <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean(date('Y-m-d')) ?>" required></div>
+                        <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
+                    </div>
+                    <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Partner Funding</button><a href="view.php?id=<?= clean($car['id']) ?>#car-partner-terms" class="btn btn-outline">Cancel</a></div>
+                </form>
+            </div>
+        <?php else: ?>
+            <div class="card-body card-body-flush">
+                <div class="table-container table-container-inline partner-funding-table">
+                    <table>
+                        <thead><tr><th>Partner</th><th class="text-right">Invested</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Terms Added</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($contributions as $c): ?>
+                            <tr>
+                                <td><a href="../partners/view.php?id=<?= clean($c['partner_id']) ?>" class="text-bold"><?= clean($c['partner_name']) ?></a></td>
+                                <td class="text-right amount"><?= formatAmount($c['amount']) ?></td>
+                                <td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td>
+                                <td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td>
+                                <td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($contributions)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">Fully business-funded. No partner terms are assigned.</td></tr><?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
+
+<?php if (get('edit_funding') === '1' && $car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
+<script>
+function resetFundingSelect(row) {
+    row.querySelectorAll('.custom-select').forEach((wrapper) => {
+        const select = wrapper.querySelector('select');
+        if (!select) return;
+        select.classList.remove('custom-select-native');
+        select.removeAttribute('data-select-enhanced');
+        select.removeAttribute('tabindex');
+        wrapper.replaceWith(select);
+    });
+}
+function addFundingEditRow() {
+    const container = document.getElementById('partner-funding-editor-rows');
+    const source = container?.querySelector('.partner-funding-edit-row');
+    if (!container || !source) return;
+    const row = source.cloneNode(true);
+    resetFundingSelect(row);
+    row.querySelectorAll('input').forEach((input) => input.value = '');
+    row.querySelectorAll('select').forEach((select) => select.selectedIndex = 0);
+    container.appendChild(row);
+    if (typeof initCurrencyInputs === 'function') initCurrencyInputs(row);
+    if (typeof enhanceSelects === 'function') enhanceSelects(row);
+}
+function removeFundingEditRow(button) {
+    const container = document.getElementById('partner-funding-editor-rows');
+    const rows = container?.querySelectorAll('.partner-funding-edit-row') || [];
+    if (rows.length === 1) {
+        const row = rows[0];
+        const select = row.querySelector('select');
+        if (select) {
+            select.value = '';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        row.querySelectorAll('input').forEach((input) => input.value = '');
+        return;
+    }
+    button.closest('.partner-funding-edit-row')?.remove();
+}
+</script>
+<?php endif; ?>
 
 <div class="card car-images-card" style="margin-top: 24px;">
     <div class="card-header">
@@ -360,7 +467,7 @@ $contributions = $db->fetchAll(
     </div>
 </div>
 
-<div class="grid-2" style="margin-top:24px;">
+<div class="grid-2 car-support-grid" style="margin-top:24px;">
     <div class="card">
         <div class="card-header"><h3><i class="ri-wallet-3-line"></i> Buyer / Seller Payment History</h3></div>
         <div class="card-body">

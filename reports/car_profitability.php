@@ -8,10 +8,16 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost, p.name AS partner_name
+    "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names
      FROM cars c LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id
-     WHERE c.business_id = ? ORDER BY c.created_at DESC", [$businessId]);
+     LEFT JOIN (
+        SELECT cp.car_id, GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ') AS partner_names
+        FROM car_partnerships cp
+        JOIN partners p ON p.id = cp.partner_id
+        WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
+        GROUP BY cp.car_id
+     ) partner_rollup ON partner_rollup.car_id = c.id
+     WHERE c.business_id = ? ORDER BY c.created_at DESC", [$businessId, $businessId]);
 
 $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 ?>
@@ -23,7 +29,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Primary Partner</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Partners</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -40,7 +46,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
         <tr>
             <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
-            <td><?= clean($car['partner_name'] ?: '-') ?></td>
+            <td><?= clean($car['partner_names'] ?: '-') ?></td>
             <td class="text-center"><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                 <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span></td>
             <td class="text-right"><?= intval($carProfitability['holding_days']) ?></td>

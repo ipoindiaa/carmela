@@ -5160,6 +5160,168 @@ table td .form-control {
     }
 }
 
+/* Car and partner portfolio layout */
+.form-actions-start {
+    justify-content: flex-start;
+}
+
+.card-header-note {
+    margin-top: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-tight);
+}
+
+.card-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.car-detail-actions {
+    max-width: 100%;
+}
+
+.car-edit-card .card-body {
+    padding-block: var(--space-4);
+}
+
+.car-edit-card .alert {
+    margin-bottom: var(--space-4);
+}
+
+.car-edit-card textarea.form-control {
+    min-height: 76px;
+    resize: vertical;
+}
+
+.car-detail-stats-grid,
+.car-detail-pending-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: var(--space-3);
+}
+
+.car-detail-stats-grid .stat-card {
+    min-height: 116px;
+}
+
+.car-detail-pending-grid .stat-card {
+    min-height: 76px;
+    padding: var(--space-3) var(--space-4);
+}
+
+.car-detail-main-grid {
+    gap: var(--space-3);
+}
+
+.partner-funding-table,
+.partner-ledger-table,
+.partner-portfolio-table {
+    border-radius: 0;
+}
+
+.partner-funding-table table {
+    min-width: 640px;
+}
+
+.partner-funding-editor {
+    padding-top: var(--space-4);
+}
+
+.compact-correction-notice {
+    margin-bottom: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+}
+
+.compact-correction-notice span {
+    display: block;
+    margin-top: var(--space-1);
+}
+
+.partner-funding-edit-row {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
+
+.partner-funding-edit-row + .partner-funding-edit-row {
+    padding-top: var(--space-3);
+}
+
+.partner-funding-edit-row .form-group {
+    margin-bottom: var(--space-2);
+}
+
+.partner-add-row {
+    margin-top: var(--space-2);
+}
+
+.partner-correction-meta {
+    margin-top: var(--space-5);
+}
+
+.partner-portfolio-stats .stat-card {
+    min-height: 102px;
+}
+
+.partner-portfolio-table table {
+    min-width: 1080px;
+}
+
+.partner-portfolio-table td:nth-child(7) {
+    min-width: 190px;
+    white-space: normal;
+}
+
+.partner-ledger-grid {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.partner-ledger-table table {
+    min-width: 760px;
+}
+
+.partner-ledger-table td:nth-child(3) {
+    white-space: normal;
+}
+
+@media (max-width: 1500px) {
+    .car-detail-main-grid,
+    .car-support-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+}
+
+@media (max-width: 1180px) {
+    .car-detail-stats-grid,
+    .car-detail-pending-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+}
+
+@media (max-width: 680px) {
+    .card-header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .car-detail-stats-grid,
+    .car-detail-pending-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .car-detail-stats-grid .stat-card,
+    .car-detail-pending-grid .stat-card {
+        min-height: 82px;
+    }
+
+    .partner-funding-editor {
+        padding: var(--space-3);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

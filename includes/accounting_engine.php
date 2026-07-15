@@ -614,7 +614,10 @@ class AccountingEngine {
             throw new Exception("Journal entry is not balanced! Dr: $totalDr, Cr: $totalCr");
         }
 
-        $this->db->beginTransaction();
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
 
         try {
             $entryId = Database::uuid();
@@ -658,10 +661,14 @@ class AccountingEngine {
             // Check alerts after posting
             $this->checkAlerts();
 
-            $this->db->commit();
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
             return $entryId;
-        } catch (Exception $e) {
-            $this->db->rollBack();
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }
@@ -2930,6 +2937,266 @@ class AccountingEngine {
              ORDER BY cp.created_at",
             [$this->businessId, $carId]
         );
+    }
+
+    public function correctCarPartnerFunding($carId, $partnerFunding, $date, $reason) {
+        $car = $this->db->fetch(
+            "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+            [$carId, $this->businessId]
+        );
+        if (!$car) throw new Exception('Car not found.');
+        if ($car['status'] !== 'IN_STOCK') {
+            throw new Exception('Partner funding can only be corrected while the car is in stock.');
+        }
+
+        $reason = trim((string) $reason);
+        if (mb_strlen($reason) < 5) {
+            throw new Exception('Enter a clear reason for changing the partner funding.');
+        }
+        $date = trim((string) $date);
+        $this->validateDateNotLocked($date);
+
+        $oldTerms = $this->db->fetchAll(
+            "SELECT cp.*, p.name AS partner_name
+             FROM car_partnerships cp
+             JOIN partners p ON p.id = cp.partner_id
+             WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
+             ORDER BY cp.created_at, cp.id",
+            [$this->businessId, $carId]
+        );
+        $oldContributions = $this->db->fetchAll(
+            "SELECT cpc.*, je.reference_no, je.entry_date, je.narration
+             FROM car_partner_contributions cpc
+             JOIN journal_entries je ON je.id = cpc.journal_entry_id
+             WHERE cpc.car_id = ?
+               AND je.business_id = ?
+               AND je.status = 'POSTED'
+               AND je.transaction_type = 'PARTNER_INVEST'
+             ORDER BY cpc.contribution_date, cpc.created_at, cpc.id",
+            [$carId, $this->businessId]
+        );
+
+        $oldFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $oldContributions)), 2);
+        $normalized = $this->normalizePartnerFunding(max(0.01, floatval($car['purchase_price'])), $partnerFunding);
+        $newFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $normalized)), 2);
+        if (abs($oldFundingTotal - $newFundingTotal) > 0.01) {
+            throw new Exception(
+                'The total partner funding must remain ' . formatAmount($oldFundingTotal)
+                . '. Reallocate it between partners; use Partner Added Money or Partner Took Money for separate capital movements.'
+            );
+        }
+
+        $oldComparable = array_map(static function ($row) {
+            return [
+                'partner_id' => $row['partner_id'],
+                'partner' => $row['partner_name'],
+                'funding_amount' => round(floatval($row['funding_amount']), 2),
+                'funding_pct' => round(floatval($row['funding_pct']), 4),
+                'profit_share_pct' => round(floatval($row['profit_share_pct']), 4),
+            ];
+        }, $oldTerms);
+
+        $debitAccounts = $this->db->fetchAll(
+            "SELECT jl.account_id, SUM(jl.amount) AS amount
+             FROM car_partner_contributions cpc
+             JOIN journal_entries je ON je.id = cpc.journal_entry_id
+             JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.entry_type = 'DR'
+             WHERE cpc.car_id = ?
+               AND je.business_id = ?
+               AND je.status = 'POSTED'
+               AND je.transaction_type = 'PARTNER_INVEST'
+             GROUP BY jl.account_id
+             ORDER BY jl.account_id",
+            [$carId, $this->businessId]
+        );
+        $debitTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $debitAccounts)), 2);
+        if (abs($debitTotal - $oldFundingTotal) > 0.01) {
+            throw new Exception('The existing partner contribution journal is inconsistent. Correct the journal before changing partner terms.');
+        }
+
+        $newComparable = [];
+        foreach ($normalized as $row) {
+            $partner = $this->db->fetch(
+                "SELECT id, name, capital_account_id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1",
+                [$row['partner_id'], $this->businessId]
+            );
+            if (!$partner || empty($partner['capital_account_id'])) {
+                throw new Exception('Every selected partner must be active and have a capital account.');
+            }
+            $row['partner_name'] = $partner['name'];
+            $row['capital_account_id'] = $partner['capital_account_id'];
+            $newComparable[] = $row;
+        }
+
+        $oldFingerprint = [];
+        $oldFundingFingerprint = [];
+        foreach ($oldComparable as $row) {
+            $oldFingerprint[$row['partner_id']] = [$row['funding_amount'], $row['profit_share_pct']];
+            $oldFundingFingerprint[$row['partner_id']] = $row['funding_amount'];
+        }
+        $newFingerprint = [];
+        $newFundingFingerprint = [];
+        foreach ($newComparable as $row) {
+            $newFingerprint[$row['partner_id']] = [$row['amount'], $row['profit_share_pct']];
+            $newFundingFingerprint[$row['partner_id']] = $row['amount'];
+        }
+        ksort($oldFingerprint);
+        ksort($newFingerprint);
+        ksort($oldFundingFingerprint);
+        ksort($newFundingFingerprint);
+        if (json_encode($oldFingerprint) === json_encode($newFingerprint)) {
+            throw new Exception('Change a partner, funding amount, or profit share before saving.');
+        }
+        $fundingChanged = json_encode($oldFundingFingerprint) !== json_encode($newFundingFingerprint);
+
+        $this->db->beginTransaction();
+        try {
+            foreach ($fundingChanged ? $oldContributions : [] as $contribution) {
+                $entry = $this->db->fetch(
+                    "SELECT * FROM journal_entries WHERE id = ? AND business_id = ?",
+                    [$contribution['journal_entry_id'], $this->businessId]
+                );
+                if (!$entry || $entry['status'] !== 'POSTED') {
+                    throw new Exception('A partner contribution changed while this correction was being prepared. Reload and try again.');
+                }
+                $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id", [$entry['id']]);
+                $this->assertEntryCanBeReversed($entry, $lines);
+                $reversalId = $this->createReversalEntry($entry, $lines, 'Partner funding correction: ' . $reason, $date);
+                $this->applyReversalBusinessEffects($entry, $lines, $reversalId);
+                $this->db->query("UPDATE journal_entries SET correction_reason = ? WHERE id = ?", [$reason, $entry['id']]);
+                $reversedEntry = $this->db->fetch("SELECT * FROM journal_entries WHERE id = ?", [$entry['id']]);
+                Auth::auditLog(
+                    'REVERSE',
+                    'journal_entry',
+                    $entry['id'],
+                    "Partner funding corrected for {$car['registration_no']}: $reason",
+                    $entry,
+                    $reversedEntry ?: ['status' => 'REVERSED', 'reversed_by' => $reversalId],
+                    'cars'
+                );
+            }
+
+            $this->db->query("DELETE FROM car_partnerships WHERE business_id = ? AND car_id = ?", [$this->businessId, $carId]);
+
+            if ($fundingChanged) {
+                $fundedRows = array_values(array_filter($newComparable, static fn($row) => floatval($row['amount']) > 0.009));
+                $allocatedByAccount = array_fill_keys(array_column($debitAccounts, 'account_id'), 0.0);
+                foreach ($fundedRows as $index => $row) {
+                    $isLast = $index === count($fundedRows) - 1;
+                    $lines = [];
+                    $rowDebitTotal = 0.0;
+                    foreach ($debitAccounts as $debitAccount) {
+                        $accountId = $debitAccount['account_id'];
+                        $accountTotal = round(floatval($debitAccount['amount']), 2);
+                        $allocation = $isLast
+                            ? round($accountTotal - $allocatedByAccount[$accountId], 2)
+                            : round($accountTotal * (floatval($row['amount']) / max(0.01, $oldFundingTotal)), 2);
+                        if ($allocation <= 0) continue;
+                        $allocatedByAccount[$accountId] += $allocation;
+                        $rowDebitTotal += $allocation;
+                        $lines[] = [
+                            'account_id' => $accountId,
+                            'amount' => $allocation,
+                            'type' => 'DR',
+                            'narration' => "Corrected partner funding for {$car['registration_no']}",
+                        ];
+                    }
+                    $difference = round(floatval($row['amount']) - $rowDebitTotal, 2);
+                    if (abs($difference) > 0.001 && !empty($lines)) {
+                        $lines[0]['amount'] = round($lines[0]['amount'] + $difference, 2);
+                        $allocatedByAccount[$lines[0]['account_id']] += $difference;
+                    }
+                    $lines[] = [
+                        'account_id' => $row['capital_account_id'],
+                        'amount' => round(floatval($row['amount']), 2),
+                        'type' => 'CR',
+                        'narration' => "Investment in car {$car['registration_no']}",
+                    ];
+                    $entryId = $this->postJournalEntry(
+                        'PARTNER_INVEST',
+                        $date,
+                        "Corrected partner funding: {$row['partner_name']} in {$car['registration_no']}",
+                        $lines,
+                        ['car_id' => $carId, 'partner_id' => $row['partner_id'], 'reference_prefix' => 'COR']
+                    );
+                    $this->db->insert('car_partner_contributions', [
+                        'id' => Database::uuid(),
+                        'car_id' => $carId,
+                        'partner_id' => $row['partner_id'],
+                        'amount' => round(floatval($row['amount']), 2),
+                        'funding_pct' => round(floatval($row['funding_pct']), 4),
+                        'profit_share_pct' => round(floatval($row['profit_share_pct']), 4),
+                        'contribution_date' => $date,
+                        'journal_entry_id' => $entryId,
+                    ]);
+                }
+            } else {
+                foreach ($newComparable as $row) {
+                    $this->db->query(
+                        "UPDATE car_partner_contributions
+                         SET funding_pct = ?, profit_share_pct = ?
+                         WHERE car_id = ? AND partner_id = ?",
+                        [round(floatval($row['funding_pct']), 4), round(floatval($row['profit_share_pct']), 4), $carId, $row['partner_id']]
+                    );
+                }
+            }
+
+            foreach ($newComparable as $row) {
+                $this->db->insert('car_partnerships', [
+                    'id' => Database::uuid(),
+                    'business_id' => $this->businessId,
+                    'car_id' => $carId,
+                    'partner_id' => $row['partner_id'],
+                    'funding_amount' => round(floatval($row['amount']), 2),
+                    'funding_pct' => round(floatval($row['funding_pct']), 4),
+                    'profit_share_pct' => round(floatval($row['profit_share_pct']), 4),
+                    'status' => 'ACTIVE',
+                    'created_by' => $this->userId,
+                    'notes' => 'Corrected: ' . $reason,
+                ]);
+            }
+
+            $newAuditTerms = array_map(static function ($row) {
+                return [
+                    'partner_id' => $row['partner_id'],
+                    'partner' => $row['partner_name'],
+                    'funding_amount' => round(floatval($row['amount']), 2),
+                    'funding_pct' => round(floatval($row['funding_pct']), 4),
+                    'profit_share_pct' => round(floatval($row['profit_share_pct']), 4),
+                ];
+            }, $newComparable);
+            $formatTermsForAudit = static function ($rows) {
+                if (empty($rows)) return 'No partner funding';
+                return implode('; ', array_map(static function ($row) {
+                    return ($row['partner'] ?? 'Partner')
+                        . ': ' . formatAmount($row['funding_amount'] ?? 0) . ' invested'
+                        . ', ' . formatPlainNumber($row['profit_share_pct'] ?? 0) . '% profit share';
+                }, $rows));
+            };
+            Auth::auditUpdate(
+                'car',
+                $carId,
+                [
+                    'partner_funding_terms' => $formatTermsForAudit($oldComparable),
+                    'total_partner_funding' => $oldFundingTotal,
+                ],
+                [
+                    'partner_funding_terms' => $formatTermsForAudit($newAuditTerms),
+                    'total_partner_funding' => $newFundingTotal,
+                    'correction_date' => $date,
+                    'reason' => $reason,
+                ],
+                "Partner funding corrected for {$car['registration_no']}: $reason",
+                'cars'
+            );
+            $this->db->commit();
+            return true;
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     public function getPartnerPosition($partnerId) {

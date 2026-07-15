@@ -50,7 +50,7 @@ function renderCarRows($cars, $engine) {
             <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
-            <td><?= !empty($car['partner_name']) ? '<a href="../partners/view.php?id=' . clean($car['partner_id']) . '">' . clean($car['partner_name']) . '</a>' : '-' ?></td>
+            <td><?= clean($car['partner_names'] ?: '-') ?></td>
             <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($car['purchase_price']) ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($extraCost) ?></td>
@@ -105,22 +105,36 @@ if ($search !== '') {
         OR c.model LIKE ?
         OR c.year LIKE ?
         OR c.status LIKE ?
-        OR p.name LIKE ?
+        OR EXISTS (
+            SELECT 1
+            FROM car_partnerships cps
+            JOIN partners ps ON ps.id = cps.partner_id
+            WHERE cps.business_id = c.business_id
+              AND cps.car_id = c.id
+              AND cps.status = 'ACTIVE'
+              AND ps.name LIKE ?
+        )
     )";
     $normalizedSearch = '%' . strtoupper(preg_replace('/[^A-Z0-9]/i', '', $search)) . '%';
     $needle = '%' . $search . '%';
     array_push($params, $normalizedSearch, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 
-$total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id $where", $params);
+$total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost, p.name AS partner_name,
+    "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id
+     LEFT JOIN (
+        SELECT cp.car_id, GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ') AS partner_names
+        FROM car_partnerships cp
+        JOIN partners p ON p.id = cp.partner_id
+        WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
+        GROUP BY cp.car_id
+     ) partner_rollup ON partner_rollup.car_id = c.id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records
@@ -129,7 +143,7 @@ $cars = $db->fetchAll(
      ) rto ON rto.car_id = c.id
      $where ORDER BY c.created_at DESC
      LIMIT ? OFFSET ?",
-    array_merge([$businessId], $params, [$perPage, $pagination['offset']])
+    array_merge([$businessId, $businessId], $params, [$perPage, $pagination['offset']])
 );
 
 foreach ($cars as $carRow) {
@@ -142,11 +156,17 @@ foreach ($cars as $carRow) {
 }
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost, p.name AS partner_name,
+    "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
      LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN partners p ON p.id = c.partner_id AND p.business_id = c.business_id
+     LEFT JOIN (
+        SELECT cp.car_id, GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ') AS partner_names
+        FROM car_partnerships cp
+        JOIN partners p ON p.id = cp.partner_id
+        WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
+        GROUP BY cp.car_id
+     ) partner_rollup ON partner_rollup.car_id = c.id
      LEFT JOIN (
         SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
         FROM rto_records
@@ -155,7 +175,7 @@ $cars = $db->fetchAll(
      ) rto ON rto.car_id = c.id
      $where ORDER BY c.created_at DESC
      LIMIT ? OFFSET ?",
-    array_merge([$businessId], $params, [$perPage, $pagination['offset']])
+    array_merge([$businessId, $businessId], $params, [$perPage, $pagination['offset']])
 );
 
 if ($isLazyRequest) {
@@ -203,7 +223,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th>Reg. No.</th>
                 <th>Make / Model</th>
                 <th>Year</th>
-                <th>Primary Partner</th>
+                <th>Partners</th>
                 <th>Purchase Date / Time</th>
                 <th class="text-right">Purchase Price</th>
                 <th class="text-right">Extra Cost</th>

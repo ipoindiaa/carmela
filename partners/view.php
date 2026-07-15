@@ -51,23 +51,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
 $position = $engine->getPartnerPosition($id);
 
 $capitalLedger = $db->fetchAll(
-    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+    "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['capital_account_id']]);
 
 $currentLedger = $db->fetchAll(
-    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+    "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status = 'POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$partner['current_account_id']]);
 
-$carContribs = $db->fetchAll("SELECT cpc.*, c.registration_no FROM car_partner_contributions cpc JOIN cars c ON c.id = cpc.car_id WHERE cpc.partner_id = ? ORDER BY cpc.contribution_date DESC, cpc.created_at DESC", [$id]);
-$linkedCars = $db->fetchAll("SELECT id, registration_no, make, model, status, purchase_date FROM cars WHERE business_id = ? AND partner_id = ? ORDER BY purchase_date DESC, created_at DESC", [$businessId, $id]);
-$totalInvested = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'CR' AND je.status='POSTED'", [$partner['capital_account_id']]);
-$totalWithdrawn = $db->fetch("SELECT COALESCE(SUM(jl.amount),0) as total FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id WHERE jl.account_id = ? AND jl.entry_type = 'DR' AND je.status='POSTED'", [$partner['capital_account_id']]);
+$portfolioCars = $db->fetchAll(
+    "SELECT cp.*, c.registration_no, c.make, c.model, c.status AS car_status, c.purchase_date, c.sold_date,
+            COALESCE(ps.payable_outstanding, 0) AS payable_outstanding,
+            COALESCE(ps.receivable_outstanding, 0) AS receivable_outstanding
+     FROM car_partnerships cp
+     JOIN cars c ON c.id = cp.car_id AND c.business_id = cp.business_id
+     LEFT JOIN (
+        SELECT car_id, partner_id,
+               SUM(CASE WHEN direction = 'PAYABLE' THEN outstanding_amount ELSE 0 END) AS payable_outstanding,
+               SUM(CASE WHEN direction = 'RECEIVABLE' THEN outstanding_amount ELSE 0 END) AS receivable_outstanding
+        FROM partner_profit_settlements
+        WHERE business_id = ? AND status IN ('PENDING', 'PARTIAL')
+        GROUP BY car_id, partner_id
+     ) ps ON ps.car_id = cp.car_id AND ps.partner_id = cp.partner_id
+     WHERE cp.business_id = ? AND cp.partner_id = ? AND cp.status = 'ACTIVE'
+     ORDER BY FIELD(c.status, 'IN_STOCK', 'PENDING_PAYMENT', 'SOLD', 'CANCELLED'), c.purchase_date DESC, c.created_at DESC",
+    [$businessId, $businessId, $id]
+);
+$totalInvested = $db->fetch(
+    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+     FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.journal_entry_id
+     WHERE jl.account_id = ? AND jl.entry_type = 'CR'
+       AND je.business_id = ? AND je.status = 'POSTED' AND je.is_reversal = 0
+       AND je.transaction_type = 'PARTNER_INVEST'",
+    [$partner['capital_account_id'], $businessId]
+);
+$totalWithdrawn = $db->fetch(
+    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+     FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.journal_entry_id
+     WHERE jl.account_id = ? AND jl.entry_type = 'DR'
+       AND je.business_id = ? AND je.status = 'POSTED' AND je.is_reversal = 0
+       AND je.transaction_type = 'PARTNER_WITHDRAW'",
+    [$partner['capital_account_id'], $businessId]
+);
 $capitalBalance = floatval($position['capital_balance'] ?? 0);
 $currentBalance = floatval($position['current_balance'] ?? 0);
-$capitalLabel = $capitalBalance >= 0 ? 'Partner Capital Credit' : 'Capital Overdrawn';
-$currentLabel = $currentBalance >= 0 ? 'Business Owes Partner' : 'Partner Owes Business';
+$capitalLabel = abs($capitalBalance) < 0.01 ? 'No Capital Balance' : ($capitalBalance > 0 ? 'Partner Capital Credit' : 'Capital Overdrawn');
+$currentLabel = abs($currentBalance) < 0.01 ? 'Current Account Settled' : ($currentBalance > 0 ? 'Business Owes Partner' : 'Partner Owes Business');
+$netPosition = round($capitalBalance + $currentBalance, 2);
+$netPositionLabel = abs($netPosition) < 0.01 ? 'Overall Balance Settled' : ($netPosition > 0 ? 'Total Business Owes' : 'Total Partner Owes');
 $partnerTypeLabel = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise Partner' : 'Main Partner';
 $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MAIN';
 ?>
@@ -109,68 +143,76 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 </div>
 <?php endif; ?>
 
-<div class="stats-grid">
-    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Total Invested</div></div>
-    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Total Withdrawn</div></div>
+<div class="stats-grid partner-portfolio-stats">
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($totalInvested['total']) ?></div><div class="stat-label">Capital Added</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($totalWithdrawn['total']) ?></div><div class="stat-label">Money Taken From Business</div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Funding in Active Cars</div></div>
     <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></div><div class="stat-label"><?= clean($capitalLabel) ?></div></div>
     <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></div><div class="stat-label"><?= clean($currentLabel) ?></div></div>
-    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></div><div class="stat-label">Committed Funding</div></div>
+    <div class="stat-card"><div class="stat-value <?= signedAmountColorClass($netPosition, 'out') ?>"><?= formatAmount(abs($netPosition)) ?></div><div class="stat-label"><?= clean($netPositionLabel) ?></div></div>
 </div>
 
-<div class="card">
-    <div class="card-header"><h3>Primary Cars</h3></div>
+<div class="card partner-portfolio-card">
+    <div class="card-header">
+        <div><h3><i class="ri-car-line"></i> Car Portfolio</h3><div class="card-header-note">Live funding, ownership, and unsettled profit or loss for every assigned car.</div></div>
+    </div>
     <div class="card-body card-body-flush">
-        <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
-        <?php foreach ($linkedCars as $linkedCar): ?><tr><td class="text-bold"><?= clean(formatRegistrationNo($linkedCar['registration_no'])) ?></td><td><?= clean(trim(($linkedCar['make'] ?? '') . ' ' . ($linkedCar['model'] ?? '')) ?: '-') ?></td><td><span class="badge badge-blue"><?= clean($linkedCar['status']) ?></span></td><td><?= formatDate($linkedCar['purchase_date']) ?></td><td class="text-center"><a href="../cars/view.php?id=<?= $linkedCar['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-eye-line"></i></a></td></tr><?php endforeach; ?>
-        <?php if (empty($linkedCars)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">This partner is not the primary partner on any car.</td></tr><?php endif; ?>
-        </tbody></table>
+        <div class="table-container table-container-inline partner-portfolio-table">
+            <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th class="text-right">Invested</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Live Settlement</th><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
+            <?php foreach ($portfolioCars as $portfolioCar): ?>
+                <?php $statusBadges = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
+                <tr>
+                    <td><a href="../cars/view.php?id=<?= clean($portfolioCar['car_id']) ?>" class="text-bold"><?= clean(formatRegistrationNo($portfolioCar['registration_no'])) ?></a></td>
+                    <td><?= clean(trim(($portfolioCar['make'] ?? '') . ' ' . ($portfolioCar['model'] ?? '')) ?: '-') ?></td>
+                    <td><span class="badge <?= $statusBadges[$portfolioCar['car_status']] ?? 'badge-gray' ?>"><?= clean(CAR_STATUS[$portfolioCar['car_status']] ?? $portfolioCar['car_status']) ?></span></td>
+                    <td class="text-right amount"><?= formatAmount($portfolioCar['funding_amount']) ?></td>
+                    <td class="text-right"><?= formatPlainNumber($portfolioCar['funding_pct']) ?>%</td>
+                    <td class="text-right"><?= formatPlainNumber($portfolioCar['profit_share_pct']) ?>%</td>
+                    <td>
+                        <?php if (floatval($portfolioCar['payable_outstanding']) > 0): ?><span class="mini-pill mini-pill-in">Business owes <?= formatAmount($portfolioCar['payable_outstanding']) ?></span>
+                        <?php elseif (floatval($portfolioCar['receivable_outstanding']) > 0): ?><span class="mini-pill mini-pill-out">Partner owes <?= formatAmount($portfolioCar['receivable_outstanding']) ?></span>
+                        <?php else: ?><span class="text-muted">No pending settlement</span><?php endif; ?>
+                    </td>
+                    <td><?= formatDate($portfolioCar['purchase_date']) ?></td>
+                    <td class="text-center"><a href="../cars/view.php?id=<?= clean($portfolioCar['car_id']) ?>" class="btn btn-outline btn-sm" title="View car"><i class="ri-eye-line"></i></a></td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if (empty($portfolioCars)): ?><tr><td colspan="9" class="text-center text-muted empty-table-cell">No cars are assigned to this partner.</td></tr><?php endif; ?>
+            </tbody></table>
+        </div>
     </div>
 </div>
 
-<div class="grid-2">
+<div class="grid-2 partner-ledger-grid">
     <div class="card">
-        <div class="card-header"><h3>Capital Account Ledger</h3></div>
+        <div class="card-header"><div><h3>Capital Account</h3><div class="card-header-note">Money added by or taken by the partner.</div></div></div>
         <div class="card-body card-body-flush">
-            <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
+            <div class="table-container table-container-inline partner-ledger-table"><table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right flow-out">Taken / Reduced</th><th class="text-right flow-in">Added</th></tr></thead>
                 <tbody>
                 <?php foreach ($capitalLedger as $l): ?>
-                <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
-                    <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                    <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+                <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= clean($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,54)) ?></td>
+                    <td class="text-right amount flow-out"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+                    <td class="text-right amount flow-in"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
                 <?php endforeach; ?>
                 <?php if (empty($capitalLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><h3>Car Contributions</h3></div>
+        <div class="card-header"><div><h3>Current Account</h3><div class="card-header-note">Profit, loss, and settlement activity with the partner.</div></div></div>
         <div class="card-body card-body-flush">
-            <table><thead><tr><th>Car</th><th class="text-right">Amount</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Date / Time</th></tr></thead>
+            <div class="table-container table-container-inline partner-ledger-table"><table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right flow-out">Reduces Partner Balance</th><th class="text-right flow-in">Increases Partner Balance</th></tr></thead>
                 <tbody>
-                <?php foreach ($carContribs as $c): ?>
-                <tr><td><a href="../cars/view.php?id=<?= $c['car_id'] ?>"><?= clean(formatRegistrationNo($c['registration_no'])) ?></a></td><td class="text-right amount"><?= formatAmount($c['amount']) ?></td><td class="text-right"><?= formatPlainNumber($c['funding_pct']) ?>%</td><td class="text-right"><?= formatPlainNumber($c['profit_share_pct']) ?>%</td><td><?= renderDateTimeStack($c['contribution_date'], $c['created_at']) ?></td></tr>
+                <?php foreach ($currentLedger as $l): ?>
+                <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= clean($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,54)) ?></td>
+                    <td class="text-right amount flow-out"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+                    <td class="text-right amount flow-in"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
                 <?php endforeach; ?>
-                <?php if (empty($carContribs)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No contributions</td></tr><?php endif; ?>
+                <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
         </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header"><h3>Current Account Ledger</h3></div>
-    <div class="card-body card-body-flush">
-        <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
-            <tbody>
-            <?php foreach ($currentLedger as $l): ?>
-            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
-                <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
-            <?php endforeach; ?>
-            <?php if (empty($currentLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No entries</td></tr><?php endif; ?>
-            </tbody>
-        </table>
     </div>
 </div>
 

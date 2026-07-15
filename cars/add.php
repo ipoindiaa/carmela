@@ -17,7 +17,6 @@ $paymentAccountIds = array_values(array_filter(array_map(
     $paymentAccounts
 )));
 
-// The first selected car partner is the primary partner used in car lists and reports.
 $partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
 $formError = '';
 
@@ -49,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $partnerShares = array_values((array) ($_POST['partner_profit_share_pcts'] ?? []));
         $newPartnerName = trim((string) post('new_car_partner_name'));
         if ($newPartnerName !== '' && trim((string) ($partnerIds[0] ?? '')) !== '') {
-            throw new Exception('Select an existing primary partner or create a new one, not both.');
+            throw new Exception('Select an existing partner or create a new one, not both.');
         }
         if ($newPartnerName !== '') {
             if (!Auth::hasEntityAccess('partner', 'write')) {
@@ -67,7 +66,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $partnerFunding = [];
         $seenPartnerIds = [];
-        $primaryPartnerId = null;
         $rowCount = max(count($partnerIds), count($partnerAmounts), count($partnerShares));
         for ($idx = 0; $idx < $rowCount; $idx++) {
             $partnerId = trim((string) ($partnerIds[$idx] ?? ''));
@@ -83,7 +81,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Each partner can be added to a car only once.');
             }
             $seenPartnerIds[$partnerId] = true;
-            $primaryPartnerId ??= $partnerId;
             $partnerFunding[] = [
                 'partner_id' => $partnerId,
                 'amount' => $amountInput === '' ? 0 : parseDecimalInput($amountInput),
@@ -112,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'purchase_price' => max(0, $purchasePrice - $gstAmount),
             'purchase_paid_amount' => $purchasePaidNow,
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
-            'partner_id' => $primaryPartnerId,
+            'partner_id' => null,
             'account_id' => $carAccountId,
             'notes' => post('notes'),
         ]);
@@ -128,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
-        Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo, 'partner_id' => $primaryPartnerId], "Car $regNo added with purchase entry", 'cars');
+        Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo], "Car $regNo added with purchase entry", 'cars');
         setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
         redirect("view.php?id=$carId");
     } catch (Exception $e) {
@@ -237,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
                 <div>
                     <h3 style="font-size:15px;color:var(--accent-purple);"><i class="ri-group-line"></i> Car Partners <span class="text-muted" style="font-weight:500;">(Optional)</span></h3>
-                    <div class="form-hint">The first partner is the Primary Partner shown in car reports. Contribution and profit share apply only to this car.</div>
+                    <div class="form-hint">Add the partners funding this car and set each partner's profit share. The business keeps any remaining share.</div>
                 </div>
                 <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button type="button" class="btn btn-outline btn-sm" id="quick-partner-toggle" onclick="toggleQuickPartner()"><i class="ri-user-add-line"></i> Create New Partner</button><?php endif; ?>
             </div>
@@ -245,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div id="partner-funding">
                 <div class="form-row partner-row car-partner-row">
                     <div class="form-group partner-select-group">
-                        <label class="form-label partner-role-label">Primary Partner</label>
+                        <label class="form-label partner-role-label">Partner</label>
                         <select name="partner_ids[]" class="form-control">
                             <option value="">No partner</option>
                             <?php foreach ($partners as $p): ?>
@@ -276,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
             <div id="quick-partner-fields" class="alert alert-info" style="display:none;margin-bottom:16px;">
                 <div class="form-row" style="width:100%;margin-bottom:0;">
-                    <div class="form-group"><label class="form-label">New Primary Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
+                    <div class="form-group"><label class="form-label">New Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
                     <div class="form-group"><label class="form-label">Phone</label><input type="text" name="new_car_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
             </div>
@@ -306,7 +303,7 @@ function addPartnerRow() {
     row.querySelectorAll('input').forEach(i => i.value = '');
     row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
     const roleLabel = row.querySelector('.partner-role-label');
-    if (roleLabel) roleLabel.textContent = 'Additional Partner';
+    if (roleLabel) roleLabel.textContent = 'Partner';
     const action = row.querySelector('.partner-row-action');
     if (action) {
         action.classList.remove('is-placeholder');

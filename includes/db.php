@@ -61,6 +61,10 @@ class Database {
         $this->pdo->beginTransaction();
     }
 
+    public function inTransaction() {
+        return $this->pdo->inTransaction();
+    }
+
     public function commit() {
         $this->pdo->commit();
     }
