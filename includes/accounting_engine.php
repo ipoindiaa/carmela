@@ -477,6 +477,7 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `version_no` INT NOT NULL DEFAULT 1 AFTER `correction_reason`");
             }
             $this->addIndexIfMissing('journal_entries', 'idx_correction_from', '`corrected_from_id`');
+            $this->ensureEntryTypeIdentitySchema();
             if (!$this->columnExists('cars', 'sale_gst_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
             }
@@ -583,6 +584,102 @@ class AccountingEngine {
                  MODIFY COLUMN `transaction_type`
                  ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
                  NOT NULL"
+            );
+        }
+    }
+
+    private function ensureEntryTypeIdentitySchema() {
+        if (!$this->columnExists('journal_entries', 'entry_type_id')) {
+            $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `entry_type_id` VARCHAR(80) DEFAULT NULL AFTER `transaction_type`");
+        }
+        if (!$this->columnExists('journal_entries', 'entry_amount')) {
+            $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `entry_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `entry_type_id`");
+        }
+        $this->addIndexIfMissing('journal_entries', 'idx_entry_type_id', '`business_id`, `entry_type_id`, `entry_date`, `status`');
+
+        $unmapped = $this->db->fetch("SELECT id FROM journal_entries WHERE entry_type_id IS NULL OR entry_type_id = '' LIMIT 1");
+        if (!$unmapped) return;
+
+        $rows = $this->db->fetchAll(
+            "SELECT je.id, je.transaction_type, je.narration, je.journal_voucher_id, je.car_id,
+                    c.ownership_type AS car_ownership_type, c.sale_price, c.sale_commission_amount,
+                    ccs.commission_amount AS settlement_commission_amount,
+                    cop.journal_entry_id AS commission_owner_payment_entry_id,
+                    COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS total_dr,
+                    COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' AND a.code IN ('CAR-REV','SALE-COMM','GST-PAY') THEN jl.amount ELSE 0 END), 0) AS sale_income_amount,
+                    COUNT(DISTINCT CASE
+                        WHEN a.entity_type = 'GENERAL'
+                         AND a.group_name IN ('INCOME','EXPENSE')
+                         AND a.sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+                         AND a.code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')
+                        THEN a.id END) AS custom_type_count,
+                    MAX(CASE
+                        WHEN a.entity_type = 'GENERAL'
+                         AND a.group_name IN ('INCOME','EXPENSE')
+                         AND a.sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+                         AND a.code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')
+                        THEN a.id END) AS custom_account_id,
+                    COALESCE(SUM(CASE
+                        WHEN a.entity_type = 'GENERAL'
+                         AND a.group_name = 'INCOME'
+                         AND jl.entry_type = 'CR'
+                         AND a.sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+                         AND a.code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')
+                        THEN jl.amount
+                        WHEN a.entity_type = 'GENERAL'
+                         AND a.group_name = 'EXPENSE'
+                         AND jl.entry_type = 'DR'
+                         AND a.sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+                         AND a.code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')
+                        THEN jl.amount ELSE 0 END), 0) AS custom_amount
+             FROM journal_entries je
+             LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             LEFT JOIN accounts a ON a.id = jl.account_id
+             LEFT JOIN cars c ON c.id = je.car_id AND c.business_id = je.business_id
+             LEFT JOIN commission_car_settlements ccs ON ccs.sale_entry_id = je.id AND ccs.business_id = je.business_id
+             LEFT JOIN commission_owner_payments cop ON cop.journal_entry_id = je.id AND cop.business_id = je.business_id
+             WHERE je.entry_type_id IS NULL OR je.entry_type_id = ''
+             GROUP BY je.id, je.transaction_type, je.narration, je.journal_voucher_id, je.car_id,
+                      c.ownership_type, c.sale_price, c.sale_commission_amount, ccs.commission_amount,
+                      cop.journal_entry_id"
+        );
+
+        foreach ($rows as $row) {
+            $transactionType = strtoupper((string) $row['transaction_type']);
+            $narration = trim((string) ($row['narration'] ?? ''));
+            $entryTypeId = systemEntryTypeId($transactionType);
+            $entryAmount = round(floatval($row['total_dr'] ?? 0), 2);
+
+            if (
+                ($transactionType === 'CAR_SALE' && str_starts_with($narration, 'Close car account '))
+                || (in_array($transactionType, ['CAR_EXPENSE', 'RTO_EXPENSE'], true) && str_starts_with($narration, 'Allocate '))
+            ) {
+                $entryTypeId = systemEntryTypeId('INTERNAL_ALLOCATION');
+                $entryAmount = 0;
+            } elseif ($transactionType === 'CAR_SALE' && ($row['car_ownership_type'] ?? '') === 'COMMISSION') {
+                $entryTypeId = systemEntryTypeId('COMMISSION_CAR_SALE');
+                $entryAmount = round(floatval($row['settlement_commission_amount'] ?? $row['sale_commission_amount'] ?? 0), 2);
+            } elseif ($transactionType === 'CAR_SALE') {
+                $entryAmount = round(floatval($row['sale_price'] ?: $row['sale_income_amount'] ?: $row['total_dr']), 2);
+            } elseif ($transactionType === 'LOAN_RECEIVED' && !empty($row['car_id'])) {
+                $entryTypeId = systemEntryTypeId('CAR_PAYMENT_CLEARING');
+            } elseif ($transactionType === 'LOAN_REPAID' && !empty($row['commission_owner_payment_entry_id'])) {
+                $entryTypeId = systemEntryTypeId('COMMISSION_OWNER_PAYMENT');
+            } elseif ($transactionType === 'LOAN_REPAID' && !empty($row['car_id'])) {
+                $entryTypeId = systemEntryTypeId('SELLER_PAYMENT_CLEARING');
+            } elseif (
+                in_array($transactionType, ['GENERAL_EXPENSE', 'JOURNAL_VOUCHER'], true)
+                && empty($row['journal_voucher_id'])
+                && intval($row['custom_type_count'] ?? 0) === 1
+                && !empty($row['custom_account_id'])
+            ) {
+                $entryTypeId = customEntryTypeId($row['custom_account_id']);
+                $entryAmount = round(floatval($row['custom_amount'] ?? 0), 2);
+            }
+
+            $this->db->query(
+                "UPDATE journal_entries SET entry_type_id = ?, entry_amount = ? WHERE id = ?",
+                [$entryTypeId, $entryAmount, $row['id']]
             );
         }
     }
@@ -803,6 +900,10 @@ class AccountingEngine {
                 'reference_no' => $refNo,
                 'narration' => $narration,
                 'transaction_type' => $type,
+                'entry_type_id' => $extras['entry_type_id'] ?? systemEntryTypeId($type),
+                'entry_amount' => array_key_exists('entry_amount', $extras)
+                    ? round(floatval($extras['entry_amount']), 2)
+                    : round(floatval($totalDr), 2),
                 'status' => 'POSTED',
                 'created_by' => $this->userId,
                 'financial_year' => $fy,
@@ -1191,7 +1292,11 @@ class AccountingEngine {
                 $lines[] = ['account_id' => $gstPayable['id'], 'amount' => $gstAmount, 'type' => 'CR', 'narration' => "GST output on {$car['registration_no']}"];
             }
 
-            $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration, $lines, ['car_id' => $carId, 'party_id' => $partyId]);
+            $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration, $lines, [
+                'car_id' => $carId,
+                'party_id' => $partyId,
+                'entry_amount' => $grossReceiptTarget,
+            ]);
             if ($tokenApplied > 0) {
                 $this->applyCarTokensToSale($carId, $partyId, $tokenApplied, $entryId);
             }
@@ -1202,7 +1307,11 @@ class AccountingEngine {
                     ['account_id' => $pnlAccount['id'], 'amount' => $totalCost, 'type' => 'DR', 'narration' => "Cost of car sold - {$car['registration_no']}"],
                     ['account_id' => $carAccountId, 'amount' => $totalCost, 'type' => 'CR', 'narration' => 'Car account closed'],
                 ];
-                $this->postJournalEntry('CAR_SALE', $date, "Close car account {$car['registration_no']}", $costLines, ['car_id' => $carId]);
+                $this->postJournalEntry('CAR_SALE', $date, "Close car account {$car['registration_no']}", $costLines, [
+                    'car_id' => $carId,
+                    'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
+                    'entry_amount' => 0,
+                ]);
             }
 
             $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
@@ -1339,7 +1448,12 @@ class AccountingEngine {
                 $lines[] = ['account_id' => $owner['account_id'], 'amount' => $ownerAmount, 'type' => 'CR', 'narration' => "Amount payable to owner {$owner['name']}"];
             }
 
-            $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration ?: "Commission car sold - {$car['registration_no']}", $lines, ['car_id' => $carId, 'party_id' => $buyer['id']]);
+            $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration ?: "Commission car sold - {$car['registration_no']}", $lines, [
+                'car_id' => $carId,
+                'party_id' => $buyer['id'],
+                'entry_type_id' => systemEntryTypeId('COMMISSION_CAR_SALE'),
+                'entry_amount' => $commissionAmount,
+            ]);
             if ($tokenApplied > 0) $this->applyCarTokensToSale($carId, $buyer['id'], $tokenApplied, $entryId);
 
             $settlementId = Database::uuid();
@@ -1406,7 +1520,12 @@ class AccountingEngine {
             $entryId = $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: "Paid commission car owner - {$owner['name']}", [
                 ['account_id' => $owner['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Owner settlement for commission car"],
                 ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid to {$owner['name']}"],
-            ], ['party_id' => $owner['id'], 'car_id' => $carId]);
+            ], [
+                'party_id' => $owner['id'],
+                'car_id' => $carId,
+                'entry_type_id' => systemEntryTypeId('COMMISSION_OWNER_PAYMENT'),
+                'entry_amount' => $amount,
+            ]);
             $applicationId = Database::uuid();
             $this->db->insert('commission_owner_payments', [
                 'id' => $applicationId,
@@ -1706,7 +1825,11 @@ class AccountingEngine {
 
         $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
         if ($baseAmount > 0) {
-            $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, ['car_id' => $carId]);
+            $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, [
+                'car_id' => $carId,
+                'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
+                'entry_amount' => 0,
+            ]);
         }
         return $entryId;
     }
@@ -1732,7 +1855,11 @@ class AccountingEngine {
             $this->postJournalEntry('RTO_EXPENSE', $date, "Allocate RTO to {$car['registration_no']}", [
                 ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "RTO {$rto['rto_type']}"],
                 ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => 'RTO allocated to car'],
-            ], ['car_id' => $carId]);
+            ], [
+                'car_id' => $carId,
+                'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
+                'entry_amount' => 0,
+            ]);
         }
 
         $this->db->query(
@@ -1858,7 +1985,10 @@ class AccountingEngine {
                 ['account_id' => $primaryAccountId, 'amount' => $amount, 'type' => 'DR', 'narration' => $narration],
                 ['account_id' => $categoryAccountId, 'amount' => $amount, 'type' => 'CR', 'narration' => $narration],
             ];
-            return $this->postJournalEntry('JOURNAL_VOUCHER', $date, $narration, $lines);
+            return $this->postJournalEntry('JOURNAL_VOUCHER', $date, $narration, $lines, [
+                'entry_type_id' => customEntryTypeId($categoryAccountId),
+                'entry_amount' => $amount,
+            ]);
         }
 
         if ($direction === 'out') {
@@ -1878,7 +2008,10 @@ class AccountingEngine {
             }
             $lines[] = ['account_id' => $primaryAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => $narration];
 
-            return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
+            return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines, [
+                'entry_type_id' => customEntryTypeId($categoryAccountId),
+                'entry_amount' => $baseAmount,
+            ]);
         }
 
         throw new Exception("Invalid category direction.");
@@ -2175,7 +2308,12 @@ class AccountingEngine {
             ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Buyer payment cleared for {$party['name']}" : "Loan repaid by {$party['name']}"],
         ];
 
-        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: ($carId ? 'Car payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
+        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: ($carId ? 'Car payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, [
+            'party_id' => $partyId,
+            'car_id' => $carId ?: null,
+            'entry_type_id' => systemEntryTypeId($carId ? 'CAR_PAYMENT_CLEARING' : 'LOAN_RECEIVED'),
+            'entry_amount' => $amount,
+        ]);
         $this->refreshPendingCarSaleStatusesForParty($partyId);
         return $entryId;
     }
@@ -2248,7 +2386,12 @@ class AccountingEngine {
             ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Seller payment clearing paid to {$party['name']}" : "Loan repaid to {$party['name']}"],
         ];
 
-        return $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: ($carId ? 'Seller payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, ['party_id' => $partyId, 'car_id' => $carId ?: null]);
+        return $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: ($carId ? 'Seller payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, [
+            'party_id' => $partyId,
+            'car_id' => $carId ?: null,
+            'entry_type_id' => systemEntryTypeId($carId ? 'SELLER_PAYMENT_CLEARING' : 'LOAN_REPAID'),
+            'entry_amount' => $amount,
+        ]);
     }
 
     /**
@@ -2467,14 +2610,38 @@ class AccountingEngine {
             }, $oldRows);
 
         $newLinesForAudit = $this->decorateCorrectionLines($newLines);
+        $replacementEntryTypeId = $entry['entry_type_id'] ?: systemEntryTypeId($entry['transaction_type']);
+        $replacementEntryAmount = round(floatval($entry['entry_amount'] ?? 0), 2);
+        if ($canEditLines) {
+            $replacementEntryAmount = round(array_sum(array_map(
+                static fn($line) => ($line['type'] ?? '') === 'DR' ? floatval($line['amount'] ?? 0) : 0,
+                $newLines
+            )), 2);
+            if (
+                customEntryTypeAccountId($replacementEntryTypeId)
+                || in_array($entry['transaction_type'], ['GENERAL_EXPENSE', 'JOURNAL_VOUCHER'], true)
+            ) {
+                $customIdentity = $this->resolveCustomEntryTypeFromLines($newLines);
+                if ($customIdentity) {
+                    $replacementEntryTypeId = customEntryTypeId($customIdentity['account_id']);
+                    $replacementEntryAmount = $customIdentity['amount'];
+                } else {
+                    $replacementEntryTypeId = systemEntryTypeId($entry['transaction_type']);
+                }
+            }
+        }
         $oldSnapshot = [
             'entry_date' => $entry['entry_date'],
             'narration' => $entry['narration'],
+            'entry_type_id' => $entry['entry_type_id'] ?? null,
+            'entry_amount' => $entry['entry_amount'] ?? 0,
             'lines' => $oldLines,
         ];
         $newSnapshot = [
             'entry_date' => $date,
             'narration' => $narration,
+            'entry_type_id' => $replacementEntryTypeId,
+            'entry_amount' => $replacementEntryAmount,
             'lines' => $newLinesForAudit,
             'correction_reason' => $reason,
         ];
@@ -2499,6 +2666,8 @@ class AccountingEngine {
                 'reference_no' => $referenceNo,
                 'narration' => $narration,
                 'transaction_type' => $entry['transaction_type'],
+                'entry_type_id' => $replacementEntryTypeId,
+                'entry_amount' => $replacementEntryAmount,
                 'status' => 'POSTED',
                 'car_id' => $entry['car_id'] ?: null,
                 'partner_id' => $entry['partner_id'] ?: null,
@@ -2753,6 +2922,8 @@ class AccountingEngine {
             'reference_no' => $refNo,
             'narration' => "REVERSAL: $reason (Original: {$entry['reference_no']})",
             'transaction_type' => 'REVERSAL',
+            'entry_type_id' => systemEntryTypeId('REVERSAL'),
+            'entry_amount' => round(floatval($entry['entry_amount'] ?? 0), 2),
             'is_reversal' => 1,
             'original_entry_id' => $entry['id'],
             'status' => 'POSTED',
@@ -2780,6 +2951,37 @@ class AccountingEngine {
 
         $this->db->query("UPDATE journal_entries SET status = 'REVERSED', reversed_by = ? WHERE id = ?", [$reversalId, $entry['id']]);
         return $reversalId;
+    }
+
+    private function resolveCustomEntryTypeFromLines(array $lines) {
+        $accountIds = array_values(array_unique(array_filter(array_column($lines, 'account_id'))));
+        if (!$accountIds) return null;
+        $placeholders = implode(',', array_fill(0, count($accountIds), '?'));
+        $accounts = $this->db->fetchAll(
+            "SELECT id, group_name
+             FROM accounts
+             WHERE business_id = ?
+               AND id IN ($placeholders)
+               AND entity_type = 'GENERAL'
+               AND group_name IN ('INCOME','EXPENSE')
+               AND sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+               AND code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')",
+            array_merge([$this->businessId], $accountIds)
+        );
+        if (count($accounts) > 1) {
+            throw new Exception('A simple entry can use only one custom income or expense type. Use Large Bill Split for multiple categories.');
+        }
+        if (!$accounts) return null;
+
+        $account = $accounts[0];
+        $naturalType = $account['group_name'] === 'INCOME' ? 'CR' : 'DR';
+        $amount = 0.0;
+        foreach ($lines as $line) {
+            if (($line['account_id'] ?? '') === $account['id'] && ($line['type'] ?? '') === $naturalType) {
+                $amount += floatval($line['amount'] ?? 0);
+            }
+        }
+        return ['account_id' => $account['id'], 'amount' => round($amount, 2)];
     }
 
     private function assertEntryCanBeReversed($entry, $lines, $allowLinkedGuard = true) {
@@ -4287,6 +4489,9 @@ class AccountingEngine {
                 je.reference_no,
                 je.narration,
                 je.transaction_type,
+                je.entry_type_id,
+                je.entry_amount,
+                je.business_id,
                 je.status,
                 je.is_reversal,
                 je.original_entry_id,

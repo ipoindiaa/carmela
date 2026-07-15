@@ -40,13 +40,16 @@ $carOne = $engine->createCommissionCar([
     'registration_no' => 'GJ99CM0001', 'received_date' => date('Y-m-d'), 'make' => 'Test', 'model' => 'Direct',
     'owner_party_id' => $ownerId, 'expected_sale_price' => 500000, 'expected_commission_amount' => 40000,
 ]);
-$engine->commissionCarSale($carOne, 500000, 40000, date('Y-m-d'), $cash['id'], 'COMMISSION_ONLY', 'Commission-only regression sale', $buyerId);
+$commissionSaleEntryId = $engine->commissionCarSale($carOne, 500000, 40000, date('Y-m-d'), $cash['id'], 'COMMISSION_ONLY', 'Commission-only regression sale', $buyerId);
+$commissionSaleEntry = $db->fetch("SELECT * FROM journal_entries WHERE id = ?", [$commissionSaleEntryId]);
 
 $commissionAccount = $db->fetch("SELECT * FROM accounts WHERE id = ?", [$commissionAccount['id']]);
 $revenueAccount = $db->fetch("SELECT * FROM accounts WHERE id = ?", [$revenueAccount['id']]);
 $settlementOne = $engine->getCommissionSettlement($carOne);
 assertCommission(abs(floatval($commissionAccount['current_balance']) - ($commissionBefore + 40000)) < 0.01, 'Only ₹40,000 commission entered income on ₹5,00,000 memorandum sale');
 assertCommission(abs(floatval($revenueAccount['current_balance']) - $revenueBefore) < 0.01, 'Gross memorandum value did not enter Car Sales Revenue');
+assertCommission($commissionSaleEntry['entry_type_id'] === systemEntryTypeId('COMMISSION_CAR_SALE'), 'Commission sale uses its dedicated stable entry-type ID');
+assertCommission(abs(floatval($commissionSaleEntry['entry_amount']) - 40000) < 0.01, 'Commission sale summary amount contains commission income, not memorandum sale value');
 assertCommission($settlementOne['status'] === 'NOT_APPLICABLE' && floatval($settlementOne['paid_to_owner_amount']) === 0.0, 'Direct-to-owner sale created no owner payable');
 
 $carTwo = $engine->createCommissionCar([
@@ -64,8 +67,10 @@ try { $engine->loanRepaid($ownerId, 1000, date('Y-m-d'), $cash['id'], 'Incorrect
 assertCommission($genericPaymentBlocked, 'Generic creditor payment cannot bypass per-car owner settlement history');
 
 $paymentEntry = $engine->payCommissionCarOwner($carTwo, 200000, date('Y-m-d'), $cash['id'], 'Partial owner payment regression');
+$ownerPaymentEntry = $db->fetch("SELECT * FROM journal_entries WHERE id = ?", [$paymentEntry]);
 $settlementTwo = $engine->getCommissionSettlement($carTwo);
 assertCommission(floatval($settlementTwo['paid_to_owner_amount']) === 200000.0 && $settlementTwo['status'] === 'PARTIAL', 'Partial owner payment updated per-car settlement');
+assertCommission($ownerPaymentEntry['entry_type_id'] === systemEntryTypeId('COMMISSION_OWNER_PAYMENT'), 'Commission owner payment has its own stable entry-type ID');
 
 $guarded = false;
 try { $engine->reverseEntry($saleEntry, 'Regression reversal guard'); } catch (Throwable $e) { $guarded = str_contains($e->getMessage(), 'owner payments'); }

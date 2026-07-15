@@ -125,7 +125,7 @@ $cars = $db->fetchAll(
 );
 
 $rtoEntries = $db->fetchAll(
-    "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration,
+    "SELECT je.id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.entry_type_id, je.entry_amount, je.narration,
             c.id AS car_id, c.registration_no, c.make, c.model
      FROM journal_entries je
      LEFT JOIN cars c ON c.id = je.car_id

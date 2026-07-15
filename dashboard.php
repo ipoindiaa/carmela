@@ -50,7 +50,7 @@ $fyStartDate = getCurrentFY() . '-04-01';
 $accountLedger = [];
 if ($activeAccountId) {
     $todayLedger = $db->fetchAll(
-        "SELECT jl.*, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.id as entry_id
+        "SELECT jl.*, je.business_id, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, je.id as entry_id
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date = ?
@@ -62,7 +62,7 @@ if ($activeAccountId) {
     $remainingLedger = max(0, $dashboardMinimumRows - count($todayLedger));
     if ($remainingLedger > 0) {
         $olderLedger = $db->fetchAll(
-            "SELECT jl.*, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.id as entry_id
+            "SELECT jl.*, je.business_id, je.entry_date, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, je.id as entry_id
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
              WHERE jl.account_id = ? AND je.status = 'POSTED' AND je.entry_date <> ?

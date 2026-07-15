@@ -121,6 +121,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     Profit & Loss
                 </a>
                 <?php endif; ?>
+                <?php if (Auth::hasBookAccess('profit_loss', 'read') || Auth::hasBookAccess('general_ledger', 'read')): ?>
+                <a href="<?= APP_URL ?>reports/entry_types.php" class="nav-link <?= $currentPage === 'entry_types' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-layout-grid-line"></i></span>
+                    Income &amp; Expense Types
+                </a>
+                <?php endif; ?>
                 <?php if (!isClientHiddenBook('balance_sheet') && Auth::hasBookAccess('balance_sheet', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/balance_sheet.php" class="nav-link <?= $currentPage === 'balance_sheet' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-file-list-3-line"></i></span>

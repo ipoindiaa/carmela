@@ -57,7 +57,7 @@ $debtorOutstanding = in_array($party['type'], ['DEBTOR', 'BUYER'], true) && ($pa
     : 0;
 
 $ledger = $db->fetchAll(
-    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
+    "SELECT je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
 $partyTokens = $db->fetchAll(

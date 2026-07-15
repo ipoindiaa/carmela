@@ -25,7 +25,7 @@ $systemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 
 $categoryWhereSql = "business_id = ?
        AND entity_type = 'GENERAL'
        AND group_name IN ('INCOME','EXPENSE')
-       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+       AND sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
        AND code NOT IN (" . implode(',', array_fill(0, count($systemCodes), '?')) . ")";
 
 $nextCategoryCode = static function ($direction) use ($db, $businessId, $categoryGroups) {
@@ -164,7 +164,7 @@ $categories = $db->fetchAll(
      WHERE a.business_id = ?
        AND a.entity_type = 'GENERAL'
        AND a.group_name IN ('INCOME','EXPENSE')
-       AND COALESCE(a.sub_group, '') <> 'Direct Expenses (Car)'
+       AND a.sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
        AND a.code NOT IN (" . implode(',', array_fill(0, count($systemCodes), '?')) . ")
      ORDER BY FIELD(a.group_name, 'INCOME', 'EXPENSE'), a.is_active DESC, a.code, a.name",
     array_merge([$businessId], $systemCodes)
@@ -249,6 +249,7 @@ $categories = $db->fetchAll(
                                     <button type="submit" class="btn btn-outline btn-sm"><i class="ri-save-line"></i> Save</button>
                                 </form>
                                 <a href="../reports/ledger.php?account_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="View ledger"><i class="ri-eye-line"></i></a>
+                                <a href="../reports/entry_types.php?entry_type_id=<?= urlencode(customEntryTypeId($category['id'])) ?>#entry-type-details" class="btn btn-outline btn-sm" title="View entry type summary"><i class="ri-bar-chart-box-line"></i></a>
                                 <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
                                 <?php if (intval($category['linked_entries'] ?? 0) === 0): ?>
                                     <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this category? This is allowed only because no entries are connected.">

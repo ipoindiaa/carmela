@@ -91,32 +91,44 @@ define('PRIMARY_BOOK_ACCOUNT_TYPES', [
 
 define('CLIENT_DEMO_HIDDEN_BOOKS', []);
 
-// Transaction Types
-define('TXN_TYPES', [
-    'CAR_PURCHASE' => 'Bought a Car',
-    'CAR_TOKEN_RECEIVED' => 'Car Token Received',
-    'CAR_SALE' => 'Sold a Car',
-    'RTO_EXPENSE' => 'RTO Expense',
-    'RTO_RECOVERY' => 'RTO Recovery Received',
-    'CAR_EXPENSE' => 'Car Repair / Service',
-    'GENERAL_EXPENSE' => 'Office / Business Expense',
-    'JOURNAL_VOUCHER' => 'Large Bill Split',
-    'PARTNER_INVEST' => 'Partner Added Money',
-    'PARTNER_WITHDRAW' => 'Partner Took Money',
-    'PARTNER_SETTLEMENT' => 'Partner Settlement',
-    'SALARY_PAYMENT' => 'Paid Salary',
-    'EMPLOYEE_ADVANCE' => 'Employee Took Advance',
-    'EMPLOYEE_ADVANCE_WRITEOFF' => 'Employee Advance Write-Off',
-    'LOAN_GIVEN' => 'Lent Money to Someone',
-    'LOAN_RECEIVED' => 'Payment Clearing Received',
-    'LOAN_TAKEN' => 'Borrowed Money',
-    'LOAN_REPAID' => 'Payment Clearing Paid',
-    'CONTRA_TRANSFER' => 'Cash to Bank / Bank to Cash',
-    'GST_PAYMENT' => 'Tax Payment',
-    'GST_UTILIZATION' => 'Tax Credit Utilized',
-    'OPENING_BALANCE' => 'Opening Balance',
-    'BAD_DEBT' => 'Bad Debt Write-Off',
+// One source of truth for entry names, flow, grouping, and summary behavior.
+define('ENTRY_TYPE_META', [
+    'CAR_PURCHASE' => ['label' => 'Bought a Car', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-car-line', 'description' => 'Cars purchased for business stock.', 'selectable' => true, 'summary' => true],
+    'CAR_TOKEN_RECEIVED' => ['label' => 'Car Token Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Advance money received for a specific car.', 'selectable' => true, 'summary' => true],
+    'CAR_SALE' => ['label' => 'Sold a Car', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-money-rupee-circle-line', 'description' => 'Owned cars sold to buyers.', 'selectable' => true, 'summary' => true],
+    'COMMISSION_CAR_SALE' => ['label' => 'Commission Car Sale', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-percent-line', 'description' => 'Commission earned by selling a customer-owned car.', 'selectable' => false, 'summary' => true],
+    'RTO_EXPENSE' => ['label' => 'RTO Expense', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO fees paid for a specific car.', 'selectable' => true, 'summary' => true],
+    'RTO_RECOVERY' => ['label' => 'RTO Recovery Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-refund-2-line', 'description' => 'RTO money recovered from a buyer or party.', 'selectable' => true, 'summary' => true],
+    'CAR_EXPENSE' => ['label' => 'Car Repair / Service', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-tools-line', 'description' => 'Repair and service spending assigned to cars.', 'selectable' => true, 'summary' => true],
+    'GENERAL_EXPENSE' => ['label' => 'Office / Business Expense', 'flow' => 'out', 'category' => 'Business', 'icon' => 'ri-receipt-line', 'description' => 'General operating costs not assigned to a custom type.', 'selectable' => true, 'summary' => true],
+    'JOURNAL_VOUCHER' => ['label' => 'Large Bill Split', 'flow' => 'neutral', 'category' => 'Business', 'icon' => 'ri-bill-line', 'description' => 'One bill allocated across multiple cars or accounts.', 'selectable' => true, 'summary' => false],
+    'PARTNER_INVEST' => ['label' => 'Partner Added Money', 'flow' => 'in', 'category' => 'Partners', 'icon' => 'ri-user-add-line', 'description' => 'Capital introduced into the business by a partner.', 'selectable' => true, 'summary' => true],
+    'PARTNER_WITHDRAW' => ['label' => 'Partner Took Money', 'flow' => 'out', 'category' => 'Partners', 'icon' => 'ri-user-unfollow-line', 'description' => 'Money withdrawn from the business by a partner.', 'selectable' => true, 'summary' => true],
+    'PARTNER_SETTLEMENT' => ['label' => 'Partner Settlement', 'flow' => 'out', 'category' => 'Partners', 'icon' => 'ri-scales-3-line', 'description' => 'Settlement paid to or recovered from a partner.', 'selectable' => true, 'summary' => true],
+    'SALARY_PAYMENT' => ['label' => 'Paid Salary', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-user-star-line', 'description' => 'Salary paid to employees.', 'selectable' => true, 'summary' => true],
+    'EMPLOYEE_ADVANCE' => ['label' => 'Employee Took Advance', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-cash-line', 'description' => 'Salary advance paid to an employee.', 'selectable' => true, 'summary' => true],
+    'EMPLOYEE_ADVANCE_WRITEOFF' => ['label' => 'Employee Advance Write-Off', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-delete-back-2-line', 'description' => 'Unrecoverable employee advance written off.', 'selectable' => true, 'summary' => true],
+    'LOAN_GIVEN' => ['label' => 'Lent Money to Someone', 'flow' => 'out', 'category' => 'Parties', 'icon' => 'ri-arrow-right-up-line', 'description' => 'Money given to a person or company and recoverable later.', 'selectable' => true, 'summary' => true],
+    'LOAN_RECEIVED' => ['label' => 'Payment Clearing Received', 'flow' => 'in', 'category' => 'Parties', 'icon' => 'ri-arrow-left-down-line', 'description' => 'Outstanding money received from a buyer or debtor.', 'selectable' => true, 'summary' => true],
+    'CAR_PAYMENT_CLEARING' => ['label' => 'Car Payment Clearing', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-car-line', 'description' => 'Pending buyer money received for a specific car.', 'selectable' => false, 'summary' => true],
+    'LOAN_TAKEN' => ['label' => 'Borrowed Money', 'flow' => 'in', 'category' => 'Parties', 'icon' => 'ri-hand-coin-line', 'description' => 'Money borrowed by the business.', 'selectable' => true, 'summary' => true],
+    'LOAN_REPAID' => ['label' => 'Payment Clearing Paid', 'flow' => 'out', 'category' => 'Parties', 'icon' => 'ri-secure-payment-line', 'description' => 'Outstanding money paid to a seller or creditor.', 'selectable' => true, 'summary' => true],
+    'SELLER_PAYMENT_CLEARING' => ['label' => 'Seller Payment Clearing', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-car-line', 'description' => 'Pending purchase money paid to a car seller.', 'selectable' => false, 'summary' => true],
+    'COMMISSION_OWNER_PAYMENT' => ['label' => 'Commission Owner Payment', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Sale proceeds paid to the owner of a commission car.', 'selectable' => false, 'summary' => true],
+    'CONTRA_TRANSFER' => ['label' => 'Cash to Bank / Bank to Cash', 'flow' => 'neutral', 'category' => 'Internal', 'icon' => 'ri-swap-box-line', 'description' => 'Money moved between business cash and bank accounts.', 'selectable' => true, 'summary' => false],
+    'GST_PAYMENT' => ['label' => 'Tax Payment', 'flow' => 'out', 'category' => 'Tax', 'icon' => 'ri-government-line', 'description' => 'Tax liability paid by the business.', 'selectable' => true, 'summary' => true],
+    'GST_UTILIZATION' => ['label' => 'Tax Credit Utilized', 'flow' => 'neutral', 'category' => 'Tax', 'icon' => 'ri-exchange-funds-line', 'description' => 'Input tax credit adjusted against tax payable.', 'selectable' => true, 'summary' => false],
+    'OPENING_BALANCE' => ['label' => 'Opening Balance', 'flow' => 'neutral', 'category' => 'Internal', 'icon' => 'ri-scales-line', 'description' => 'Balance carried into the system at setup.', 'selectable' => true, 'summary' => false],
+    'BAD_DEBT' => ['label' => 'Bad Debt Write-Off', 'flow' => 'out', 'category' => 'Parties', 'icon' => 'ri-file-damage-line', 'description' => 'Receivable written off as unrecoverable.', 'selectable' => true, 'summary' => true],
+    'PROFIT_DISTRIBUTION' => ['label' => 'Profit Distribution', 'flow' => 'out', 'category' => 'Partners', 'icon' => 'ri-pie-chart-line', 'description' => 'Car profit allocated to partners.', 'selectable' => false, 'summary' => true],
+    'REVERSAL' => ['label' => 'Reversal', 'flow' => 'neutral', 'category' => 'Internal', 'icon' => 'ri-arrow-go-back-line', 'description' => 'Audit-preserved reversal of an earlier entry.', 'selectable' => false, 'summary' => false],
+    'INTERNAL_ALLOCATION' => ['label' => 'Internal Cost Allocation', 'flow' => 'neutral', 'category' => 'Internal', 'icon' => 'ri-git-merge-line', 'description' => 'Supporting journal generated by an operational entry.', 'selectable' => false, 'summary' => false],
 ]);
+
+define('TXN_TYPES', array_map(
+    static fn($meta) => $meta['label'],
+    array_filter(ENTRY_TYPE_META, static fn($meta) => !empty($meta['selectable']))
+));
 
 // Account Groups
 define('ACCOUNT_GROUPS', [

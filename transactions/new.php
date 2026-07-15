@@ -78,7 +78,7 @@ $entryCategories = $db->fetchAll(
        AND entity_type = 'GENERAL'
        AND is_active = 1
        AND group_name IN ('INCOME','EXPENSE')
-       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+       AND sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
        AND UPPER(REPLACE(name, ' ', '')) NOT IN ('TOKENMONEY','TOKANMONEY')
        AND code NOT IN (" . implode(',', array_fill(0, count($entryCategorySystemCodes), '?')) . ")
      ORDER BY FIELD(group_name, 'INCOME', 'EXPENSE'), code, name",
@@ -463,6 +463,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $uploadWarning = '';
+        $postedEntry = $entryId ? $db->fetch(
+            "SELECT * FROM journal_entries WHERE id = ? AND business_id = ?",
+            [$entryId, $businessId]
+        ) : null;
+        $postedEntryLabel = transactionTypeLabel($type, $postedEntry ?: [
+            'business_id' => $businessId,
+            'car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select'),
+        ]);
         if ($entryId) {
             try {
                 uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $entryId, 'VOUCHER', 'vouchers', Auth::user('user_id'), 'vouchers');
@@ -476,14 +484,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'vouchers');
                 }
             } catch (Exception $uploadError) {
-                $uploadWarning = transactionTypeLabel($type, ['car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select')]) . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
+                $uploadWarning = $postedEntryLabel . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
             }
         }
 
         if ($uploadWarning !== '') {
             setFlash('warning', $uploadWarning);
         } else {
-            setFlash('success', transactionTypeLabel($type, ['car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select')]) . ' entry posted successfully!');
+            setFlash('success', $postedEntryLabel . ' entry posted successfully!');
         }
         redirect('list.php');
     } catch (Exception $e) {
@@ -557,9 +565,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </optgroup>
                         <optgroup label="Loans & Debts">
                             <option value="LOAN_GIVEN" data-flow="out" data-icon="ri-arrow-up-circle-line" data-title="Lent Money to Someone" data-desc="Business gave money to debtor.">Lent Money to Someone</option>
-                            <option value="LOAN_RECEIVED" data-flow="in" data-icon="ri-arrow-down-circle-line" data-title="Car Payment Clearing" data-desc="Buyer or debtor paid a pending amount. Use this for later car-payment chunks too.">Car Payment Clearing</option>
+                            <option value="LOAN_RECEIVED" data-flow="in" data-icon="ri-arrow-down-circle-line" data-title="<?= clean(TXN_TYPES['LOAN_RECEIVED']) ?>" data-desc="Buyer or debtor paid a pending amount. Link a car when this clears a car balance."><?= clean(TXN_TYPES['LOAN_RECEIVED']) ?></option>
                             <option value="LOAN_TAKEN" data-flow="in" data-icon="ri-download-cloud-2-line" data-title="Borrowed Money" data-desc="Business received loan from creditor.">Borrowed Money</option>
-                            <option value="LOAN_REPAID" data-flow="out" data-icon="ri-upload-cloud-2-line" data-title="Seller Payment Clearing" data-desc="Business cleared a pending seller or creditor amount, including car purchase chunks.">Seller Payment Clearing</option>
+                            <option value="LOAN_REPAID" data-flow="out" data-icon="ri-upload-cloud-2-line" data-title="<?= clean(TXN_TYPES['LOAN_REPAID']) ?>" data-desc="Business cleared a pending seller or creditor amount. Link a car for seller payment clearing."><?= clean(TXN_TYPES['LOAN_REPAID']) ?></option>
                         </optgroup>
                     </select>
                     <div class="txn-type-picker" id="txn-type-picker">

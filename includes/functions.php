@@ -30,6 +30,35 @@ function formatPlainNumber($value) {
 
 function transactionTypeLabel($transactionType, array $context = []) {
     $transactionType = strtoupper((string) $transactionType);
+    $entryTypeId = trim((string) ($context['entry_type_id'] ?? ''));
+    $explicitName = trim((string) ($context['entry_type_name'] ?? ''));
+    if ($explicitName !== '') {
+        return $explicitName;
+    }
+    if (str_starts_with($entryTypeId, 'CUSTOM:')) {
+        $accountId = substr($entryTypeId, 7);
+        $businessId = $context['business_id'] ?? (class_exists('Auth') && Auth::isLoggedIn() ? Auth::user('business_id') : null);
+        if ($accountId !== '' && $businessId && class_exists('Database')) {
+            static $customEntryTypeNames = [];
+            $cacheKey = $businessId . ':' . $accountId;
+            if (!array_key_exists($cacheKey, $customEntryTypeNames)) {
+                $row = Database::getInstance()->fetch(
+                    "SELECT name FROM accounts WHERE id = ? AND business_id = ? LIMIT 1",
+                    [$accountId, $businessId]
+                );
+                $customEntryTypeNames[$cacheKey] = trim((string) ($row['name'] ?? ''));
+            }
+            if ($customEntryTypeNames[$cacheKey] !== '') {
+                return $customEntryTypeNames[$cacheKey];
+            }
+        }
+    }
+    if (str_starts_with($entryTypeId, 'SYSTEM:')) {
+        $identityCode = substr($entryTypeId, 7);
+        if (!empty(ENTRY_TYPE_META[$identityCode]['label'])) {
+            return ENTRY_TYPE_META[$identityCode]['label'];
+        }
+    }
     $hasCarLink = !empty($context['car_id']) || !empty($context['car_reg']);
 
     return match ($transactionType) {
@@ -40,16 +69,71 @@ function transactionTypeLabel($transactionType, array $context = []) {
     };
 }
 
+function systemEntryTypeId($transactionType) {
+    return 'SYSTEM:' . strtoupper(trim((string) $transactionType));
+}
+
+function customEntryTypeId($accountId) {
+    return 'CUSTOM:' . trim((string) $accountId);
+}
+
+function customEntryTypeAccountId($entryTypeId) {
+    $entryTypeId = trim((string) $entryTypeId);
+    return str_starts_with($entryTypeId, 'CUSTOM:') ? substr($entryTypeId, 7) : null;
+}
+
+function entryTypeMeta($transactionType, array $context = []) {
+    $entryTypeId = trim((string) ($context['entry_type_id'] ?? ''));
+    if (str_starts_with($entryTypeId, 'SYSTEM:')) {
+        $code = substr($entryTypeId, 7);
+        if (isset(ENTRY_TYPE_META[$code])) {
+            return array_merge(ENTRY_TYPE_META[$code], ['id' => $entryTypeId, 'source' => 'SYSTEM', 'code' => $code]);
+        }
+    }
+    if (str_starts_with($entryTypeId, 'CUSTOM:')) {
+        $flow = strtolower((string) ($context['entry_type_flow'] ?? ''));
+        if (!in_array($flow, ['in', 'out'], true)) {
+            $group = strtoupper((string) ($context['entry_type_group'] ?? ''));
+            $accountId = customEntryTypeAccountId($entryTypeId);
+            $businessId = $context['business_id'] ?? (class_exists('Auth') && Auth::isLoggedIn() ? Auth::user('business_id') : null);
+            if ($group === '' && $accountId && $businessId && class_exists('Database')) {
+                static $customEntryTypeGroups = [];
+                $cacheKey = $businessId . ':' . $accountId;
+                if (!array_key_exists($cacheKey, $customEntryTypeGroups)) {
+                    $row = Database::getInstance()->fetch(
+                        "SELECT group_name FROM accounts WHERE id = ? AND business_id = ? LIMIT 1",
+                        [$accountId, $businessId]
+                    );
+                    $customEntryTypeGroups[$cacheKey] = strtoupper((string) ($row['group_name'] ?? ''));
+                }
+                $group = $customEntryTypeGroups[$cacheKey];
+            }
+            $flow = $group === 'INCOME' ? 'in' : 'out';
+        }
+        return [
+            'id' => $entryTypeId,
+            'source' => 'CUSTOM',
+            'code' => $context['entry_type_code'] ?? customEntryTypeAccountId($entryTypeId),
+            'label' => transactionTypeLabel($transactionType, $context),
+            'flow' => $flow,
+            'category' => 'Custom',
+            'icon' => $flow === 'in' ? 'ri-arrow-down-circle-line' : 'ri-arrow-up-circle-line',
+            'description' => 'Custom entry type managed in Entry Categories.',
+            'summary' => true,
+        ];
+    }
+    $code = strtoupper((string) $transactionType);
+    return array_merge(
+        ENTRY_TYPE_META[$code] ?? ['label' => TXN_TYPES[$code] ?? $code, 'flow' => 'neutral', 'category' => 'Other', 'icon' => 'ri-file-list-3-line', 'description' => '', 'summary' => false],
+        ['id' => systemEntryTypeId($code), 'source' => 'SYSTEM', 'code' => $code]
+    );
+}
+
 /**
  * Transaction flow from business perspective.
  */
-function transactionBusinessFlow($transactionType) {
-    return match (strtoupper((string) $transactionType)) {
-        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_TOKEN_RECEIVED', 'CAR_SALE' => 'in',
-        'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'out',
-        'CONTRA_TRANSFER', 'JOURNAL_VOUCHER', 'REVERSAL', 'OPENING_BALANCE' => 'neutral',
-        default => 'neutral',
-    };
+function transactionBusinessFlow($transactionType, array $context = []) {
+    return entryTypeMeta($transactionType, $context)['flow'] ?? 'neutral';
 }
 
 function transactionBusinessFlowLabel($transactionType) {
@@ -68,8 +152,8 @@ function flowColorClass($flow) {
     };
 }
 
-function transactionFlowColorClass($transactionType) {
-    return flowColorClass(transactionBusinessFlow($transactionType));
+function transactionFlowColorClass($transactionType, array $context = []) {
+    return flowColorClass(transactionBusinessFlow($transactionType, $context));
 }
 
 function signedAmountColorClass($amount, $positiveMeans = 'in') {

@@ -13,6 +13,8 @@ if ($isLazyRequest) {
 
 $businessId = Auth::user('business_id');
 Auth::requireAnyBookAccess(array_merge(Auth::getPrimaryBookKeys(), ['jv_register']), 'read');
+require_once __DIR__ . '/../includes/accounting_engine.php';
+new AccountingEngine($businessId, Auth::user('user_id'));
 $accessibleAccountIds = Auth::getAccessiblePrimaryAccountIds($businessId, 'read');
 $canReadJV = Auth::hasBookAccess('jv_register', 'read');
 if (empty($accessibleAccountIds) && !$canReadJV) {
@@ -22,28 +24,33 @@ if (empty($accessibleAccountIds) && !$canReadJV) {
 $accountPlaceholders = !empty($accessibleAccountIds) ? implode(',', array_fill(0, count($accessibleAccountIds), '?')) : '';
 
 // Filters
-$filterType = get('type', '');
+$filterEntryTypeId = get('entry_type_id', '');
+if ($filterEntryTypeId === '' && get('type', '') !== '') {
+    $filterEntryTypeId = systemEntryTypeId(get('type'));
+}
 $filterDate = get('date', '');
 $filterStatus = get('status', '');
 $page = max(1, intval(get('page', 1)));
 $perPage = 30;
 
-function transactionsListUrl($page, $filterType, $filterDate, $filterStatus, $lazy = false) {
+function transactionsListUrl($page, $filterEntryTypeId, $filterDate, $filterStatus, $lazy = false) {
     $query = ['page' => $page];
-    if ($filterType !== '') $query['type'] = $filterType;
+    if ($filterEntryTypeId !== '') $query['entry_type_id'] = $filterEntryTypeId;
     if ($filterDate !== '') $query['date'] = $filterDate;
     if ($filterStatus !== '') $query['status'] = $filterStatus;
     if ($lazy) $query['lazy'] = 1;
     return 'list.php?' . http_build_query($query);
 }
 
-function transactionContextLabel($type) {
-    return match ($type) {
-        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_TOKEN_RECEIVED', 'CAR_SALE' => 'Receive / Jama',
-        'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'Payment / Expense',
-        'CONTRA_TRANSFER' => 'Cash / Bank Transfer',
-        'JOURNAL_VOUCHER' => 'Large Bill Split',
-        default => 'Entry',
+function transactionContextLabel($type, array $entry = []) {
+    return match (transactionBusinessFlow($type, $entry)) {
+        'in' => 'Receive / Jama',
+        'out' => 'Payment / Expense',
+        default => match ($type) {
+            'CONTRA_TRANSFER' => 'Cash / Bank Transfer',
+            'JOURNAL_VOUCHER' => 'Large Bill Split',
+            default => 'Entry',
+        },
     };
 }
 
@@ -59,7 +66,7 @@ function renderTransactionRows($entries) {
             <td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td>
             <td>
                 <span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span>
-                <div class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type']) ?>"><?= clean(transactionContextLabel($entry['transaction_type'])) ?></div>
+                <div class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type'], $entry) ?>"><?= clean(transactionContextLabel($entry['transaction_type'], $entry)) ?></div>
             </td>
             <td style="max-width: 250px;">
                 <?php $fullNarration = trim((string) ($entry['narration'] ?? '')); ?>
@@ -108,7 +115,10 @@ if (!empty($accessibleAccountIds)) {
     $where .= " AND 1 = 0";
 }
 
-if ($filterType) { $where .= " AND je.transaction_type = ?"; $params[] = $filterType; }
+if ($filterEntryTypeId) {
+    $where .= " AND COALESCE(NULLIF(je.entry_type_id, ''), CONCAT('SYSTEM:', je.transaction_type)) = ?";
+    $params[] = $filterEntryTypeId;
+}
 if ($filterDate) { $where .= " AND je.entry_date = ?"; $params[] = $filterDate; }
 if ($filterStatus) { $where .= " AND je.status = ?"; $params[] = $filterStatus; }
 
@@ -136,14 +146,26 @@ if ($isLazyRequest) {
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
         'html' => renderTransactionRows($entries),
-        'next_url' => $nextPage ? transactionsListUrl($nextPage, $filterType, $filterDate, $filterStatus, true) : '',
+        'next_url' => $nextPage ? transactionsListUrl($nextPage, $filterEntryTypeId, $filterDate, $filterStatus, true) : '',
     ]);
     exit;
 }
 
 $nextUrl = $page < $pagination['total_pages']
-    ? transactionsListUrl($page + 1, $filterType, $filterDate, $filterStatus, true)
+    ? transactionsListUrl($page + 1, $filterEntryTypeId, $filterDate, $filterStatus, true)
     : '';
+
+$customEntryTypes = $db->fetchAll(
+    "SELECT id, code, name, group_name, is_active
+     FROM accounts
+     WHERE business_id = ?
+       AND entity_type = 'GENERAL'
+       AND group_name IN ('INCOME','EXPENSE')
+       AND sub_group IN ('Daily Jama Categories','Daily Udhar Categories')
+       AND code NOT IN ('CAR-REV','SALE-COMM','PNL','GST-PAY','GST-RCV','BAD-DEBT','ADV-WOFF','SAL-EXP','OB-EQUITY')
+     ORDER BY FIELD(group_name, 'INCOME', 'EXPENSE'), is_active DESC, name",
+    [$businessId]
+);
 ?>
 
 <div class="page-header entries-page-header">
@@ -170,11 +192,21 @@ $nextUrl = $page < $pagination['total_pages']
     <form method="GET" class="entries-filter-form">
         <div class="entries-filter-field entries-filter-type">
             <label class="form-label">Entry Type</label>
-            <select name="type" class="form-control">
+            <select name="entry_type_id" class="form-control" data-searchable="true">
                 <option value="">All Types</option>
-                <?php foreach (TXN_TYPES as $key => $label): ?>
-                    <option value="<?= $key ?>" <?= $filterType === $key ? 'selected' : '' ?>><?= $label ?></option>
-                <?php endforeach; ?>
+                <optgroup label="Predefined Types">
+                    <?php foreach (ENTRY_TYPE_META as $key => $meta): ?>
+                        <?php if (empty($meta['summary']) && empty($meta['selectable'])) continue; ?>
+                        <option value="<?= clean(systemEntryTypeId($key)) ?>" <?= $filterEntryTypeId === systemEntryTypeId($key) ? 'selected' : '' ?>><?= clean($meta['label']) ?></option>
+                    <?php endforeach; ?>
+                </optgroup>
+                <?php if ($customEntryTypes): ?>
+                    <optgroup label="Custom Types">
+                        <?php foreach ($customEntryTypes as $customType): ?>
+                            <option value="<?= clean(customEntryTypeId($customType['id'])) ?>" <?= $filterEntryTypeId === customEntryTypeId($customType['id']) ? 'selected' : '' ?>><?= clean($customType['name']) ?><?= empty($customType['is_active']) ? ' (Inactive)' : '' ?></option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                <?php endif; ?>
             </select>
         </div>
         <div class="entries-filter-field entries-filter-date">
@@ -224,13 +256,13 @@ $nextUrl = $page < $pagination['total_pages']
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination no-js-pagination">
     <?php if ($page > 1): ?>
-        <a href="<?= clean(transactionsListUrl($page - 1, $filterType, $filterDate, $filterStatus)) ?>">← Prev</a>
+        <a href="<?= clean(transactionsListUrl($page - 1, $filterEntryTypeId, $filterDate, $filterStatus)) ?>">← Prev</a>
     <?php endif; ?>
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="<?= clean(transactionsListUrl($i, $filterType, $filterDate, $filterStatus)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(transactionsListUrl($i, $filterEntryTypeId, $filterDate, $filterStatus)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
     <?php if ($page < $pagination['total_pages']): ?>
-        <a href="<?= clean(transactionsListUrl($page + 1, $filterType, $filterDate, $filterStatus)) ?>">Next →</a>
+        <a href="<?= clean(transactionsListUrl($page + 1, $filterEntryTypeId, $filterDate, $filterStatus)) ?>">Next →</a>
     <?php endif; ?>
 </div>
 <?php endif; ?>
