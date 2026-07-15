@@ -152,6 +152,7 @@ $keyEvents = $db->fetchAll(
     "SELECT ske.*, u.full_name FROM car_second_key_events ske LEFT JOIN users u ON u.id = ske.created_by WHERE ske.business_id = ? AND ske.car_id = ? ORDER BY ske.event_date DESC, ske.created_at DESC",
     [$businessId, $id]
 );
+$tokenSummary = $engine->getCarTokenSummary($id);
 
 // Full car timeline, including payment-clearing entries linked to this car.
 $ledger = $db->fetchAll(
@@ -200,6 +201,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Seller payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-up-circle-line"></i> Pay Seller</a>
         <?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
+            <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
@@ -260,6 +262,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($sellerOutstanding) ?></div><div class="stat-label">Purchase Pending</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($rtoSpent) ?></div><div class="stat-label">RTO Spent</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($rtoRecovered) ?></div><div class="stat-label">RTO Recovered</div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($tokenSummary['available']) ?></div><div class="stat-label">Token Held</div></div>
 </div>
 
 <div class="grid-2 car-detail-main-grid">
@@ -497,6 +500,34 @@ function removeFundingEditRow(button) {
             <table class="table-compact" style="margin-top:12px;"><thead><tr><th>Date / Time</th><th>Event</th><th>Narration</th></tr></thead><tbody>
                 <?php foreach ($keyEvents as $event): ?><tr><td><?= renderDateTimeStack($event['event_date'], $event['created_at']) ?></td><td><span class="badge <?= $event['event_type'] === 'RECEIVED' ? 'badge-green' : 'badge-yellow' ?>"><?= clean($event['event_type']) ?></span></td><td><?= clean($event['narration'] ?: '-') ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:24px;">
+    <div class="card-header">
+        <div><h3><i class="ri-hand-coin-line"></i> Buyer Token History</h3><div class="card-header-note">Advances received for this car and how they were adjusted.</div></div>
+        <?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-add-line"></i> Receive Token</a><?php endif; ?>
+    </div>
+    <div class="card-body" style="padding:0;">
+        <div class="table-container table-container-inline">
+            <table>
+                <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Available</th><th>Status</th></tr></thead>
+                <tbody>
+                <?php foreach ($tokenSummary['rows'] as $token): ?>
+                    <tr>
+                        <td><?= formatDate($token['received_date']) ?></td>
+                        <td><a href="../parties/view.php?id=<?= urlencode($token['party_id']) ?>" class="text-bold"><?= clean($token['party_name']) ?></a></td>
+                        <td><a href="../transactions/view.php?id=<?= urlencode($token['journal_entry_id']) ?>"><?= clean($token['reference_no'] ?: 'View') ?></a></td>
+                        <td class="text-right amount flow-in"><?= formatAmount($token['amount']) ?></td>
+                        <td class="text-right amount"><?= formatAmount($token['applied_amount']) ?></td>
+                        <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']))) ?></td>
+                        <td><span class="badge <?= $token['status'] === 'APPLIED' ? 'badge-green' : ($token['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($token['status']) ?></span></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (empty($tokenSummary['rows'])): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No token received for this car.</td></tr><?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

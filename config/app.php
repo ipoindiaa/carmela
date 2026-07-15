@@ -94,6 +94,7 @@ define('CLIENT_DEMO_HIDDEN_BOOKS', []);
 // Transaction Types
 define('TXN_TYPES', [
     'CAR_PURCHASE' => 'Bought a Car',
+    'CAR_TOKEN_RECEIVED' => 'Car Token Received',
     'CAR_SALE' => 'Sold a Car',
     'RTO_EXPENSE' => 'RTO Expense',
     'RTO_RECOVERY' => 'RTO Recovery Received',

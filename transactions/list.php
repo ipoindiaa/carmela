@@ -39,7 +39,7 @@ function transactionsListUrl($page, $filterType, $filterDate, $filterStatus, $la
 
 function transactionContextLabel($type) {
     return match ($type) {
-        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_SALE' => 'Receive / Jama',
+        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_TOKEN_RECEIVED', 'CAR_SALE' => 'Receive / Jama',
         'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'Payment / Expense',
         'CONTRA_TRANSFER' => 'Cash / Bank Transfer',
         'JOURNAL_VOUCHER' => 'Large Bill Split',

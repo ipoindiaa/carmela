@@ -59,7 +59,7 @@ switch ($kind) {
     case 'payment_car':
     case 'rto_car':
         $statusFilterSql = "AND status <> 'CANCELLED'";
-        if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true)) {
+        if (in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED', 'CAR_EXPENSE'], true)) {
             $statusFilterSql = "AND status = 'IN_STOCK'";
         } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED') {
             $statusFilterSql = "AND status IN ('SOLD', 'PENDING_PAYMENT')";
@@ -69,10 +69,19 @@ switch ($kind) {
         $rows = $db->fetchAll(
             "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,
                     buyer.id AS buyer_party_id, buyer.name AS buyer_name,
-                    seller.id AS seller_party_id, seller.name AS seller_name
+                    seller.id AS seller_party_id, seller.name AS seller_name,
+                    token_party.id AS token_party_id, token_party.name AS token_party_name,
+                    COALESCE(tokens.available_amount, 0) AS token_available
              FROM cars c
              LEFT JOIN debtors_creditors buyer ON buyer.id = c.buyer_party_id AND buyer.business_id = c.business_id
              LEFT JOIN debtors_creditors seller ON seller.id = c.seller_party_id AND seller.business_id = c.business_id
+             LEFT JOIN (
+                 SELECT business_id, car_id, party_id, SUM(amount - applied_amount) AS available_amount
+                 FROM car_tokens
+                 WHERE status IN ('OPEN','PARTIAL')
+                 GROUP BY business_id, car_id, party_id
+             ) tokens ON tokens.business_id = c.business_id AND tokens.car_id = c.id AND tokens.available_amount > 0.009
+             LEFT JOIN debtors_creditors token_party ON token_party.id = tokens.party_id AND token_party.business_id = c.business_id
              WHERE c.business_id = ?
                $statusFilterSql
                AND (
@@ -102,6 +111,9 @@ switch ($kind) {
                     $linkedPartyId = $row['seller_party_id'] ?? null;
                     $linkedPartyLabel = $row['seller_name'] ?? '';
                 }
+            } elseif ($kind === 'car' && in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED'], true)) {
+                $linkedPartyId = $row['token_party_id'] ?? null;
+                $linkedPartyLabel = $row['token_party_name'] ?? '';
             }
             $results[] = [
                 'id' => $row['id'],
@@ -109,6 +121,7 @@ switch ($kind) {
                 'meta' => trim(($row['year'] ?: '') . ' ' . ($row['status'] ?? '')),
                 'linked_party_id' => $linkedPartyId,
                 'linked_party_label' => $linkedPartyLabel,
+                'token_available' => floatval($row['token_available'] ?? 0),
             ];
         }
         break;
@@ -166,9 +179,13 @@ switch ($kind) {
         }
         break;
 
+    case 'buyer':
+    case 'counterparty_debtor':
     case 'debtor':
+    case 'counterparty_creditor':
     case 'creditor':
-        $types = $kind === 'debtor' ? ['DEBTOR', 'BUYER'] : ['CREDITOR', 'SELLER'];
+        $isDebtor = in_array($kind, ['buyer', 'counterparty_debtor', 'debtor'], true);
+        $types = $isDebtor ? ['DEBTOR', 'BUYER'] : ['CREDITOR', 'SELLER'];
         $rows = $db->fetchAll(
             "SELECT id, name, type, phone
              FROM debtors_creditors

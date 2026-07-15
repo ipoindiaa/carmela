@@ -86,7 +86,7 @@ CREATE TABLE `journal_entries` (
     `entry_date` DATE NOT NULL,
     `reference_no` VARCHAR(50) NOT NULL,
     `narration` TEXT DEFAULT NULL,
-    `transaction_type` ENUM('CAR_PURCHASE','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
+    `transaction_type` ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
     `is_reversal` TINYINT(1) NOT NULL DEFAULT 0,
     `reversed_by` CHAR(36) DEFAULT NULL,
     `original_entry_id` CHAR(36) DEFAULT NULL,
@@ -347,6 +347,30 @@ CREATE TABLE `debtors_creditors` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_dc_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: car_tokens (buyer advances held against a specific car)
+-- ============================================================
+CREATE TABLE `car_tokens` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `car_id` CHAR(36) NOT NULL,
+    `party_id` CHAR(36) NOT NULL,
+    `journal_entry_id` CHAR(36) NOT NULL,
+    `applied_sale_entry_id` CHAR(36) DEFAULT NULL,
+    `received_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED') NOT NULL DEFAULT 'OPEN',
+    `narration` VARCHAR(500) DEFAULT NULL,
+    `created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_car_token_entry` (`journal_entry_id`),
+    KEY `idx_car_tokens_car_status` (`business_id`, `car_id`, `status`),
+    KEY `idx_car_tokens_party` (`business_id`, `party_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

@@ -44,7 +44,7 @@ function transactionTypeLabel($transactionType, array $context = []) {
  */
 function transactionBusinessFlow($transactionType) {
     return match (strtoupper((string) $transactionType)) {
-        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_SALE' => 'in',
+        'PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_TOKEN_RECEIVED', 'CAR_SALE' => 'in',
         'CAR_PURCHASE', 'CAR_EXPENSE', 'GENERAL_EXPENSE', 'PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT', 'SALARY_PAYMENT', 'EMPLOYEE_ADVANCE', 'LOAN_GIVEN', 'LOAN_REPAID', 'GST_PAYMENT', 'BAD_DEBT', 'EMPLOYEE_ADVANCE_WRITEOFF' => 'out',
         'CONTRA_TRANSFER', 'JOURNAL_VOUCHER', 'REVERSAL', 'OPENING_BALANCE' => 'neutral',
         default => 'neutral',

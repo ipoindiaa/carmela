@@ -67,6 +67,7 @@ $preselectedCarId = get('car_id', '');
 $preselectedCar = null;
 $preselectedPartyId = get('party_id', '');
 $preselectedParty = null;
+$preselectedTokenSummary = ['available' => 0, 'party_id' => null, 'party_name' => null];
 $preselectedAmount = get('amount', '');
 $preselectedNarration = get('narration', '');
 $entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
@@ -78,6 +79,7 @@ $entryCategories = $db->fetchAll(
        AND is_active = 1
        AND group_name IN ('INCOME','EXPENSE')
        AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
+       AND UPPER(REPLACE(name, ' ', '')) NOT IN ('TOKENMONEY','TOKANMONEY')
        AND code NOT IN (" . implode(',', array_fill(0, count($entryCategorySystemCodes), '?')) . ")
      ORDER BY FIELD(group_name, 'INCOME', 'EXPENSE'), code, name",
     array_merge([$businessId], $entryCategorySystemCodes)
@@ -135,6 +137,8 @@ if ($preselectedCarId !== '') {
     );
     if (!$preselectedCar) {
         $preselectedCarId = '';
+    } else {
+        $preselectedTokenSummary = $engine->getCarTokenSummary($preselectedCarId);
     }
 }
 
@@ -224,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pfProfitShares = array_values((array) ($_POST['pf_profit_share_pct'] ?? []));
                 $newPartnerName = trim((string) post('new_car_partner_name'));
                 if ($newPartnerName !== '' && trim((string) ($pfPartners[0] ?? '')) !== '') {
-                    throw new Exception('Select an existing primary partner or create a new one, not both.');
+                    throw new Exception('Select an existing partner or create a new one, not both.');
                 }
                 if ($newPartnerName !== '') {
                     if (!Auth::hasEntityAccess('partner', 'write')) {
@@ -242,7 +246,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $partnerFunding = [];
                 $seenPartnerIds = [];
-                $primaryPartnerId = null;
                 $partnerRowCount = max(count($pfPartners), count($pfAmounts), count($pfProfitShares));
                 for ($i = 0; $i < $partnerRowCount; $i++) {
                     $partnerId = trim((string) ($pfPartners[$i] ?? ''));
@@ -258,7 +261,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new Exception('Each partner can be added to a car only once.');
                     }
                     $seenPartnerIds[$partnerId] = true;
-                    $primaryPartnerId ??= $partnerId;
                     $partnerFunding[] = [
                         'partner_id' => $partnerId,
                         'amount' => $partnerAmountInput === '' ? 0 : parseDecimalInput($partnerAmountInput),
@@ -295,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'purchase_price' => $amount,
                         'purchase_paid_amount' => $purchasePaidNow,
                         'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
-                        'partner_id' => $primaryPartnerId,
+                        'partner_id' => null,
                         'account_id' => $carAccountId,
                     ]);
                     $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
@@ -313,9 +315,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $carId = post('sale_car_id');
                 $salePrice = parseDecimalInput(post('sale_price'));
                 $commissionAmount = parseDecimalInput(post('sale_commission_amount'));
-                $amountReceived = parseDecimalInput(post('amount_received') ?: ($salePrice + $commissionAmount));
+                $amountReceivedInput = trim((string) post('amount_received', ''));
+                $amountReceived = $amountReceivedInput === '' ? null : parseDecimalInput($amountReceivedInput);
                 $buyerName = post('buyer_name');
-                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount, $commissionAmount);
+                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount, $commissionAmount, post('buyer_party_id'), post('buyer_phone'));
+                $attachmentCarId = $carId;
+                break;
+
+            case 'CAR_TOKEN_RECEIVED':
+                $carId = post('sale_car_id');
+                $entryId = $engine->receiveCarToken($carId, post('buyer_party_id'), post('buyer_name'), post('buyer_phone'), $amount, $date, $paymentAccountId, $narration);
                 $attachmentCarId = $carId;
                 break;
 
@@ -359,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'LOAN_GIVEN':
                 $partyName = post('party_name');
-                $entryId = $engine->loanGiven($partyName, $amount, $date, $paymentAccountId, $narration);
+                $entryId = $engine->loanGiven($partyName, $amount, $date, $paymentAccountId, $narration, post('counterparty_id'), post('party_phone'));
                 break;
 
             case 'LOAN_RECEIVED':
@@ -369,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'LOAN_TAKEN':
                 $partyName = post('party_name');
-                $entryId = $engine->loanTaken($partyName, $amount, $date, $paymentAccountId, $narration);
+                $entryId = $engine->loanTaken($partyName, $amount, $date, $paymentAccountId, $narration, post('counterparty_id'), post('party_phone'));
                 break;
 
             case 'LOAN_REPAID':
@@ -526,6 +535,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Receive / Jama or Payments Category" data-desc="Admin-defined category account.">Receive / Jama or Payments Category</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
+                            <option value="CAR_TOKEN_RECEIVED" data-flow="in" data-icon="ri-hand-coin-line" data-title="Car Token Received" data-desc="Buyer advance held for one specific car; not income yet.">Car Token Received</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
                             <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
@@ -698,7 +708,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
                     <div id="quick-car-partner-fields" class="alert alert-info" style="display:none;margin-top:12px;">
                         <div class="form-row" style="width:100%;margin-bottom:0;">
-                            <div class="form-group"><label class="form-label">New Primary Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
+                            <div class="form-group"><label class="form-label">New Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
                             <div class="form-group"><label class="form-label">Phone</label><input type="text" name="new_car_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                         </div>
                     </div>
@@ -717,15 +727,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         Expense will be added in <strong><?= clean($preselectedCar['registration_no']) ?></strong><?= !empty(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) ? ' - ' . clean(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) : '' ?>.
                     </div>
                 <?php endif; ?>
-                <div class="form-row">
+                <div class="form-row car-picker-field-row">
                     <div class="form-group">
                         <label class="form-label">Car *</label>
                         <input type="hidden" name="expense_car_id" id="expense_car_select" value="<?= clean($preselectedType === 'CAR_EXPENSE' ? $preselectedCarId : '') ?>">
                         <button type="button" class="picker-trigger picker-trigger-wide" id="car-picker-trigger" onclick="openEntityPicker('car', this)">
-                            <span><?= $preselectedCar && $preselectedType === 'CAR_EXPENSE' ? clean($preselectedCar['registration_no']) : 'Select car' ?></span>
+                            <span><?= $preselectedCar ? clean($preselectedCar['registration_no']) : 'Select car' ?></span>
                             <i class="ri-search-line"></i>
                         </button>
-                        <input type="hidden" name="sale_car_id" id="sale_car_id" value="<?= clean($preselectedType === 'CAR_SALE' ? $preselectedCarId : '') ?>">
+                        <input type="hidden" name="sale_car_id" id="sale_car_id" value="<?= clean(in_array($preselectedType, ['CAR_SALE', 'CAR_TOKEN_RECEIVED'], true) ? $preselectedCarId : '') ?>">
+                    </div>
+                </div>
+            </div>
+
+            <!-- BUYER IDENTITY (sale and token) -->
+            <div class="txn-section" id="buyer-identity-section" style="display:none;">
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong>Buyer / Customer *</strong><span>Select an existing ledger or create it here once.</span></div>
+                        <button type="button" class="btn btn-outline btn-sm" id="buyer-new-toggle" onclick="toggleNewParty('buyer')"><i class="ri-user-add-line"></i> Add New Buyer</button>
+                    </div>
+                    <input type="hidden" name="buyer_party_id" id="buyer_party_id" value="<?= clean($preselectedTokenSummary['party_id'] ?? '') ?>">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="buyer-picker-trigger" onclick="openEntityPicker('buyer', this)">
+                        <span><?= clean($preselectedTokenSummary['party_name'] ?? 'Select existing buyer / customer') ?></span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-row" id="buyer-new-fields" style="display:none;margin-top:12px;">
+                        <div class="form-group"><label class="form-label">New Buyer / Company Name *</label><input type="text" name="buyer_name" class="form-control" placeholder="Full name or company name"></div>
+                        <div class="form-group"><label class="form-label">Phone</label><input type="text" name="buyer_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                    </div>
+                    <div class="token-context" id="token-context" <?= floatval($preselectedTokenSummary['available'] ?? 0) > 0 ? '' : 'hidden' ?>>
+                        <i class="ri-information-line"></i>
+                        Available token for this car: <strong id="token-context-amount"><?= formatAmount($preselectedTokenSummary['available'] ?? 0) ?></strong>
+                        <span id="token-context-party"><?= !empty($preselectedTokenSummary['party_name']) ? 'from ' . clean($preselectedTokenSummary['party_name']) : '' ?></span>
                     </div>
                 </div>
             </div>
@@ -752,22 +786,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Buyer Name</label>
-                        <input type="text" name="buyer_name" class="form-control" placeholder="Buyer's full name">
-                    </div>
-                    <div class="form-group">
                         <label class="form-label">Amount Received Now (₹)</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
                             <input type="text" name="amount_received" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
                         </div>
-                        <div class="form-hint">Leave blank to receive full car amount + commission now.</div>
+                        <div class="form-hint">Leave blank to receive the remaining amount after any token already held for this car.</div>
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Buyer Images</label>
                     <input type="file" name="buyer_images[]" class="form-control" accept="image/*" multiple>
                     <div class="form-hint">Optional. Upload buyer-side delivery or party photos.</div>
+                </div>
+            </div>
+
+            <div class="txn-section" id="token-section" style="display:none;">
+                <div class="alert alert-info token-accounting-note">
+                    <i class="ri-shield-check-line"></i>
+                    <div><strong>This is a buyer advance, not income.</strong><span>It stays in Customer Token Advances and will be adjusted automatically when this car is sold.</span></div>
                 </div>
             </div>
 
@@ -834,11 +871,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- PARTY NAME SECTION (new debtor/creditor) -->
-            <div class="txn-section" id="party-name-section" style="display:none;">
-                <div class="form-group">
-                    <label class="form-label">Person / Company Name *</label>
-                    <input type="text" name="party_name" class="form-control" placeholder="Full name of person or company">
+            <!-- COUNTERPARTY SECTION (existing or new debtor/creditor) -->
+            <div class="txn-section" id="counterparty-section" style="display:none;">
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong id="counterparty-heading">Person / Company *</strong><span id="counterparty-help">The correct ledger account will be used automatically.</span></div>
+                        <button type="button" class="btn btn-outline btn-sm" id="counterparty-new-toggle" onclick="toggleNewParty('counterparty')"><i class="ri-user-add-line"></i> Add New</button>
+                    </div>
+                    <input type="hidden" name="counterparty_id" id="counterparty_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="counterparty-picker-trigger" onclick="openCounterpartyPicker(this)">
+                        <span>Select existing person / company</span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-row" id="counterparty-new-fields" style="display:none;margin-top:12px;">
+                        <div class="form-group"><label class="form-label">New Person / Company Name *</label><input type="text" name="party_name" class="form-control" placeholder="Full name or company name"></div>
+                        <div class="form-group"><label class="form-label">Phone</label><input type="text" name="party_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1215,6 +1263,27 @@ const entityPickerConfig = {
         triggerId: 'creditor-picker-trigger',
         emptyLabel: 'Select creditor / seller',
     },
+    buyer: {
+        title: 'Select Buyer / Customer',
+        subtitle: 'Search existing buyer and debtor ledgers by name or phone.',
+        inputId: 'buyer_party_id',
+        triggerId: 'buyer-picker-trigger',
+        emptyLabel: 'Select existing buyer / customer',
+    },
+    counterparty_debtor: {
+        title: 'Select Person / Company',
+        subtitle: 'Select who will owe money to the business.',
+        inputId: 'counterparty_id',
+        triggerId: 'counterparty-picker-trigger',
+        emptyLabel: 'Select existing person / company',
+    },
+    counterparty_creditor: {
+        title: 'Select Person / Company',
+        subtitle: 'Select who the business is borrowing from.',
+        inputId: 'counterparty_id',
+        triggerId: 'counterparty-picker-trigger',
+        emptyLabel: 'Select existing person / company',
+    },
 };
 
 const preselectedExpenseCarId = <?= json_encode($preselectedType === 'CAR_EXPENSE' ? $preselectedCarId : '') ?>;
@@ -1308,6 +1377,42 @@ function toggleQuickCarPartner() {
     button.innerHTML = opening
         ? '<i class="ri-close-line"></i> Use Existing Partner'
         : '<i class="ri-user-add-line"></i> Create New Partner';
+}
+
+function openCounterpartyPicker(button) {
+    const type = document.getElementById('transaction_type')?.value || '';
+    openEntityPicker(type === 'LOAN_TAKEN' ? 'counterparty_creditor' : 'counterparty_debtor', button);
+}
+
+function toggleNewParty(scope) {
+    const isBuyer = scope === 'buyer';
+    const fields = document.getElementById(isBuyer ? 'buyer-new-fields' : 'counterparty-new-fields');
+    const trigger = document.getElementById(isBuyer ? 'buyer-picker-trigger' : 'counterparty-picker-trigger');
+    const hidden = document.getElementById(isBuyer ? 'buyer_party_id' : 'counterparty_id');
+    const toggle = document.getElementById(isBuyer ? 'buyer-new-toggle' : 'counterparty-new-toggle');
+    if (!fields || !trigger || !hidden || !toggle) return;
+    const opening = fields.style.display === 'none';
+    fields.style.display = opening ? 'flex' : 'none';
+    trigger.style.display = opening ? 'none' : '';
+    if (opening) {
+        hidden.value = '';
+        fields.querySelector('input[type="text"]')?.focus();
+    } else {
+        fields.querySelectorAll('input').forEach((input) => input.value = '');
+    }
+    toggle.innerHTML = opening
+        ? '<i class="ri-search-line"></i> Select Existing'
+        : `<i class="ri-user-add-line"></i> ${isBuyer ? 'Add New Buyer' : 'Add New'}`;
+}
+
+function syncCounterpartyUi() {
+    const type = document.getElementById('transaction_type')?.value || '';
+    const heading = document.getElementById('counterparty-heading');
+    const help = document.getElementById('counterparty-help');
+    if (heading) heading.textContent = type === 'LOAN_TAKEN' ? 'Lender / Company *' : 'Person / Company Receiving Money *';
+    if (help) help.textContent = type === 'LOAN_TAKEN'
+        ? 'The creditor ledger will be selected or created automatically.'
+        : 'The debtor ledger will be selected or created automatically.';
 }
 
 // Show/hide debtor vs creditor select
@@ -1698,7 +1803,7 @@ async function renderEntityPickerResults(query) {
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}">
+            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>
@@ -1713,7 +1818,8 @@ async function renderEntityPickerResults(query) {
                     this.dataset.entityId,
                     decodeURIComponent(this.dataset.entityLabel || ''),
                     this.dataset.linkedPartyId || '',
-                    decodeURIComponent(this.dataset.linkedPartyLabel || '')
+                    decodeURIComponent(this.dataset.linkedPartyLabel || ''),
+                    this.dataset.tokenAvailable || '0'
                 );
             });
         });
@@ -1739,7 +1845,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
     }
 }
 
-function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '') {
+function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0') {
     const triggerButton = activeEntityPicker?.button || null;
     if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
@@ -1765,7 +1871,29 @@ function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPart
         if (span) span.textContent = label || config.emptyLabel;
     }
     applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel);
+    if (kind === 'car') {
+        applyCarTokenContext(linkedPartyId, linkedPartyLabel, tokenAvailable);
+    }
     closeModal('entity-picker-modal');
+}
+
+function applyCarTokenContext(partyId, partyLabel, available) {
+    const amount = parseNumericString(available);
+    const context = document.getElementById('token-context');
+    const amountNode = document.getElementById('token-context-amount');
+    const partyNode = document.getElementById('token-context-party');
+    if (context) context.hidden = amount <= 0;
+    if (amountNode) amountNode.textContent = formatINR(amount);
+    if (partyNode) partyNode.textContent = partyLabel ? `from ${partyLabel}` : '';
+    if (partyId) {
+        const buyerInput = document.getElementById('buyer_party_id');
+        const buyerTrigger = document.getElementById('buyer-picker-trigger');
+        if (buyerInput) buyerInput.value = partyId;
+        if (buyerTrigger?.querySelector('span')) buyerTrigger.querySelector('span').textContent = partyLabel || 'Selected token buyer';
+        const newFields = document.getElementById('buyer-new-fields');
+        if (newFields) newFields.style.display = 'none';
+        if (buyerTrigger) buyerTrigger.style.display = '';
+    }
 }
 
 function syncCarClearingUi() {
@@ -1823,6 +1951,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(syncDynamicCategoryEntryState, 0);
         setTimeout(syncSaleAmountUi, 0);
         setTimeout(syncCarClearingUi, 0);
+        setTimeout(syncCounterpartyUi, 0);
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
@@ -1837,6 +1966,7 @@ document.addEventListener('DOMContentLoaded', function() {
     filterPrimaryPaymentAccounts(document.getElementById('transaction_type')?.value || '');
     syncSaleAmountUi();
     syncCarClearingUi();
+    syncCounterpartyUi();
 });
 
 async function renderAccountPickerResults(query) {

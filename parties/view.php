@@ -60,6 +60,18 @@ $ledger = $db->fetchAll(
     "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status='POSTED' ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
+$partyTokens = $db->fetchAll(
+    "SELECT ct.*, c.registration_no, je.reference_no
+     FROM car_tokens ct
+     JOIN cars c ON c.id = ct.car_id
+     LEFT JOIN journal_entries je ON je.id = ct.journal_entry_id
+     WHERE ct.business_id = ? AND ct.party_id = ?
+     ORDER BY ct.received_date DESC, ct.created_at DESC",
+    [$businessId, $id]
+);
+$tokenAvailable = round(array_sum(array_map(static function ($token) {
+    return $token['status'] === 'REVERSED' ? 0 : max(0, floatval($token['amount']) - floatval($token['applied_amount']));
+}, $partyTokens)), 2);
 ?>
 
 <div class="page-header">
@@ -104,7 +116,27 @@ $ledger = $db->fetchAll(
     <div class="stat-card"><div class="stat-value"><?= formatAmount($openOutstanding) ?></div><div class="stat-label">Open Outstanding</div></div>
     <div class="stat-card"><div class="stat-value"><?= clean($party['phone'] ?: 'N/A') ?></div><div class="stat-label">Contact</div></div>
     <div class="stat-card"><div class="stat-value"><?= count($openItems) ?></div><div class="stat-label">Open Items</div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($tokenAvailable) ?></div><div class="stat-label">Car Token Held</div></div>
 </div>
+
+<?php if (!empty($partyTokens)): ?>
+<div class="card">
+    <div class="card-header"><h3><i class="ri-hand-coin-line"></i> Car Tokens</h3></div>
+    <div class="card-body card-body-flush">
+        <table>
+            <thead><tr><th>Date</th><th>Car</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Available</th><th>Status</th></tr></thead>
+            <tbody><?php foreach ($partyTokens as $token): ?><tr>
+                <td><?= formatDate($token['received_date']) ?></td>
+                <td><a href="../cars/view.php?id=<?= urlencode($token['car_id']) ?>"><?= clean(formatRegistrationNo($token['registration_no'])) ?></a></td>
+                <td><a href="../transactions/view.php?id=<?= urlencode($token['journal_entry_id']) ?>"><?= clean($token['reference_no'] ?: 'View') ?></a></td>
+                <td class="text-right amount flow-in"><?= formatAmount($token['amount']) ?></td>
+                <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']))) ?></td>
+                <td><span class="badge <?= $token['status'] === 'APPLIED' ? 'badge-green' : ($token['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($token['status']) ?></span></td>
+            </tr><?php endforeach; ?></tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="card">
     <div class="card-header"><h3>Open Items</h3></div>

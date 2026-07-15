@@ -74,7 +74,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show relevant sections
             const sectionMap = {
                 'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
-                'CAR_SALE': ['car-select-section', 'buyer-section'],
+                'CAR_TOKEN_RECEIVED': ['car-select-section', 'buyer-identity-section', 'token-section'],
+                'CAR_SALE': ['car-select-section', 'buyer-identity-section', 'buyer-section'],
                 'CAR_EXPENSE': ['car-select-section', 'category-section'],
                 'RTO_EXPENSE': ['rto-section'],
                 'RTO_RECOVERY': ['rto-section'],
@@ -84,9 +85,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 'PARTNER_WITHDRAW': ['partner-section'],
                 'SALARY_PAYMENT': ['employee-section', 'salary-section'],
                 'EMPLOYEE_ADVANCE': ['employee-section'],
-                'LOAN_GIVEN': ['party-name-section'],
+                'LOAN_GIVEN': ['counterparty-section'],
                 'LOAN_RECEIVED': ['party-select-section'],
-                'LOAN_TAKEN': ['party-name-section'],
+                'LOAN_TAKEN': ['counterparty-section'],
                 'LOAN_REPAID': ['party-select-section'],
                 'CONTRA_TRANSFER': ['contra-section'],
             };
@@ -108,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 filterPrimaryPaymentAccounts(type);
             }
             if (pLabel) {
-                const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED'];
+                const inTypes = ['PARTNER_INVEST', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'CAR_TOKEN_RECEIVED'];
                 if (type === 'JOURNAL_VOUCHER') {
                     pLabel.textContent = 'Cash / Bank account';
                 } else if (type === 'CAR_SALE') {

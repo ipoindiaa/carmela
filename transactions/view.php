@@ -20,11 +20,13 @@ $canEditEntry = Auth::canAccessTransactionEntry($id, $businessId, 'write');
 
 $entry = $db->fetch(
     "SELECT je.*, u.full_name as created_by_name, c.registration_no as car_reg, p.name as partner_name, e.name as employee_name,
+            dc.name AS party_name, dc.type AS party_type, dc.phone AS party_phone,
             jv.reference_no as voucher_reference_no, previous.reference_no AS corrected_from_reference,
             replacement.reference_no AS corrected_by_reference, reversal.reference_no AS reversal_reference,
             original.reference_no AS original_reference
      FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by
      LEFT JOIN cars c ON c.id = je.car_id LEFT JOIN partners p ON p.id = je.partner_id LEFT JOIN employees e ON e.id = je.employee_id
+     LEFT JOIN debtors_creditors dc ON dc.id = je.party_id AND dc.business_id = je.business_id
      LEFT JOIN journal_vouchers jv ON jv.id = je.journal_voucher_id
      LEFT JOIN journal_entries previous ON previous.id = je.corrected_from_id
      LEFT JOIN journal_entries replacement ON replacement.id = je.corrected_by_id
@@ -35,6 +37,13 @@ $entry = $db->fetch(
 if (!$entry) { setFlash('error', 'Entry not found.'); redirect('list.php'); }
 
 $voucherDetails = !empty($entry['journal_voucher_id']) ? $engine->getJournalVoucherDetails($entry['journal_voucher_id']) : null;
+$tokenRecord = $entry['transaction_type'] === 'CAR_TOKEN_RECEIVED' ? $db->fetch(
+    "SELECT ct.*, sale.reference_no AS sale_reference
+     FROM car_tokens ct
+     LEFT JOIN journal_entries sale ON sale.id = ct.applied_sale_entry_id
+     WHERE ct.business_id = ? AND ct.journal_entry_id = ?",
+    [$businessId, $id]
+) : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_vouchers') {
     verifyCsrf();
@@ -134,7 +143,13 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 	                <tr><td class="text-muted" style="padding: 8px 0;">Created By</td><td><?= clean($entry['created_by_name']) ?></td></tr>
 	                <tr><td class="text-muted" style="padding: 8px 0;">Created At</td><td><?= renderDateTimeStack($entry['created_at'], $entry['created_at']) ?></td></tr>
 	                <?php if (!empty($entry['journal_voucher_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Voucher</td><td><a href="../reports/jv_register.php"><?= clean($entry['voucher_reference_no'] ?: $entry['journal_voucher_id']) ?></a></td></tr><?php endif; ?>
-	                <?php if ($entry['car_reg']): ?><tr><td class="text-muted" style="padding: 8px 0;">Car</td><td><a href="../cars/view.php?id=<?= $entry['car_id'] ?>"><?= formatRegistrationNo($entry['car_reg']) ?></a></td></tr><?php endif; ?>
+		                <?php if ($entry['car_reg']): ?><tr><td class="text-muted" style="padding: 8px 0;">Car</td><td><a href="../cars/view.php?id=<?= $entry['car_id'] ?>"><?= formatRegistrationNo($entry['car_reg']) ?></a></td></tr><?php endif; ?>
+                <?php if ($entry['party_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Person / Company</td><td><a href="../parties/view.php?id=<?= urlencode($entry['party_id']) ?>"><?= clean($entry['party_name']) ?></a> <span class="badge badge-gray"><?= clean($entry['party_type']) ?></span></td></tr><?php endif; ?>
+                <?php if ($tokenRecord): ?>
+                    <tr><td class="text-muted" style="padding: 8px 0;">Token Status</td><td><span class="badge <?= $tokenRecord['status'] === 'APPLIED' ? 'badge-green' : ($tokenRecord['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($tokenRecord['status']) ?></span></td></tr>
+                    <tr><td class="text-muted" style="padding: 8px 0;">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']))) ?></td></tr>
+                    <?php if (!empty($tokenRecord['applied_sale_entry_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Adjusted In Sale</td><td><a href="view.php?id=<?= urlencode($tokenRecord['applied_sale_entry_id']) ?>"><?= clean($tokenRecord['sale_reference'] ?: 'View sale entry') ?></a></td></tr><?php endif; ?>
+                <?php endif; ?>
                 <?php if ($entry['partner_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Partner</td><td><?= clean($entry['partner_name']) ?></td></tr><?php endif; ?>
                 <?php if ($entry['employee_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Employee</td><td><?= clean($entry['employee_name']) ?></td></tr><?php endif; ?>
             </table>

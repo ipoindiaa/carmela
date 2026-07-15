@@ -1606,6 +1606,60 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     gap: 12px;
 }
 
+.form-row.car-picker-field-row {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.entry-relation-panel {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #ffffff;
+}
+
+.entry-relation-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.entry-relation-heading > div {
+    display: grid;
+    gap: 3px;
+}
+
+.entry-relation-heading span,
+.token-accounting-note span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.token-context {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(22, 163, 74, 0.08);
+    color: var(--accent-green);
+    font-size: 13px;
+}
+
+.token-context[hidden] {
+    display: none;
+}
+
+.token-accounting-note {
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0;
+}
+
 .native-transaction-select {
     position: absolute;
     width: 1px;
@@ -3983,6 +4037,10 @@ html.js .pagination.no-js-pagination { display: none; }
     }
     .entry-form {
         padding: 12px;
+    }
+    .entry-relation-heading {
+        align-items: stretch;
+        flex-direction: column;
     }
     .entry-form-actions {
         flex-direction: column;
