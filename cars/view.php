@@ -155,29 +155,8 @@ $keyEvents = $db->fetchAll(
 );
 $tokenSummary = $engine->getCarTokenSummary($id);
 
-// Full car timeline, including payment-clearing entries linked to this car.
-$ledger = $db->fetchAll(
-    "SELECT
-        je.id AS entry_id,
-        je.entry_date,
-        je.created_at,
-        je.reference_no,
-        je.narration,
-        je.transaction_type,
-        MAX(CASE WHEN jl.account_id = ? THEN jl.amount END) AS car_line_amount,
-        MAX(CASE WHEN jl.account_id = ? THEN jl.entry_type END) AS car_line_type,
-        COALESCE(SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS cash_in_amount,
-        COALESCE(SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cash_out_amount
-     FROM journal_entries je
-     JOIN journal_lines jl ON jl.journal_entry_id = je.id
-     JOIN accounts a ON a.id = jl.account_id
-     WHERE je.business_id = ?
-       AND je.status = 'POSTED'
-       AND je.car_id = ?
-     GROUP BY je.id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type
-     ORDER BY je.entry_date DESC, je.created_at DESC",
-    [$car['account_id'], $car['account_id'], $businessId, $id]
-);
+// Includes direct car entries and the car's exact allocation from multi-account bills.
+$ledger = $engine->getCarTimeline($id);
 
 // Current per-car partner terms, including partners with profit share but no cash contribution.
 $contributions = $db->fetchAll(
@@ -563,11 +542,12 @@ function removeFundingEditRow(button) {
 <div class="card" style="margin-top: 24px;">
     <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Timeline</h3></div>
     <div class="card-body" style="padding: 0;">
+        <div class="table-container">
         <table>
-            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Money In / Debit</th><th class="text-right credit-amount">Money Out / Credit</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
-                    <tr><td colspan="6" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
                 <?php else: ?>
                     <?php foreach ($ledger as $l):
                         $displayDebit = '';
@@ -590,9 +570,34 @@ function removeFundingEditRow(button) {
                     ?>
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
-                        <td><a href="../transactions/view.php?id=<?= $l['entry_id'] ?>"><?= $l['reference_no'] ?></a></td>
+                        <td><a href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td>
                         <td><span class="badge badge-blue" style="font-size: 10px;"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
-                        <td><?= clean(mb_substr($l['narration'] ?? '', 0, 50)) ?></td>
+                        <td>
+                            <div><?= clean(mb_substr($l['narration'] ?? '', 0, 90)) ?></div>
+                            <?php if (!empty($l['voucher_id'])): ?>
+                                <div class="text-muted" style="font-size:12px;margin-top:5px;line-height:1.45;">
+                                    <i class="ri-bill-line"></i>
+                                    <strong><?= clean($l['voucher_reference_no']) ?></strong>
+                                    &middot; This car: <?= formatAmount($l['voucher_allocation_amount']) ?>
+                                    of <?= formatAmount($l['voucher_total']) ?> bill
+                                    <?php if (intval($l['allocation_line_count'] ?? 0) > 1): ?>
+                                        &middot; <?= intval($l['allocation_line_count']) ?> lines
+                                    <?php endif; ?>
+                                </div>
+                                <?php if (!empty($l['voucher_allocation_note'])): ?>
+                                    <div class="text-muted" style="font-size:12px;margin-top:3px;"><?= clean($l['voucher_allocation_note']) ?></div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($l['is_reversal'])): ?>
+                                <span class="badge badge-yellow">Reversal</span>
+                            <?php elseif ($l['status'] === 'REVERSED'): ?>
+                                <span class="badge badge-red">Reversed</span>
+                            <?php else: ?>
+                                <span class="badge badge-green">Posted</span>
+                            <?php endif; ?>
+                        </td>
                         <td class="text-right amount debit-amount"><?= $displayDebit ?></td>
                         <td class="text-right amount credit-amount"><?= $displayCredit ?></td>
                     </tr>
@@ -600,6 +605,7 @@ function removeFundingEditRow(button) {
                 <?php endif; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 

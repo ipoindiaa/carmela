@@ -123,8 +123,10 @@ CREATE TABLE `journal_lines` (
     `amount` DECIMAL(15,2) NOT NULL,
     `entry_type` ENUM('DR','CR') NOT NULL,
     `narration` VARCHAR(500) DEFAULT NULL,
+    `source_voucher_line_id` CHAR(36) DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_account` (`account_id`),
+    KEY `idx_jl_source_voucher_line` (`source_voucher_line_id`),
     CONSTRAINT `fk_jl_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries`(`id`),
     CONSTRAINT `fk_jl_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -627,9 +629,12 @@ CREATE TABLE `journal_voucher_lines` (
     `amount` DECIMAL(15,2) NOT NULL,
     `entry_type` ENUM('DR','CR') NOT NULL,
     `narration` VARCHAR(500) DEFAULT NULL,
+    `entity_type` VARCHAR(30) DEFAULT NULL,
+    `entity_id` CHAR(36) DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_jvl_voucher` (`journal_voucher_id`),
     KEY `idx_jvl_account` (`account_id`),
+    KEY `idx_jvl_entity` (`entity_type`, `entity_id`),
     CONSTRAINT `fk_jvl_voucher` FOREIGN KEY (`journal_voucher_id`) REFERENCES `journal_vouchers`(`id`),
     CONSTRAINT `fk_jvl_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -31,19 +31,40 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Bill Ref</th><th>Date / Time</th><th>Bill Type</th><th>Main Book</th><th class="text-right">Amount</th><th>Status</th><th>Daily Entry</th><th>Narration</th></tr></thead>
+        <thead><tr><th>Bill Ref</th><th>Date / Time</th><th>Bill Type</th><th>Main Book</th><th>Car Allocations</th><th class="text-right">Amount</th><th>Status</th><th>Daily Entry</th><th>Narration</th></tr></thead>
         <tbody>
             <?php if (empty($vouchers)): ?>
-                <tr><td colspan="8" class="text-center text-muted" style="padding: 32px;">No journal vouchers found for this period.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted" style="padding: 32px;">No large bills found for this period.</td></tr>
             <?php else: ?>
                 <?php foreach ($vouchers as $voucher): ?>
                     <tr>
-                        <td class="text-bold"><?= clean($voucher['reference_no']) ?></td>
+                        <td class="text-bold">
+                            <?php if (!empty($voucher['posted_entry_id'])): ?>
+                                <a href="../transactions/view.php?id=<?= urlencode($voucher['posted_entry_id']) ?>"><?= clean($voucher['reference_no']) ?></a>
+                            <?php else: ?>
+                                <?= clean($voucher['reference_no']) ?>
+                            <?php endif; ?>
+                        </td>
                         <td><?= renderDateTimeStack($voucher['voucher_date'], $voucher['created_at'] ?? null) ?></td>
                         <td><?= clean($voucher['voucher_type']) ?></td>
                         <td><?= clean($voucher['primary_account_name']) ?> <span class="dr-cr-pill <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= $voucher['primary_entry_type'] ?></span></td>
+                        <td style="min-width:210px;">
+                            <?php if (empty($voucher['car_allocations'])): ?>
+                                <span class="text-muted">No car allocation</span>
+                            <?php else: ?>
+                                <?php foreach (explode('|||', $voucher['car_allocations']) as $allocationString):
+                                    $allocationParts = explode(':::', $allocationString);
+                                    if (count($allocationParts) < 3) continue;
+                                ?>
+                                    <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:4px;">
+                                        <a href="../cars/view.php?id=<?= urlencode($allocationParts[0]) ?>"><?= clean(formatRegistrationNo($allocationParts[1])) ?></a>
+                                        <span class="amount"><?= formatAmount($allocationParts[2]) ?></span>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </td>
                         <td class="text-right amount <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($voucher['primary_amount']) ?></td>
-                        <td><span class="badge <?= $voucher['status'] === 'POSTED' ? 'badge-green' : 'badge-gray' ?>"><?= clean($voucher['status']) ?></span></td>
+                        <td><span class="badge <?= $voucher['status'] === 'POSTED' ? 'badge-green' : ($voucher['status'] === 'REVERSED' ? 'badge-red' : 'badge-gray') ?>"><?= clean($voucher['status']) ?></span></td>
                         <td>
                             <?php if (!empty($voucher['posted_entry_id'])): ?>
                                 <a href="../transactions/view.php?id=<?= $voucher['posted_entry_id'] ?>"><?= clean($voucher['posted_reference_no']) ?></a>

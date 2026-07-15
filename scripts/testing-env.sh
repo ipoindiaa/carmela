@@ -61,11 +61,11 @@ reset_database() {
         -e '/^USE `autobooks_pro`;/d' \
         database/schema.sql | mysql "${MYSQL_ARGS[@]}" "$TEST_DB_NAME"
 
-    local setup_args=()
     if [ "${1:-demo}" != "empty" ]; then
-        setup_args+=(--with-demo)
+        php database/setup_testing.php --with-demo
+    else
+        php database/setup_testing.php
     fi
-    php database/setup_testing.php "${setup_args[@]}"
 }
 
 show_status() {

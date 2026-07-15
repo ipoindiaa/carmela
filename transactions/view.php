@@ -115,7 +115,11 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                     <?php foreach ($voucherDetails['lines'] as $allocation): ?>
                         <tr>
                             <td class="text-bold">
-                                <?= !empty($allocation['car_reg']) ? clean(formatRegistrationNo($allocation['car_reg'])) . ' — ' : '' ?>
+                                <?php if (!empty($allocation['car_id'])): ?>
+                                    <a href="../cars/view.php?id=<?= urlencode($allocation['car_id']) ?>"><?= clean(formatRegistrationNo($allocation['car_reg'])) ?></a> &mdash;
+                                <?php elseif (!empty($allocation['car_reg'])): ?>
+                                    <?= clean(formatRegistrationNo($allocation['car_reg'])) ?> &mdash;
+                                <?php endif; ?>
                                 <?= clean($allocation['account_name']) ?>
                             </td>
                             <td class="text-muted"><?= clean($allocation['group_name'] . (!empty($allocation['sub_group']) ? ' / ' . $allocation['sub_group'] : '')) ?></td>

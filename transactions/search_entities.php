@@ -25,32 +25,47 @@ $results = [];
 switch ($kind) {
     case 'account':
         $rows = $db->fetchAll(
-            "SELECT id, code, name, group_name, sub_group, entity_type
-             FROM accounts
-             WHERE business_id = ?
-               AND is_active = 1
+            "SELECT a.id, a.code, a.name, a.group_name, a.sub_group, a.entity_type, a.entity_id,
+                    c.id AS car_id, c.registration_no AS car_reg, c.status AS car_status
+             FROM accounts a
+             LEFT JOIN cars c
+               ON c.business_id = a.business_id
+              AND (c.id = a.entity_id OR c.account_id = a.id)
+             WHERE a.business_id = ?
+               AND a.is_active = 1
                AND (
-                   code LIKE ?
-                   OR name LIKE ?
-                   OR group_name LIKE ?
-                   OR sub_group LIKE ?
-                   OR entity_type LIKE ?
+                   a.code LIKE ?
+                   OR a.name LIKE ?
+                   OR a.group_name LIKE ?
+                   OR a.sub_group LIKE ?
+                   OR a.entity_type LIKE ?
+                   OR c.registration_no LIKE ?
                )
              ORDER BY
                CASE
-                 WHEN code LIKE ? THEN 0
-                 WHEN name LIKE ? THEN 1
+                 WHEN c.registration_no LIKE ? THEN 0
+                 WHEN a.code LIKE ? THEN 1
+                 WHEN a.name LIKE ? THEN 2
                  ELSE 2
                END,
-               group_name, sub_group, code, name
+               a.group_name, a.sub_group, a.code, a.name
              LIMIT $limit",
-            [$businessId, $needle, $needle, $needle, $needle, $needle, $prefix, $prefix]
+            [$businessId, $needle, $needle, $needle, $needle, $needle, $needle, $prefix, $prefix, $prefix]
         );
         foreach ($rows as $row) {
+            $isCarAccount = !empty($row['car_id']);
+            $label = $isCarAccount
+                ? formatRegistrationNo($row['car_reg']) . ' — Car cost account'
+                : formatAllRegistrationNosInString(trim(($row['code'] ?: '') . ' — ' . ($row['name'] ?: ''), ' —'));
+            $meta = $isCarAccount
+                ? 'Adds this split amount to the car timeline and total cost | ' . str_replace('_', ' ', $row['car_status'])
+                : trim(($row['group_name'] ?: 'General') . (!empty($row['sub_group']) ? ' / ' . $row['sub_group'] : '') . (!empty($row['entity_type']) ? ' | ' . $row['entity_type'] : ''));
             $results[] = [
                 'id' => $row['id'],
-                'label' => formatAllRegistrationNosInString(trim(($row['code'] ?: '') . ' — ' . ($row['name'] ?: ''), ' —')),
-                'meta' => trim(($row['group_name'] ?: 'General') . (!empty($row['sub_group']) ? ' / ' . $row['sub_group'] : '') . (!empty($row['entity_type']) ? ' | ' . $row['entity_type'] : '')),
+                'label' => $label,
+                'meta' => $meta,
+                'entity_type' => $isCarAccount ? 'CAR' : $row['entity_type'],
+                'entity_id' => $isCarAccount ? $row['car_id'] : $row['entity_id'],
             ];
         }
         break;

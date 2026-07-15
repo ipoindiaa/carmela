@@ -294,9 +294,12 @@ class AccountingEngine {
                     `amount` DECIMAL(15,2) NOT NULL,
                     `entry_type` ENUM('DR','CR') NOT NULL,
                     `narration` VARCHAR(500) DEFAULT NULL,
+                    `entity_type` VARCHAR(30) DEFAULT NULL,
+                    `entity_id` CHAR(36) DEFAULT NULL,
                     PRIMARY KEY (`id`),
                     KEY `idx_jvl_voucher` (`journal_voucher_id`),
-                    KEY `idx_jvl_account` (`account_id`)
+                    KEY `idx_jvl_account` (`account_id`),
+                    KEY `idx_jvl_entity` (`entity_type`, `entity_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
 
@@ -429,6 +432,38 @@ class AccountingEngine {
             if (!$this->columnExists('journal_entries', 'journal_voucher_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `journal_voucher_id` CHAR(36) DEFAULT NULL AFTER `party_id`");
             }
+            if (!$this->columnExists('journal_voucher_lines', 'entity_type')) {
+                $this->db->query("ALTER TABLE `journal_voucher_lines` ADD COLUMN `entity_type` VARCHAR(30) DEFAULT NULL AFTER `narration`");
+            }
+            if (!$this->columnExists('journal_voucher_lines', 'entity_id')) {
+                $this->db->query("ALTER TABLE `journal_voucher_lines` ADD COLUMN `entity_id` CHAR(36) DEFAULT NULL AFTER `entity_type`");
+            }
+            if (!$this->columnExists('journal_lines', 'source_voucher_line_id')) {
+                $this->db->query("ALTER TABLE `journal_lines` ADD COLUMN `source_voucher_line_id` CHAR(36) DEFAULT NULL AFTER `narration`");
+            }
+            $this->addIndexIfMissing('journal_voucher_lines', 'idx_jvl_entity', '`entity_type`, `entity_id`');
+            $this->addIndexIfMissing('journal_lines', 'idx_jl_source_voucher_line', '`source_voucher_line_id`');
+            $this->db->query(
+                "UPDATE journal_voucher_lines jvl
+                 JOIN accounts a ON a.id = jvl.account_id
+                 SET jvl.entity_type = a.entity_type,
+                     jvl.entity_id = a.entity_id
+                 WHERE jvl.entity_type IS NULL
+                    OR jvl.entity_type = ''
+                    OR jvl.entity_id IS NULL"
+            );
+            $this->db->query(
+                "UPDATE journal_entries je
+                 JOIN (
+                     SELECT jl.journal_entry_id, MIN(c.id) AS car_id
+                     FROM journal_lines jl
+                     JOIN cars c ON c.account_id = jl.account_id
+                     GROUP BY jl.journal_entry_id
+                     HAVING COUNT(DISTINCT c.id) = 1
+                 ) linked_car ON linked_car.journal_entry_id = je.id
+                 SET je.car_id = linked_car.car_id
+                 WHERE je.car_id IS NULL"
+            );
             if (!$this->columnExists('journal_entries', 'corrected_from_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `corrected_from_id` CHAR(36) DEFAULT NULL AFTER `journal_voucher_id`");
             }
@@ -667,6 +702,63 @@ class AccountingEngine {
         }
     }
 
+    private function inferEntryEntitiesFromLines($lines) {
+        $accountIds = array_values(array_unique(array_filter(array_column((array) $lines, 'account_id'))));
+        if (empty($accountIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($accountIds), '?'));
+        $rows = $this->db->fetchAll(
+            "SELECT a.id, MAX(a.entity_type) AS entity_type, MAX(a.entity_id) AS entity_id, MAX(c.id) AS linked_car_id
+             FROM accounts a
+             LEFT JOIN cars c
+               ON c.business_id = a.business_id
+              AND (c.id = a.entity_id OR c.account_id = a.id)
+             WHERE a.business_id = ?
+               AND a.id IN ($placeholders)
+             GROUP BY a.id",
+            array_merge([$this->businessId], $accountIds)
+        );
+        if (count($rows) !== count($accountIds)) {
+            throw new Exception('Every journal line account must belong to the active business.');
+        }
+
+        $entitySets = [
+            'car_id' => [],
+            'partner_id' => [],
+            'employee_id' => [],
+            'party_id' => [],
+        ];
+        foreach ($rows as $row) {
+            $entityType = strtoupper(trim((string) ($row['entity_type'] ?? '')));
+            $entityId = $row['entity_id'] ?: null;
+            if (!empty($row['linked_car_id'])) {
+                $entityType = 'CAR';
+                $entityId = $row['linked_car_id'];
+            }
+            if (!$entityId) continue;
+
+            if ($entityType === 'CAR') {
+                $entitySets['car_id'][$entityId] = true;
+            } elseif ($entityType === 'PARTNER') {
+                $entitySets['partner_id'][$entityId] = true;
+            } elseif ($entityType === 'EMPLOYEE') {
+                $entitySets['employee_id'][$entityId] = true;
+            } elseif (in_array($entityType, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER'], true)) {
+                $entitySets['party_id'][$entityId] = true;
+            }
+        }
+
+        $inferred = [];
+        foreach ($entitySets as $field => $ids) {
+            if (count($ids) === 1) {
+                $inferred[$field] = array_key_first($ids);
+            }
+        }
+        return $inferred;
+    }
+
     // ========================================
     // CORE: Post a journal entry with balanced Dr/Cr lines
     // ========================================
@@ -692,6 +784,8 @@ class AccountingEngine {
             throw new Exception("Journal entry is not balanced! Dr: $totalDr, Cr: $totalCr");
         }
 
+        $inferredEntities = $this->inferEntryEntitiesFromLines($lines);
+
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) {
             $this->db->beginTransaction();
@@ -712,10 +806,10 @@ class AccountingEngine {
                 'status' => 'POSTED',
                 'created_by' => $this->userId,
                 'financial_year' => $fy,
-                'car_id' => $extras['car_id'] ?? null,
-                'partner_id' => $extras['partner_id'] ?? null,
-                'employee_id' => $extras['employee_id'] ?? null,
-                'party_id' => $extras['party_id'] ?? null,
+                'car_id' => $extras['car_id'] ?? ($inferredEntities['car_id'] ?? null),
+                'partner_id' => $extras['partner_id'] ?? ($inferredEntities['partner_id'] ?? null),
+                'employee_id' => $extras['employee_id'] ?? ($inferredEntities['employee_id'] ?? null),
+                'party_id' => $extras['party_id'] ?? ($inferredEntities['party_id'] ?? null),
                 'journal_voucher_id' => $extras['journal_voucher_id'] ?? null,
             ];
 
@@ -730,6 +824,7 @@ class AccountingEngine {
                     'amount' => $line['amount'],
                     'entry_type' => $line['type'],
                     'narration' => $line['narration'] ?? null,
+                    'source_voucher_line_id' => $line['source_voucher_line_id'] ?? null,
                 ]);
                 $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
             }
@@ -2642,6 +2737,7 @@ class AccountingEngine {
                 'amount' => $line['amount'],
                 'type' => $line['entry_type'] === 'DR' ? 'CR' : 'DR',
                 'narration' => 'Reversal: ' . ($line['narration'] ?? ''),
+                'source_voucher_line_id' => $line['source_voucher_line_id'] ?? null,
             ];
         }
 
@@ -2677,6 +2773,7 @@ class AccountingEngine {
                 'amount' => $line['amount'],
                 'entry_type' => $line['type'],
                 'narration' => $line['narration'],
+                'source_voucher_line_id' => $line['source_voucher_line_id'] ?? null,
             ]);
             $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
         }
@@ -2830,6 +2927,29 @@ class AccountingEngine {
 
     private function applyReversalBusinessEffects($entry, $lines, $reversalId) {
         switch ($entry['transaction_type']) {
+            case 'JOURNAL_VOUCHER':
+                if (!empty($entry['journal_voucher_id'])) {
+                    $voucher = $this->db->fetch(
+                        "SELECT * FROM journal_vouchers WHERE id = ? AND business_id = ?",
+                        [$entry['journal_voucher_id'], $this->businessId]
+                    );
+                    if ($voucher && $voucher['status'] !== 'REVERSED') {
+                        $this->db->query(
+                            "UPDATE journal_vouchers SET status = 'REVERSED' WHERE id = ? AND business_id = ?",
+                            [$voucher['id'], $this->businessId]
+                        );
+                        Auth::auditUpdate(
+                            'journal_voucher',
+                            $voucher['id'],
+                            ['status' => $voucher['status'], 'posted_entry_id' => $voucher['posted_entry_id']],
+                            ['status' => 'REVERSED', 'posted_entry_id' => $voucher['posted_entry_id'], 'reversal_entry_id' => $reversalId],
+                            "Large bill {$voucher['reference_no']} reversed",
+                            'transactions'
+                        );
+                    }
+                }
+                break;
+
             case 'SALARY_PAYMENT':
                 $this->db->query(
                     "DELETE FROM salary_records WHERE business_id = ? AND journal_entry_id = ?",
@@ -3382,8 +3502,24 @@ class AccountingEngine {
         if ($primaryAmount <= 0) {
             throw new Exception("Primary amount must be greater than zero.");
         }
+        if (!in_array($status, ['DRAFT', 'POSTED'], true)) {
+            throw new Exception('Voucher status must be draft or posted.');
+        }
+
+        $primaryAccount = $this->db->fetch(
+            "SELECT id, name FROM accounts WHERE id = ? AND business_id = ? AND is_active = 1",
+            [$primaryAccountId, $this->businessId]
+        );
+        if (!$primaryAccount) {
+            throw new Exception('The selected main payment or receipt account is not available.');
+        }
 
         $allocations = $this->normalizeVoucherAllocations($allocations, $primaryEntryType);
+        foreach ($allocations as $allocation) {
+            if ($allocation['account_id'] === $primaryAccountId) {
+                throw new Exception('A split line cannot use the same account as the main payment or receipt account.');
+            }
+        }
         $allocatedTotal = round(array_sum(array_column($allocations, 'amount')), 2);
         if (abs($primaryAmount - $allocatedTotal) > 0.01) {
             throw new Exception("Voucher is not balanced yet. Primary amount and allocations must match.");
@@ -3395,7 +3531,7 @@ class AccountingEngine {
 
         $this->db->beginTransaction();
         try {
-            $this->db->insert('journal_vouchers', [
+            $voucherRecord = [
                 'id' => $voucherId,
                 'business_id' => $this->businessId,
                 'voucher_date' => $date,
@@ -3408,18 +3544,32 @@ class AccountingEngine {
                 'primary_amount' => $primaryAmount,
                 'created_by' => $this->userId,
                 'financial_year' => $fy,
-            ]);
+            ];
+            $this->db->insert('journal_vouchers', $voucherRecord);
 
             foreach ($allocations as $allocation) {
+                $voucherLineId = Database::uuid();
                 $this->db->insert('journal_voucher_lines', [
-                    'id' => Database::uuid(),
+                    'id' => $voucherLineId,
                     'journal_voucher_id' => $voucherId,
                     'account_id' => $allocation['account_id'],
                     'amount' => $allocation['amount'],
                     'entry_type' => $allocation['entry_type'],
                     'narration' => $allocation['narration'] ?? null,
+                    'entity_type' => $allocation['entity_type'] ?? null,
+                    'entity_id' => $allocation['entity_id'] ?? null,
                 ]);
+                $allocation['id'] = $voucherLineId;
+                $savedAllocations[] = $allocation;
             }
+
+            Auth::auditCreate(
+                'journal_voucher',
+                $voucherId,
+                array_merge($voucherRecord, ['allocations' => $savedAllocations ?? []]),
+                "Large bill {$referenceNo} created with " . count($allocations) . ' allocation line(s)',
+                'transactions'
+            );
 
             $this->db->commit();
         } catch (Exception $e) {
@@ -3461,6 +3611,7 @@ class AccountingEngine {
                 'amount' => floatval($line['amount']),
                 'type' => $line['entry_type'],
                 'narration' => $line['narration'],
+                'source_voucher_line_id' => $line['id'],
             ];
         }
 
@@ -3476,6 +3627,15 @@ class AccountingEngine {
             'status' => 'POSTED',
             'posted_entry_id' => $entryId,
         ], 'id = ?', [$voucherId]);
+
+        Auth::auditUpdate(
+            'journal_voucher',
+            $voucherId,
+            ['status' => $voucher['status'], 'posted_entry_id' => $voucher['posted_entry_id']],
+            ['status' => 'POSTED', 'posted_entry_id' => $entryId],
+            "Large bill {$voucher['reference_no']} posted as journal entry",
+            'transactions'
+        );
 
         return $entryId;
     }
@@ -4110,14 +4270,94 @@ class AccountingEngine {
         return $this->buildOutstandingItemsFromLedger($party['account_id'], $naturalType);
     }
 
+    public function getCarTimeline($carId) {
+        $car = $this->db->fetch(
+            "SELECT id, account_id FROM cars WHERE id = ? AND business_id = ?",
+            [$carId, $this->businessId]
+        );
+        if (!$car || empty($car['account_id'])) {
+            return [];
+        }
+
+        return $this->db->fetchAll(
+            "SELECT
+                je.id AS entry_id,
+                je.entry_date,
+                je.created_at,
+                je.reference_no,
+                je.narration,
+                je.transaction_type,
+                je.status,
+                je.is_reversal,
+                je.original_entry_id,
+                el.car_line_amount,
+                el.car_line_type,
+                el.cash_in_amount,
+                el.cash_out_amount,
+                jv.id AS voucher_id,
+                jv.reference_no AS voucher_reference_no,
+                jv.voucher_type,
+                jv.primary_amount AS voucher_total,
+                jv.status AS voucher_status,
+                jva.allocation_amount AS voucher_allocation_amount,
+                jva.allocation_note AS voucher_allocation_note,
+                jva.allocation_line_count
+             FROM journal_entries je
+             JOIN (
+                 SELECT
+                     jl.journal_entry_id,
+                     SUM(CASE WHEN jl.account_id = ? THEN jl.amount ELSE 0 END) AS car_line_amount,
+                     MAX(CASE WHEN jl.account_id = ? THEN jl.entry_type END) AS car_line_type,
+                     SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'DR' THEN jl.amount ELSE 0 END) AS cash_in_amount,
+                     SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'CR' THEN jl.amount ELSE 0 END) AS cash_out_amount
+                 FROM journal_lines jl
+                 JOIN accounts a ON a.id = jl.account_id
+                 GROUP BY jl.journal_entry_id
+             ) el ON el.journal_entry_id = je.id
+             LEFT JOIN (
+                 SELECT
+                     jvl.journal_voucher_id,
+                     SUM(jvl.amount) AS allocation_amount,
+                     GROUP_CONCAT(NULLIF(jvl.narration, '') ORDER BY jvl.id SEPARATOR ' | ') AS allocation_note,
+                     COUNT(*) AS allocation_line_count
+                 FROM journal_voucher_lines jvl
+                 JOIN accounts allocation_account ON allocation_account.id = jvl.account_id
+                 WHERE (jvl.entity_type = 'CAR' AND jvl.entity_id = ?)
+                    OR allocation_account.id = ?
+                 GROUP BY jvl.journal_voucher_id
+             ) jva ON jva.journal_voucher_id = je.journal_voucher_id
+             LEFT JOIN journal_vouchers jv ON jv.id = je.journal_voucher_id
+             WHERE je.business_id = ?
+               AND je.status IN ('POSTED', 'REVERSED')
+               AND (je.car_id = ? OR jva.journal_voucher_id IS NOT NULL)
+             ORDER BY je.entry_date DESC, je.created_at DESC, je.id DESC",
+            [$car['account_id'], $car['account_id'], $carId, $car['account_id'], $this->businessId, $carId]
+        );
+    }
+
     public function getJournalVoucherRegister($fromDate = null, $toDate = null, $accessibleAccountIds = []) {
         $fromDate = $fromDate ?: date('Y-m-01');
         $toDate = $toDate ?: date('Y-m-d');
-        $sql = "SELECT jv.*, pa.name as primary_account_name, u.full_name as created_by_name, je.reference_no as posted_reference_no
+        $sql = "SELECT jv.*, pa.name as primary_account_name, u.full_name as created_by_name, je.reference_no as posted_reference_no,
+                       car_allocations.car_allocations, car_allocations.car_allocation_count, car_allocations.car_allocation_total
                 FROM journal_vouchers jv
                 JOIN accounts pa ON pa.id = jv.primary_account_id
                 JOIN users u ON u.id = jv.created_by
                 LEFT JOIN journal_entries je ON je.id = jv.posted_entry_id
+                LEFT JOIN (
+                    SELECT
+                        jvl.journal_voucher_id,
+                        GROUP_CONCAT(CONCAT(c.id, ':::', c.registration_no, ':::', jvl.amount) ORDER BY c.registration_no SEPARATOR '|||') AS car_allocations,
+                        COUNT(*) AS car_allocation_count,
+                        SUM(jvl.amount) AS car_allocation_total
+                    FROM journal_voucher_lines jvl
+                    JOIN accounts allocation_account ON allocation_account.id = jvl.account_id
+                    JOIN cars c
+                      ON c.id = COALESCE(NULLIF(jvl.entity_id, ''), NULLIF(allocation_account.entity_id, ''))
+                      OR (jvl.entity_id IS NULL AND c.account_id = allocation_account.id)
+                    WHERE COALESCE(NULLIF(jvl.entity_type, ''), allocation_account.entity_type) = 'CAR'
+                    GROUP BY jvl.journal_voucher_id
+                ) car_allocations ON car_allocations.journal_voucher_id = jv.id
                 WHERE jv.business_id = ?
                   AND jv.voucher_date BETWEEN ? AND ?";
         $params = [$this->businessId, $fromDate, $toDate];
@@ -4158,10 +4398,17 @@ class AccountingEngine {
         }
 
         $lines = $this->db->fetchAll(
-            "SELECT jvl.*, a.name as account_name, a.code as account_code, a.group_name, a.sub_group, c.registration_no as car_reg
+            "SELECT jvl.*, a.name as account_name, a.code as account_code, a.group_name, a.sub_group,
+                    c.id AS car_id, c.registration_no as car_reg
              FROM journal_voucher_lines jvl
+             JOIN journal_vouchers jv ON jv.id = jvl.journal_voucher_id
              JOIN accounts a ON a.id = jvl.account_id
-             LEFT JOIN cars c ON c.account_id = a.id
+             LEFT JOIN cars c
+               ON c.business_id = jv.business_id
+              AND (
+                  c.id = COALESCE(NULLIF(jvl.entity_id, ''), NULLIF(a.entity_id, ''))
+                  OR (jvl.entity_id IS NULL AND c.account_id = a.id)
+              )
              WHERE jvl.journal_voucher_id = ?
              ORDER BY jvl.entry_type DESC, jvl.amount DESC, a.name",
             [$voucherId]
@@ -4325,11 +4572,37 @@ class AccountingEngine {
                 continue;
             }
 
+            $account = $this->db->fetch(
+                "SELECT a.id, a.name, a.entity_type, a.entity_id,
+                        c.id AS linked_car_id, c.registration_no AS linked_car_reg
+                 FROM accounts a
+                 LEFT JOIN cars c
+                   ON c.business_id = a.business_id
+                  AND (c.id = a.entity_id OR c.account_id = a.id)
+                 WHERE a.id = ?
+                   AND a.business_id = ?
+                   AND a.is_active = 1
+                 LIMIT 1",
+                [$accountId, $this->businessId]
+            );
+            if (!$account) {
+                throw new Exception('One selected split account is not available for this business.');
+            }
+
+            $entityType = strtoupper(trim((string) ($account['entity_type'] ?? '')));
+            $entityId = $account['entity_id'] ?: null;
+            if (!empty($account['linked_car_id'])) {
+                $entityType = 'CAR';
+                $entityId = $account['linked_car_id'];
+            }
+
             $normalized[] = [
                 'account_id' => $accountId,
                 'amount' => $amount,
-                'entry_type' => strtoupper($row['entry_type'] ?? $counterType),
+                'entry_type' => $counterType,
                 'narration' => trim((string) ($row['narration'] ?? '')),
+                'entity_type' => $entityType !== '' ? $entityType : null,
+                'entity_id' => $entityId,
             ];
         }
 
