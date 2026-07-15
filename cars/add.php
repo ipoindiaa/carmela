@@ -335,6 +335,10 @@ function toggleQuickPartner() {
     const opening = panel.style.display === 'none';
     panel.style.display = opening ? 'flex' : 'none';
     selectGroup.style.display = opening ? 'none' : '';
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(panel, opening, { clear: !opening });
+        setConditionalControls(selectGroup, !opening, { clear: opening });
+    }
     nameInput.required = opening;
     if (opening && select) {
         select.value = '';
@@ -349,6 +353,13 @@ function toggleQuickPartner() {
         ? '<i class="ri-close-line"></i> Use Existing Partner'
         : '<i class="ri-user-add-line"></i> Create New Partner';
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    const panel = document.getElementById('quick-partner-fields');
+    if (panel && typeof setConditionalControls === 'function') {
+        setConditionalControls(panel, false);
+    }
+});
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

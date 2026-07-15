@@ -425,7 +425,11 @@ function openUserEditModal(user) {
 document.getElementById('new-user-role')?.addEventListener('change', function () {
     const permissionsBlock = document.getElementById('new-user-permissions');
     if (permissionsBlock) {
-        permissionsBlock.style.display = this.value === 'ADMIN' ? 'none' : 'block';
+        const permissionsApply = this.value !== 'ADMIN';
+        permissionsBlock.style.display = permissionsApply ? 'block' : 'none';
+        if (typeof setConditionalControls === 'function') {
+            setConditionalControls(permissionsBlock, permissionsApply);
+        }
     }
 });
 </script>

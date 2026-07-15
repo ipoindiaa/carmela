@@ -22,6 +22,7 @@ $paymentAccounts = array_merge($primaryAccountGroups['cash_book'] ?? [], $primar
 $paymentAccountIds = array_column($paymentAccounts, 'id');
 $buyers = $db->fetchAll("SELECT id, name, phone FROM debtors_creditors WHERE business_id = ? AND is_active = 1 AND type IN ('BUYER','DEBTOR') ORDER BY name", [$businessId]);
 $owners = $db->fetchAll("SELECT id, name, phone FROM debtors_creditors WHERE business_id = ? AND is_active = 1 AND type IN ('SELLER','CREDITOR') ORDER BY name", [$businessId]);
+$token = $engine->getCarTokenSummary($id);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::requireEntityAccess('car', 'write');
@@ -47,7 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', 'Commission car details updated. Changes are available in History.');
         } elseif ($action === 'sell') {
             if (!in_array(post('payment_account'), $paymentAccountIds, true)) throw new Exception('Select an accessible cash or bank account.');
-            if (trim((string) post('buyer_party_id')) !== '' && trim((string) post('buyer_name')) !== '') throw new Exception('Select an existing buyer or add a new buyer, not both.');
+            $buyerMode = in_array(post('buyer_mode'), ['existing', 'new'], true) ? post('buyer_mode') : ($buyers ? 'existing' : 'new');
+            $buyerPartyId = $buyerMode === 'existing' ? trim((string) post('buyer_party_id')) : '';
+            $buyerName = $buyerMode === 'new' ? trim((string) post('buyer_name')) : '';
+            $buyerPhone = $buyerMode === 'new' ? trim((string) post('buyer_phone')) : '';
+            if ($buyerMode === 'existing' && $buyerPartyId === '') throw new Exception('Select the buyer or customer.');
+            if ($buyerMode === 'new' && $buyerName === '') throw new Exception('Enter the buyer or company name.');
             $receivedInput = trim((string) post('amount_received_now'));
             $entryId = $engine->commissionCarSale(
                 $id,
@@ -57,9 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 post('payment_account'),
                 post('payment_handling'),
                 post('narration'),
-                post('buyer_party_id'),
-                post('buyer_name'),
-                post('buyer_phone'),
+                $buyerPartyId,
+                $buyerName,
+                $buyerPhone,
                 $receivedInput === '' ? null : parseDecimalInput($receivedInput)
             );
             setFlash('success', 'Commission sale recorded. Only commission was posted as income. Entry: ' . $entryId);
@@ -80,7 +86,6 @@ $ownerOutstanding = $settlement && $settlement['payment_handling'] === 'FULL_AMO
     ? max(0, floatval($settlement['owner_amount']) - floatval($settlement['paid_to_owner_amount'])) : 0;
 $pending = $engine->getCarPendingAmounts($id);
 $buyerOutstanding = floatval($pending['sale_pending'] ?? 0);
-$token = $engine->getCarTokenSummary($id);
 $entries = $db->fetchAll(
     "SELECT je.*, u.full_name AS created_by_name,
             COALESCE(SUM(CASE WHEN a.entity_type IN ('CASH','BANK') AND jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS money_in,
@@ -160,8 +165,29 @@ $entries = $db->fetchAll(
     <div class="card-header"><h3><i class="ri-money-rupee-circle-line"></i> Record Commission Sale</h3></div>
     <div class="card-body">
         <div class="form-row-3"><div class="form-group"><label class="form-label">Gross Sale Value (₹) *</label><input name="gross_sale_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($car['expected_sale_price']) ?>" required><div class="form-hint">Memorandum value only, not business income.</div></div><div class="form-group"><label class="form-label">Our Commission (₹) *</label><input name="commission_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($car['expected_commission_amount']) ?>" required><div class="form-hint">Only this amount enters income.</div></div><div class="form-group"><label class="form-label">Sale Date *</label><input type="date" name="sale_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div></div>
-        <div class="form-row"><div class="form-group"><label class="form-label">Buyer / Customer</label><select name="buyer_party_id" class="form-control searchable-select"><option value="">Add new buyer below</option><?php foreach ($buyers as $buyer): ?><option value="<?= clean($buyer['id']) ?>"><?= clean($buyer['name']) ?><?= $buyer['phone'] ? ' - ' . clean($buyer['phone']) : '' ?></option><?php endforeach; ?></select></div><div class="form-group"><label class="form-label">How Buyer Money Was Handled *</label><select name="payment_handling" class="form-control"><option value="COMMISSION_ONLY">Owner received car amount; business received commission only</option><option value="FULL_AMOUNT" <?= ($token['available'] ?? 0) > 0 ? 'selected' : '' ?>>Business received full sale amount; owner share is payable</option></select></div></div>
-        <div class="form-row"><div class="form-group"><label class="form-label">New Buyer / Company Name</label><input name="buyer_name" class="form-control" placeholder="Use when buyer is not listed"></div><div class="form-group"><label class="form-label">New Buyer Phone</label><input name="buyer_phone" class="form-control" inputmode="numeric" maxlength="10" pattern="[0-9]{10}"></div></div>
+        <?php $buyerMode = $buyers ? 'existing' : 'new'; ?>
+        <div class="exclusive-choice" data-exclusive-choice data-default-mode="<?= clean($buyerMode) ?>">
+            <input type="hidden" name="buyer_mode" value="<?= clean($buyerMode) ?>" data-exclusive-mode data-keep-enabled="1">
+            <div class="exclusive-choice-header">
+                <div><strong>Buyer / Customer *</strong><span>Select the customer ledger or create it once.</span></div>
+                <div class="exclusive-choice-options" role="group" aria-label="Buyer source">
+                    <?php if ($buyers): ?><button type="button" class="exclusive-choice-option" data-exclusive-option="existing"><i class="ri-search-line"></i> Select Existing</button><?php endif; ?>
+                    <button type="button" class="exclusive-choice-option" data-exclusive-option="new"><i class="ri-user-add-line"></i> Add New</button>
+                </div>
+            </div>
+            <?php if ($buyers): ?>
+            <div data-exclusive-panel="existing">
+                <div class="form-group"><label class="form-label">Buyer / Customer *</label><select name="buyer_party_id" class="form-control searchable-select" required><option value="">Select buyer</option><?php foreach ($buyers as $buyer): ?><option value="<?= clean($buyer['id']) ?>" <?= !empty($token['party_id']) && $token['party_id'] === $buyer['id'] ? 'selected' : '' ?>><?= clean($buyer['name']) ?><?= $buyer['phone'] ? ' - ' . clean($buyer['phone']) : '' ?></option><?php endforeach; ?></select><?php if (($token['available'] ?? 0) > 0): ?><div class="form-hint">Buyer preselected from the open token for this car.</div><?php endif; ?></div>
+            </div>
+            <?php endif; ?>
+            <div data-exclusive-panel="new">
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Buyer / Company Name *</label><input name="buyer_name" class="form-control" placeholder="Enter buyer or company name" required></div>
+                    <div class="form-group"><label class="form-label">Phone</label><input name="buyer_phone" class="form-control" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" placeholder="10-digit mobile number"></div>
+                </div>
+            </div>
+        </div>
+        <div class="form-group"><label class="form-label">How Buyer Money Was Handled *</label><select name="payment_handling" class="form-control"><option value="COMMISSION_ONLY">Owner received car amount; business received commission only</option><option value="FULL_AMOUNT" <?= ($token['available'] ?? 0) > 0 ? 'selected' : '' ?>>Business received full sale amount; owner share is payable</option></select></div>
         <div class="form-row-3"><div class="form-group"><label class="form-label">Receive Into *</label><select name="payment_account" class="form-control searchable-select" required><?php foreach ($paymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= clean($account['name']) ?> · <?= formatAmount($account['current_balance']) ?> <?= clean($account['current_balance_type']) ?></option><?php endforeach; ?></select></div><div class="form-group"><label class="form-label">Amount Received Now</label><input name="amount_received_now" class="form-control currency-input" inputmode="decimal" placeholder="Blank = full amount due"><div class="form-hint">For commission-only, this is commission received. For full handling, this is gross amount after token.</div></div><div class="form-group"><label class="form-label">Narration *</label><input name="narration" class="form-control" value="Commission sale - <?= clean($car['registration_no']) ?>" required></div></div>
         <div class="form-actions form-actions-start"><button class="btn btn-success"><i class="ri-check-line"></i> Record Sale</button></div>
     </div>

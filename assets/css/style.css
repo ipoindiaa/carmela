@@ -2108,6 +2108,83 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     color: var(--text-secondary);
 }
 
+.exclusive-choice {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-soft);
+}
+
+.exclusive-choice-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.exclusive-choice-header > div:first-child {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.exclusive-choice-header span {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.exclusive-choice-options {
+    display: inline-grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 3px;
+    flex: none;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+}
+
+.exclusive-choice-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 7px 11px;
+    border: 0;
+    border-radius: calc(var(--radius-md) - 2px);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.exclusive-choice-option:hover {
+    color: var(--accent-blue);
+    background: var(--color-blue-50);
+}
+
+.exclusive-choice-option.is-active {
+    color: var(--accent-blue);
+    background: var(--color-blue-50);
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.28);
+}
+
+.exclusive-choice-option:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+
+.exclusive-choice [data-exclusive-panel][hidden] {
+    display: none !important;
+}
+
 .commission-stats-grid {
     grid-template-columns: repeat(5, minmax(150px, 1fr));
 }
@@ -2184,6 +2261,17 @@ textarea.form-control { min-height: 80px; resize: vertical; }
     .detail-list > div {
         grid-template-columns: 1fr;
         gap: 4px;
+    }
+
+    .exclusive-choice-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .exclusive-choice-options {
+        display: grid;
+        grid-auto-flow: column;
+        width: 100%;
     }
 }
 

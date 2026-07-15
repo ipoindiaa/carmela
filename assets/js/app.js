@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initTableShells();
     initScrollMemory();
     enhanceSelects();
+    initExclusiveChoices();
     initLazyTables();
     initSmartBackLinks();
     initBreadcrumbs();
@@ -70,7 +71,10 @@ document.addEventListener('DOMContentLoaded', function() {
         txnTypeSelect.addEventListener('change', function() {
             const type = this.value;
             // Hide all optional sections
-            document.querySelectorAll('.txn-section').forEach(s => s.style.display = 'none');
+            document.querySelectorAll('.txn-section').forEach((section) => {
+                section.style.display = 'none';
+                setConditionalControls(section, false);
+            });
             
             // Show relevant sections
             const sectionMap = {
@@ -96,7 +100,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const sections = sectionMap[type] || [];
             sections.forEach(id => {
                 const el = document.getElementById(id);
-                if (el) el.style.display = 'block';
+                if (el) {
+                    el.style.display = 'block';
+                    setConditionalControls(el, true);
+                }
             });
             if (typeof syncPreselectedExpenseCarState === 'function') {
                 syncPreselectedExpenseCarState(type);
@@ -126,8 +133,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (txnTypeSelect.dataset.preselectedType) {
             txnTypeSelect.value = txnTypeSelect.dataset.preselectedType;
-            txnTypeSelect.dispatchEvent(new Event('change'));
         }
+        txnTypeSelect.dispatchEvent(new Event('change'));
     }
 
 });
@@ -255,6 +262,70 @@ function initRegistrationInputs(scope = document) {
         input.addEventListener('input', () => {
             input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
         });
+    });
+}
+
+function setConditionalControls(container, active, options = {}) {
+    if (!container) return;
+    const clear = options.clear === true;
+
+    container.querySelectorAll('input, select, textarea, button').forEach((control) => {
+        if (control.dataset.keepEnabled === '1') return;
+
+        if (!active && clear) {
+            if (control.matches('input[type="checkbox"], input[type="radio"]')) {
+                control.checked = false;
+            } else if (control.matches('select')) {
+                const emptyOption = Array.from(control.options).find((option) => option.value === '');
+                control.value = emptyOption ? '' : (control.options[0]?.value || '');
+            } else if (!control.matches('button')) {
+                control.value = '';
+            }
+        }
+
+        control.disabled = !active;
+        if (control.matches('select')) refreshCustomSelect(control);
+    });
+}
+
+function initExclusiveChoices(scope = document) {
+    scope.querySelectorAll('[data-exclusive-choice]:not([data-exclusive-ready])').forEach((choice) => {
+        choice.dataset.exclusiveReady = '1';
+        const modeInput = choice.querySelector('[data-exclusive-mode]');
+        const buttons = Array.from(choice.querySelectorAll('[data-exclusive-option]'));
+        const panels = Array.from(choice.querySelectorAll('[data-exclusive-panel]'));
+        if (!modeInput || !buttons.length || !panels.length) return;
+
+        const availableModes = buttons.filter((button) => !button.disabled).map((button) => button.dataset.exclusiveOption);
+        const applyMode = (requestedMode, focusPanel = false) => {
+            const mode = availableModes.includes(requestedMode) ? requestedMode : availableModes[0];
+            if (!mode) return;
+
+            modeInput.value = mode;
+            choice.dataset.activeMode = mode;
+            buttons.forEach((button) => {
+                const active = button.dataset.exclusiveOption === mode;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            panels.forEach((panel) => {
+                const active = panel.dataset.exclusivePanel === mode;
+                panel.hidden = !active;
+                setConditionalControls(panel, active, { clear: !active });
+            });
+
+            if (focusPanel) {
+                const panel = panels.find((candidate) => candidate.dataset.exclusivePanel === mode);
+                const firstControl = panel?.querySelector('select, input:not([type="hidden"]), textarea');
+                const customTrigger = firstControl?.closest('.custom-select')?.querySelector('.custom-select-trigger');
+                (customTrigger || firstControl)?.focus();
+            }
+        };
+
+        buttons.forEach((button) => {
+            button.addEventListener('click', () => applyMode(button.dataset.exclusiveOption, true));
+        });
+        applyMode(modeInput.value || choice.dataset.defaultMode || availableModes[0]);
     });
 }
 
@@ -784,6 +855,8 @@ window.visualViewport?.addEventListener('scroll', () => activeCustomSelect && po
 window.enhanceSelects = enhanceSelects;
 window.enhanceSearchableSelects = enhanceSelects;
 window.refreshCustomSelect = refreshCustomSelect;
+window.initExclusiveChoices = initExclusiveChoices;
+window.setConditionalControls = setConditionalControls;
 
 // Modal helpers
 function openModal(id) {

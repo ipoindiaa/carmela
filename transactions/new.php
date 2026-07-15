@@ -1373,6 +1373,10 @@ function toggleQuickCarPartner() {
     const opening = panel.style.display === 'none';
     panel.style.display = opening ? 'flex' : 'none';
     pickerGroup.style.display = opening ? 'none' : '';
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(panel, opening, { clear: !opening });
+        setConditionalControls(pickerGroup, !opening, { clear: opening });
+    }
     nameInput.required = opening;
     if (opening) {
         if (partnerInput) partnerInput.value = '';
@@ -1403,6 +1407,11 @@ function toggleNewParty(scope) {
     const opening = fields.style.display === 'none';
     fields.style.display = opening ? 'flex' : 'none';
     trigger.style.display = opening ? 'none' : '';
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(fields, opening, { clear: !opening });
+    }
+    trigger.disabled = opening;
+    hidden.disabled = opening;
     if (opening) {
         hidden.value = '';
         fields.querySelector('input[type="text"]')?.focus();
@@ -1429,9 +1438,41 @@ document.getElementById('transaction_type')?.addEventListener('change', function
     const type = this.value;
     const debtorWrapper = document.getElementById('debtor-select-wrapper');
     const creditorWrapper = document.getElementById('creditor-select-wrapper');
-    if (debtorWrapper) debtorWrapper.style.display = (type === 'LOAN_RECEIVED') ? 'block' : 'none';
-    if (creditorWrapper) creditorWrapper.style.display = (type === 'LOAN_REPAID') ? 'block' : 'none';
+    const debtorActive = type === 'LOAN_RECEIVED';
+    const creditorActive = type === 'LOAN_REPAID';
+    if (debtorWrapper) {
+        debtorWrapper.style.display = debtorActive ? 'block' : 'none';
+        if (typeof setConditionalControls === 'function') setConditionalControls(debtorWrapper, debtorActive);
+    }
+    if (creditorWrapper) {
+        creditorWrapper.style.display = creditorActive ? 'block' : 'none';
+        if (typeof setConditionalControls === 'function') setConditionalControls(creditorWrapper, creditorActive);
+    }
 });
+
+function syncEntryExclusiveControls() {
+    const quickPartnerFields = document.getElementById('quick-car-partner-fields');
+    const primaryPartnerPicker = document.querySelector('#partner-funding-rows .partner-funding-row .partner-picker-group');
+    if (quickPartnerFields && primaryPartnerPicker && typeof setConditionalControls === 'function') {
+        const addingPartner = quickPartnerFields.style.display !== 'none';
+        setConditionalControls(quickPartnerFields, addingPartner);
+        setConditionalControls(primaryPartnerPicker, !addingPartner);
+    }
+
+    [
+        ['buyer-new-fields', 'buyer-picker-trigger', 'buyer_party_id'],
+        ['counterparty-new-fields', 'counterparty-picker-trigger', 'counterparty_id'],
+    ].forEach(([fieldsId, triggerId, hiddenId]) => {
+        const fields = document.getElementById(fieldsId);
+        const trigger = document.getElementById(triggerId);
+        const hidden = document.getElementById(hiddenId);
+        if (!fields || !trigger || !hidden || typeof setConditionalControls !== 'function') return;
+        const addingNew = fields.style.display !== 'none';
+        setConditionalControls(fields, addingNew);
+        trigger.disabled = addingNew;
+        hidden.disabled = addingNew;
+    });
+}
 
 document.querySelector('.amount-input')?.addEventListener('input', updateSplitTotals);
 document.getElementById('split-lines')?.addEventListener('input', function(event) {
@@ -1687,6 +1728,7 @@ function syncDynamicCategoryEntryState() {
 
     document.querySelectorAll('.txn-section').forEach((section) => {
         section.style.display = 'none';
+        if (typeof setConditionalControls === 'function') setConditionalControls(section, false);
     });
     const paymentAccountGroup = document.getElementById('payment-account-group');
     if (paymentAccountGroup) paymentAccountGroup.style.display = '';
@@ -1932,8 +1974,15 @@ function applyCarTokenContext(partyId, partyLabel, available) {
         if (buyerInput) buyerInput.value = partyId;
         if (buyerTrigger?.querySelector('span')) buyerTrigger.querySelector('span').textContent = partyLabel || 'Selected token buyer';
         const newFields = document.getElementById('buyer-new-fields');
-        if (newFields) newFields.style.display = 'none';
-        if (buyerTrigger) buyerTrigger.style.display = '';
+        if (newFields) {
+            newFields.style.display = 'none';
+            if (typeof setConditionalControls === 'function') setConditionalControls(newFields, false, { clear: true });
+        }
+        if (buyerTrigger) {
+            buyerTrigger.style.display = '';
+            buyerTrigger.disabled = false;
+        }
+        if (buyerInput) buyerInput.disabled = false;
     }
 }
 
@@ -1993,6 +2042,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(syncSaleAmountUi, 0);
         setTimeout(syncCarClearingUi, 0);
         setTimeout(syncCounterpartyUi, 0);
+        setTimeout(syncEntryExclusiveControls, 0);
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
@@ -2008,6 +2058,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncSaleAmountUi();
     syncCarClearingUi();
     syncCounterpartyUi();
+    syncEntryExclusiveControls();
 });
 
 async function renderAccountPickerResults(query) {
