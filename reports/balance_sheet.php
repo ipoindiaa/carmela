@@ -8,6 +8,19 @@ $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $asOnDate = get('as_on', date('Y-m-d'));
 $bs = $engine->getBalanceSheet($asOnDate);
+$canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
+$ledgerFromDate = getCurrentFY($asOnDate) . '-04-01';
+$ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate, $asOnDate): ?string {
+    if (!$canViewLedger || empty($item['id'])) {
+        return null;
+    }
+
+    return APP_URL . 'reports/ledger.php?' . http_build_query([
+        'account_id' => $item['id'],
+        'from' => $ledgerFromDate,
+        'to' => $asOnDate,
+    ]);
+};
 ?>
 
 <div class="page-header">
@@ -33,7 +46,19 @@ $bs = $engine->getBalanceSheet($asOnDate);
                             if ($item['sub_group'] !== $lastSub) { $lastSub = $item['sub_group']; ?>
                             <tr class="table-group-row"><td colspan="2"><?= $lastSub ?></td></tr>
                             <?php } ?>
-                        <tr><td style="padding-left: 24px;"><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php $accountUrl = $ledgerUrl($item); ?>
+                        <tr class="<?= $accountUrl ? 'report-account-row' : '' ?>">
+                            <td style="padding-left: 24px;">
+                                <?php if ($accountUrl): ?>
+                                    <a href="<?= clean($accountUrl) ?>" class="report-account-link" title="View <?= clean($item['name']) ?> ledger">
+                                        <span><?= clean($item['name']) ?></span><i class="ri-arrow-right-up-line" aria-hidden="true"></i>
+                                    </a>
+                                <?php else: ?>
+                                    <?= clean($item['name']) ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-right amount"><?= formatAmount($item['amount']) ?></td>
+                        </tr>
                         <?php endforeach; ?>
                         <tr class="table-summary-row"><td>Total Assets</td><td class="text-right amount text-blue"><?= formatAmount($bs['total_assets']) ?></td></tr>
                     </tbody>
@@ -49,7 +74,19 @@ $bs = $engine->getBalanceSheet($asOnDate);
                     <table>
                         <tbody>
                         <?php foreach ($bs['LIABILITY'] as $item): ?>
-                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php $accountUrl = $ledgerUrl($item); ?>
+                        <tr class="<?= $accountUrl ? 'report-account-row' : '' ?>">
+                            <td>
+                                <?php if ($accountUrl): ?>
+                                    <a href="<?= clean($accountUrl) ?>" class="report-account-link" title="View <?= clean($item['name']) ?> ledger">
+                                        <span><?= clean($item['name']) ?></span><i class="ri-arrow-right-up-line" aria-hidden="true"></i>
+                                    </a>
+                                <?php else: ?>
+                                    <?= clean($item['name']) ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-right amount"><?= formatAmount($item['amount']) ?></td>
+                        </tr>
                         <?php endforeach; ?>
                         <?php if (empty($bs['LIABILITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
                         <tr class="table-summary-row"><td>Total Liabilities</td><td class="text-right amount"><?= formatAmount($bs['total_liabilities']) ?></td></tr>
@@ -65,7 +102,19 @@ $bs = $engine->getBalanceSheet($asOnDate);
                     <table>
                         <tbody>
                         <?php foreach ($bs['EQUITY'] as $item): ?>
-                        <tr><td><?= clean($item['name']) ?></td><td class="text-right amount"><?= formatAmount($item['amount']) ?></td></tr>
+                        <?php $accountUrl = $ledgerUrl($item); ?>
+                        <tr class="<?= $accountUrl ? 'report-account-row' : '' ?>">
+                            <td>
+                                <?php if ($accountUrl): ?>
+                                    <a href="<?= clean($accountUrl) ?>" class="report-account-link" title="View <?= clean($item['name']) ?> ledger">
+                                        <span><?= clean($item['name']) ?></span><i class="ri-arrow-right-up-line" aria-hidden="true"></i>
+                                    </a>
+                                <?php else: ?>
+                                    <?= clean($item['name']) ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-right amount"><?= formatAmount($item['amount']) ?></td>
+                        </tr>
                         <?php endforeach; ?>
                         <?php if (empty($bs['EQUITY'])): ?><tr><td colspan="2" class="text-center text-muted" style="padding:16px;">None</td></tr><?php endif; ?>
                         <tr class="table-summary-row"><td>Total Equity</td><td class="text-right amount"><?= formatAmount($bs['total_equity']) ?></td></tr>

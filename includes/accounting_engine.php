@@ -4400,6 +4400,7 @@ class AccountingEngine {
             }
 
             $result[$row['group_name']][] = [
+                'id' => $row['id'],
                 'code' => $row['code'],
                 'name' => $row['name'],
                 'sub_group' => $row['sub_group'],
