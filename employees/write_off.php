@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 Auth::check();
 Auth::requireAdmin();
 
+$db = Database::getInstance();
 $businessId = Auth::user('business_id');
 $employeeId = get('id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));

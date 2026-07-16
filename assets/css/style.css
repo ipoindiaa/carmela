@@ -5850,10 +5850,9 @@ table td .form-control {
     }
 
     .filter-bar.filter-bar-chipset {
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         justify-content: flex-start;
-        overflow-x: auto;
-        scrollbar-gutter: auto;
+        overflow-x: visible;
     }
 
     .filter-bar.filter-bar-chipset .btn {
