@@ -7,6 +7,7 @@ define('APP_VERSION', '1.0');
 define('APP_CURRENCY', '₹');
 define('APP_CURRENCY_CODE', 'INR');
 define('APP_TIMEZONE', 'Asia/Kolkata');
+define('APP_TIMEZONE_OFFSET', '+05:30');
 define('APP_FY_START_MONTH', 4); // April
 
 date_default_timezone_set(APP_TIMEZONE);

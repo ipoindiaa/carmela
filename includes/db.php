@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../config/database.php';
 
 class Database {
@@ -13,6 +14,7 @@ class Database {
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
             ]);
+            $this->pdo->exec('SET time_zone = ' . $this->pdo->quote(APP_TIMEZONE_OFFSET));
         } catch (PDOException $e) {
             die("Database connection failed: " . $e->getMessage());
         }
