@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initLazyTables();
     initSmartBackLinks();
     initBreadcrumbs();
+    initAccessibleControls();
     initFloatingTooltips();
 
     // Only transient flash messages dismiss themselves. Contextual warnings
@@ -412,6 +413,7 @@ function initTableShells(scope = document) {
         }
 
         classifyTableShell(table, wrapper);
+        prepareTableShell(table, wrapper);
     });
 }
 
@@ -426,6 +428,45 @@ function classifyTableShell(table, wrapper) {
     } else {
         wrapper.classList.add('table-columns-wide');
     }
+}
+
+function prepareTableShell(table, wrapper) {
+    if (wrapper.dataset.tableShellReady === '1') return;
+    wrapper.dataset.tableShellReady = '1';
+
+    const heading = wrapper.closest('.card')?.querySelector('.card-header h3')?.textContent.trim()
+        || document.querySelector('.page-title')?.textContent.trim()
+        || 'Data';
+    wrapper.setAttribute('role', 'region');
+    wrapper.setAttribute('aria-label', `${heading} table`);
+    const cue = document.createElement('div');
+    cue.className = 'table-scroll-cue';
+    cue.innerHTML = '<i class="ri-drag-move-2-line" aria-hidden="true"></i><span>Swipe table to see more</span>';
+    cue.setAttribute('aria-hidden', 'true');
+    cue.hidden = true;
+    wrapper.parentNode.insertBefore(cue, wrapper);
+
+    const updateOverflowState = () => {
+        const scrollable = wrapper.scrollWidth > wrapper.clientWidth + 2;
+        const atEnd = !scrollable || wrapper.scrollLeft >= wrapper.scrollWidth - wrapper.clientWidth - 2;
+        wrapper.classList.toggle('is-scrollable-x', scrollable);
+        wrapper.classList.toggle('has-overflow-right', scrollable && !atEnd);
+        wrapper.classList.toggle('is-scrolled-x', scrollable && wrapper.scrollLeft > 2);
+        cue.hidden = !scrollable;
+        if (scrollable) {
+            wrapper.tabIndex = 0;
+        } else if (wrapper.getAttribute('tabindex') === '0') {
+            wrapper.removeAttribute('tabindex');
+        }
+    };
+
+    wrapper.addEventListener('scroll', updateOverflowState, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(updateOverflowState);
+        observer.observe(wrapper);
+        observer.observe(table);
+    }
+    requestAnimationFrame(updateOverflowState);
 }
 
 function initScrollMemory() {
@@ -645,6 +686,11 @@ function enhanceSelects(scope = document) {
         trigger.innerHTML = '<span class="custom-select-value"></span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>';
         trigger.setAttribute('aria-haspopup', 'listbox');
         trigger.setAttribute('aria-expanded', 'false');
+        const fieldLabel = select.closest('.form-group')?.querySelector('.form-label')?.textContent.trim()
+            || select.getAttribute('aria-label')
+            || select.name.replace(/[_\[\]]+/g, ' ').trim()
+            || 'Select option';
+        trigger.dataset.fieldLabel = fieldLabel;
         wrapper.appendChild(trigger);
 
         const popover = document.createElement('div');
@@ -681,6 +727,7 @@ function refreshCustomSelect(select) {
     const selected = select.options[select.selectedIndex];
     const value = instance.trigger.querySelector('.custom-select-value');
     value.textContent = selected ? selected.textContent.trim() : (select.dataset.placeholder || 'Select');
+    instance.trigger.setAttribute('aria-label', `${instance.trigger.dataset.fieldLabel}: ${value.textContent}`);
     instance.trigger.disabled = select.disabled;
     instance.trigger.classList.toggle('is-placeholder', !selected || selected.value === '');
     instance.wrapper.classList.toggle('is-disabled', select.disabled);
@@ -1072,6 +1119,28 @@ function initBreadcrumbs() {
     breadcrumb.appendChild(currentSpan);
 
     pageHeader.insertBefore(breadcrumb, pageHeader.firstChild);
+
+    Array.from(pageHeader.children).forEach((child) => {
+        if (child === breadcrumb || child === h1) return;
+        if (child.contains(h1)) {
+            child.classList.add('page-header-copy');
+            return;
+        }
+        if (
+            child.matches('.page-actions, .entries-page-actions, .entry-header-actions, a.btn, button.btn, form')
+            || child.querySelector(':scope > .btn, :scope > form')
+        ) {
+            child.classList.add('page-header-actions');
+        }
+    });
 }
 
 window.initBreadcrumbs = initBreadcrumbs;
+
+function initAccessibleControls(scope = document) {
+    scope.querySelectorAll('a.btn, button.btn, .header-btn').forEach((control) => {
+        if (control.hasAttribute('aria-label') || control.textContent.trim()) return;
+        const label = control.getAttribute('title');
+        if (label) control.setAttribute('aria-label', label);
+    });
+}

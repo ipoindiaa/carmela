@@ -4866,6 +4866,17 @@ textarea {
     letter-spacing: 0;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.form-label,
+.filter-bar .form-label {
+    letter-spacing: 0;
+}
+
 .page-content.animate-fade {
     animation: none;
 }
@@ -5037,6 +5048,31 @@ body.env-testing .top-header {
     min-width: 0;
 }
 
+.page-header > .breadcrumb-trail {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.page-header > .page-header-actions {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+}
+
+.page-header > .page-header-copy {
+    display: block !important;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start !important;
+    text-align: left;
+}
+
+.page-header > .page-header-copy > :is(.text-muted, .page-subtitle) {
+    max-width: 820px;
+    margin: 0;
+    line-height: var(--line-height-base);
+}
+
 .page-header > div,
 .page-header > form,
 .page-header form {
@@ -5164,7 +5200,7 @@ body.env-testing .top-header {
 }
 
 .compact-operational-grid {
-    margin: 0;
+    margin-bottom: 0;
 }
 
 .stat-card {
@@ -5206,6 +5242,31 @@ body.env-testing .top-header {
 .form-control:focus,
 .txn-type-search:focus {
     box-shadow: var(--focus-ring);
+}
+
+input[type="file"].form-control {
+    min-height: var(--control-height-lg);
+    padding: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+input[type="file"].form-control::file-selector-button {
+    min-height: 32px;
+    margin-right: var(--space-3);
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: calc(var(--radius-control) - 3px);
+    background: var(--color-gray-100);
+    color: var(--text-secondary);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+input[type="file"].form-control:hover::file-selector-button {
+    background: var(--color-blue-50);
+    color: var(--accent-blue);
 }
 
 .form-row,
@@ -5433,6 +5494,24 @@ form.is-submitting {
     overflow: auto;
 }
 
+.table-container.is-scrollable-x:focus-visible,
+.table-container-inline.is-scrollable-x:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.table-container.has-overflow-right {
+    border-right-color: rgba(37, 99, 235, 0.42);
+}
+
+.table-scroll-cue {
+    display: none;
+}
+
+.table-scroll-cue[hidden] {
+    display: none !important;
+}
+
 .table-container thead th,
 thead th {
     padding: var(--table-cell-y) var(--table-cell-x);
@@ -5535,6 +5614,9 @@ table td .form-control {
         --panel-padding: 14px;
         --panel-gap: 12px;
         --header-height: 56px;
+        --control-height-sm: 36px;
+        --control-height-md: 44px;
+        --control-height-lg: 44px;
         --table-cell-x: 10px;
         --table-cell-y: 10px;
     }
@@ -5582,10 +5664,27 @@ table td .form-control {
         display: none;
     }
 
+    .nav-link {
+        min-height: 44px;
+    }
+
     .page-header {
         display: flex;
         align-items: stretch;
         gap: var(--space-2);
+    }
+
+    .page-header > .breadcrumb-trail {
+        order: 1;
+    }
+
+    .page-header > .page-header-copy {
+        order: 2;
+    }
+
+    .page-header > .page-header-actions {
+        order: 3;
+        justify-self: stretch;
     }
 
     .page-header > div,
@@ -5616,6 +5715,54 @@ table td .form-control {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
+    .dashboard-kpi-grid,
+    .entry-type-overview {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .dashboard-kpi-wide {
+        grid-column: auto;
+    }
+
+    .dashboard-kpi-card em {
+        overflow: visible;
+        line-height: 1.25;
+        text-overflow: clip;
+        white-space: normal;
+    }
+
+    .page-header > :is(.page-actions, .entries-page-actions) {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2);
+        width: 100%;
+    }
+
+    .page-header > :is(.page-actions, .entries-page-actions) > .btn {
+        width: 100%;
+        min-height: var(--control-height-md);
+        flex: none;
+    }
+
+    .page-header > :is(.page-actions, .entries-page-actions) > .btn:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .page-header > .page-header-actions:not(.page-actions):not(.entries-page-actions):not(.entry-header-actions) {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .page-header > div.page-header-actions:not(.page-actions):not(.entries-page-actions) > .btn {
+        width: auto;
+        min-height: var(--control-height-md);
+        flex: 1 1 140px;
+    }
+
+    .page-header > :is(a, button).page-header-actions {
+        width: 100%;
+    }
+
     .stat-card {
         min-height: 86px;
         padding: var(--space-3);
@@ -5638,6 +5785,18 @@ table td .form-control {
 
     .table-container.table-columns-wide table {
         min-width: 920px;
+    }
+
+    .table-scroll-cue:not([hidden]) {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--space-1);
+        min-height: 26px;
+        margin: calc(-1 * var(--space-1)) 0 var(--space-1);
+        color: var(--text-muted);
+        font-size: var(--font-size-xs);
+        font-weight: 600;
     }
 
     .card-header {
@@ -5676,11 +5835,6 @@ table td .form-control {
         padding: var(--space-6);
     }
 
-    .stats-grid,
-    .stats-grid[style] {
-        grid-template-columns: 1fr !important;
-    }
-
     .page-header > div:has(.btn),
     .page-header > div[style*="display:flex"],
     .page-header > div[style*="display: flex"] {
@@ -5690,12 +5844,21 @@ table td .form-control {
 
     .entries-page-actions,
     .entries-filter-actions {
-        flex-direction: column;
+        min-width: 0;
     }
 
     .entries-page-actions .btn,
     .entries-filter-actions .btn {
         width: 100%;
+    }
+}
+
+@media (max-width: 340px) {
+    .stats-grid,
+    .stats-grid[style],
+    .dashboard-kpi-grid,
+    .entry-type-overview {
+        grid-template-columns: 1fr !important;
     }
 }
 
@@ -5753,8 +5916,15 @@ table td .form-control {
 
 .car-detail-stats-grid,
 .car-detail-pending-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
     gap: var(--space-3);
+}
+
+.car-detail-stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.car-detail-pending-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
 }
 
 .car-detail-stats-grid .stat-card {
@@ -5848,8 +6018,7 @@ table td .form-control {
 }
 
 @media (max-width: 1180px) {
-    .car-detail-stats-grid,
-    .car-detail-pending-grid {
+    .car-detail-stats-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
@@ -5863,7 +6032,7 @@ table td .form-control {
 
     .car-detail-stats-grid,
     .car-detail-pending-grid {
-        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
     .car-detail-stats-grid .stat-card,
@@ -5871,8 +6040,53 @@ table td .form-control {
         min-height: 82px;
     }
 
+    .car-detail-pending-grid .stat-card:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
     .partner-funding-editor {
         padding: var(--space-3);
+    }
+}
+
+/* Final responsive component contracts. These intentionally sit after legacy
+   page rules so shared components keep one stable behavior everywhere. */
+.dashboard-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+    .dashboard-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .page-header > div.page-actions.page-header-actions,
+    .page-header > div.entries-page-actions.page-header-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch !important;
+        flex-direction: initial !important;
+        gap: var(--space-2) !important;
+        height: auto;
+    }
+
+    .page-header > div.page-actions.page-header-actions > .btn,
+    .page-header > div.entries-page-actions.page-header-actions > .btn {
+        width: 100% !important;
+        min-height: var(--control-height-md);
+        flex: none !important;
+    }
+
+    .page-header > div.page-actions.page-header-actions > .btn:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .page-header > div.page-header-actions:not(.page-actions):not(.entries-page-actions):not(.entry-header-actions) {
+        align-items: center !important;
+        flex-direction: row !important;
+        justify-content: flex-start !important;
     }
 }
 
