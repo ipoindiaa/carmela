@@ -118,7 +118,7 @@ function entryTypeMeta($transactionType, array $context = []) {
             'flow' => $flow,
             'category' => 'Custom',
             'icon' => $flow === 'in' ? 'ri-arrow-down-circle-line' : 'ri-arrow-up-circle-line',
-            'description' => 'Custom entry type managed in Entry Categories.',
+            'description' => 'Custom money-in or money-out entry type.',
             'summary' => true,
         ];
     }

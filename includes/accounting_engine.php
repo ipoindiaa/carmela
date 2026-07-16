@@ -29,6 +29,9 @@ class AccountingEngine {
             ['CASH-001', 'Cash Account', 'ASSET', 'Current Assets', 'CASH'],
             ['BANK-001', 'Bank Account', 'ASSET', 'Current Assets', 'BANK'],
             ['SAL-EXP', 'Salary Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
+            ['GEN-EXP', 'Office / Business Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
+            ['CAR-REPAIR', 'Car Repair / Service', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
+            ['RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
             ['RENT-EXP', 'Office Rent', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['MISC-EXP', 'Miscellaneous Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['CAR-REV', 'Car Sales Revenue', 'INCOME', 'Direct Income', 'GENERAL'],
@@ -248,18 +251,6 @@ class AccountingEngine {
             if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
             throw $e;
         }
-    }
-
-    public function getOrCreateExpenseAccount($categoryName, $type = 'GENERAL') {
-        $code = 'EXP-' . strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $categoryName), 0, 10));
-        $existing = $this->db->fetch(
-            "SELECT id FROM accounts WHERE business_id = ? AND code = ?",
-            [$this->businessId, $code]
-        );
-        if ($existing) return $existing['id'];
-
-        $subGroup = $type === 'CAR_SPECIFIC' ? 'Direct Expenses (Car)' : 'Indirect Expenses';
-        return $this->createAccount($code, $categoryName, 'EXPENSE', $subGroup, 'GENERAL');
     }
 
     private function ensureAdvancedSchema() {
@@ -1847,7 +1838,7 @@ class AccountingEngine {
     /**
      * CAR EXPENSE
      */
-    public function carExpense($carId, $amount, $date, $paymentAccount, $categoryName, $narration, $gstAmount = 0) {
+    public function carExpense($carId, $amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -1862,7 +1853,9 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
-            $expenseAccountId = $this->getOrCreateExpenseAccount($categoryName . ' - ' . $car['registration_no'], 'CAR_SPECIFIC');
+            $expenseName = 'Car Repair / Service';
+            $expenseAccount = $this->getOrCreateSystemAccount('CAR-REPAIR', $expenseName, 'EXPENSE', 'Direct Expenses (Car)');
+            $expenseAccountId = $expenseAccount['id'];
             $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
@@ -1870,20 +1863,20 @@ class AccountingEngine {
             $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
         }
         if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
-            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$categoryName}"];
+            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$expenseName}"];
         }
-        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$categoryName}"];
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$expenseName}"];
 
         // Also debit the car asset account to track total cost
         // We create a separate entry for the car account
         $carLines = [
-            ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$categoryName for {$car['registration_no']}"],
+            ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
             ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
         ];
 
         $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
         if ($baseAmount > 0) {
-            $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryName} to {$car['registration_no']}", $carLines, [
+            $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$expenseName} to {$car['registration_no']}", $carLines, [
                 'car_id' => $carId,
                 'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
                 'entry_amount' => 0,
@@ -1908,7 +1901,8 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
-            $expenseAccountId = $this->getOrCreateExpenseAccount('RTO - ' . $rto['rto_type'] . ' - ' . $car['registration_no'], 'CAR_SPECIFIC');
+            $expenseAccount = $this->getOrCreateSystemAccount('RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)');
+            $expenseAccountId = $expenseAccount['id'];
             $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
@@ -2015,10 +2009,12 @@ class AccountingEngine {
     /**
      * GENERAL EXPENSE
      */
-    public function generalExpense($amount, $date, $paymentAccount, $categoryName, $narration, $gstAmount = 0) {
+    public function generalExpense($amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
         $this->validateCashAvailable($paymentAccount, $amount);
         [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
-        $expenseAccountId = $this->getOrCreateExpenseAccount($categoryName);
+        $expenseName = 'Office / Business Expense';
+        $expenseAccount = $this->getOrCreateSystemAccount('GEN-EXP', $expenseName, 'EXPENSE', 'Indirect Expenses');
+        $expenseAccountId = $expenseAccount['id'];
         $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
@@ -2026,9 +2022,9 @@ class AccountingEngine {
             $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
         }
         if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
-            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for $categoryName"];
+            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for $expenseName"];
         }
-        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for $categoryName"];
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for $expenseName"];
 
         return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
     }
@@ -2041,11 +2037,17 @@ class AccountingEngine {
         }
 
         $categoryAccount = $this->db->fetch(
-            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'GENERAL' AND is_active = 1",
+            "SELECT * FROM accounts
+             WHERE id = ?
+               AND business_id = ?
+               AND entity_type = 'GENERAL'
+               AND is_active = 1
+               AND group_name IN ('INCOME', 'EXPENSE')
+               AND sub_group IN ('Daily Jama Categories', 'Daily Udhar Categories')",
             [$categoryAccountId, $this->businessId]
         );
         if (!$categoryAccount) {
-            throw new Exception("Category account not found.");
+            throw new Exception("Custom entry type not found.");
         }
 
         $primaryAccount = $this->db->fetch(
@@ -2058,7 +2060,7 @@ class AccountingEngine {
 
         if ($direction === 'in') {
             if ($categoryAccount['group_name'] !== 'INCOME') {
-                throw new Exception("Selected Jama category is not an income account.");
+                throw new Exception("Selected money-in type is not an income account.");
             }
             $lines = [
                 ['account_id' => $primaryAccountId, 'amount' => $amount, 'type' => 'DR', 'narration' => $narration],
@@ -2072,7 +2074,7 @@ class AccountingEngine {
 
         if ($direction === 'out') {
             if ($categoryAccount['group_name'] !== 'EXPENSE') {
-                throw new Exception("Selected Udhar category is not an expense account.");
+                throw new Exception("Selected money-out type is not an expense account.");
             }
             $this->validateCashAvailable($primaryAccountId, $amount);
             [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
@@ -4677,6 +4679,7 @@ class AccountingEngine {
                 jv.id AS voucher_id,
                 jv.reference_no AS voucher_reference_no,
                 jv.voucher_type,
+                jv.primary_entry_type AS voucher_primary_entry_type,
                 jv.primary_amount AS voucher_total,
                 jv.status AS voucher_status,
                 jva.allocation_amount AS voucher_allocation_amount,
@@ -4707,11 +4710,31 @@ class AccountingEngine {
                  GROUP BY jvl.journal_voucher_id
              ) jva ON jva.journal_voucher_id = je.journal_voucher_id
              LEFT JOIN journal_vouchers jv ON jv.id = je.journal_voucher_id
+             LEFT JOIN journal_entries original ON original.id = je.original_entry_id
              WHERE je.business_id = ?
                AND je.status IN ('POSTED', 'REVERSED')
                AND (je.car_id = ? OR jva.journal_voucher_id IS NOT NULL)
+               AND NOT (
+                   COALESCE(je.entry_type_id, '') = ?
+                   OR (je.transaction_type = 'CAR_SALE' AND je.narration LIKE 'Close car account %')
+                   OR (je.transaction_type IN ('CAR_EXPENSE', 'RTO_EXPENSE') AND je.narration LIKE 'Allocate %')
+               )
+               AND NOT (
+                   COALESCE(original.entry_type_id, '') = ?
+                   OR (COALESCE(original.transaction_type, '') = 'CAR_SALE' AND COALESCE(original.narration, '') LIKE 'Close car account %')
+                   OR (COALESCE(original.transaction_type, '') IN ('CAR_EXPENSE', 'RTO_EXPENSE') AND COALESCE(original.narration, '') LIKE 'Allocate %')
+               )
              ORDER BY je.entry_date DESC, je.created_at DESC, je.id DESC",
-            [$car['account_id'], $car['account_id'], $carId, $car['account_id'], $this->businessId, $carId]
+            [
+                $car['account_id'],
+                $car['account_id'],
+                $carId,
+                $car['account_id'],
+                $this->businessId,
+                $carId,
+                systemEntryTypeId('INTERNAL_ALLOCATION'),
+                systemEntryTypeId('INTERNAL_ALLOCATION'),
+            ]
         );
     }
 

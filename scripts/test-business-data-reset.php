@@ -141,7 +141,13 @@ assertResetTest(!$db->fetch("SELECT id FROM journal_lines WHERE journal_entry_id
 assertResetTest(!$db->fetch("SELECT id FROM attachments WHERE business_id = ? LIMIT 1", [$business['id']]), 'Attachment records are cleared');
 assertResetTest(!is_dir($attachmentDir), 'Business attachment files are cleared');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM users WHERE business_id = ?", [$business['id']])['cnt'] === 2, 'Business users are preserved');
-assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ?", [$business['id']])['cnt'] === 11, 'Clean default accounts are recreated');
+$defaultAccountCount = (int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ?", [$business['id']])['cnt'];
+assertResetTest($defaultAccountCount === 14, 'Clean default accounts are recreated');
+$canonicalExpenseCount = (int) $db->fetch(
+    "SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ? AND code IN ('GEN-EXP', 'CAR-REPAIR', 'RTO-EXP')",
+    [$business['id']]
+)['cnt'];
+assertResetTest($canonicalExpenseCount === 3, 'Clean reset recreates every canonical predefined expense account');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM financial_years WHERE business_id = ?", [$business['id']])['cnt'] === 1, 'Current financial year is recreated');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM audit_log WHERE business_id = ?", [$business['id']])['cnt'] === 1, 'One reset security event remains in audit history');
 assertResetTest((bool) $db->fetch("SELECT id FROM accounts WHERE id = ? AND business_id = ?", [$foreignAccountId, $foreignBusinessId]), 'Other businesses are untouched');

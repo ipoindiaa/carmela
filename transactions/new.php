@@ -91,42 +91,13 @@ $entryCategoryOptions = array_map(static function ($account) {
         'categoryAccountId' => $account['id'],
         'direction' => $isIncome ? 'in' : 'out',
         'title' => $account['name'],
-        'desc' => ($isIncome ? 'Jama category' : 'Udhar category') . ' - posts to ' . $account['code'],
+        'desc' => ($isIncome ? 'Custom money-in type' : 'Custom money-out type') . ' - posts to ' . $account['code'],
         'icon' => $isIncome ? 'ri-arrow-down-circle-line' : 'ri-arrow-up-circle-line',
         'flow' => $isIncome ? 'in' : 'out',
-        'group' => $isIncome ? 'Jama Categories' : 'Udhar Categories',
+        'group' => $isIncome ? 'Custom Money In' : 'Custom Money Out',
         'text' => strtolower(trim(($account['name'] ?? '') . ' ' . ($account['code'] ?? '') . ' ' . ($account['sub_group'] ?? ''))),
     ];
 }, $entryCategories);
-
-$dbExpenseCategories = $db->fetchAll(
-    "SELECT DISTINCT name FROM accounts
-     WHERE business_id = ?
-       AND group_name = 'EXPENSE'
-       AND is_active = 1
-       AND entity_type = 'GENERAL'
-       AND COALESCE(sub_group, '') <> 'Direct Expenses (Car)'
-     ORDER BY name",
-    [$businessId]
-);
-$defaultExpenseCategories = [
-    'Painting & Polish',
-    'RTO Transfer Charges',
-    'Transport Charges',
-    'Repair & Service',
-    'Insurance',
-    'Commission',
-    'Office Rent',
-    'Electricity',
-    'Tea & Refreshments',
-    'Fuel',
-    'Stationery',
-    'Miscellaneous'
-];
-$expenseDatalistNames = array_unique(array_merge(
-    array_column($dbExpenseCategories, 'name'),
-    $defaultExpenseCategories
-));
 
 if ($preselectedCarId !== '') {
     $preselectedCar = $db->fetch(
@@ -339,13 +310,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'CAR_EXPENSE':
                 $carId = post('expense_car_id');
-                $category = post('expense_category');
-                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $category, $narration, $gstAmount);
+                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $narration, $gstAmount);
                 break;
 
             case 'GENERAL_EXPENSE':
-                $category = post('expense_category');
-                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $category, $narration, $gstAmount);
+                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $narration, $gstAmount);
                 break;
 
             case 'PARTNER_INVEST':
@@ -567,7 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>">
                         <option value="">— Select Transaction Type —</option>
-                        <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Receive / Jama or Payments Category" data-desc="Admin-defined category account.">Receive / Jama or Payments Category</option>
+                        <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Custom Entry Type" data-desc="Admin-defined money-in or money-out type.">Custom Entry Type</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="CAR_TOKEN_RECEIVED" data-flow="in" data-icon="ri-hand-coin-line" data-title="Car Token Received" data-desc="Buyer advance held for one specific car; not income yet.">Car Token Received</option>
@@ -840,19 +809,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="alert alert-info token-accounting-note">
                     <i class="ri-shield-check-line"></i>
                     <div><strong>This is a buyer advance, not income.</strong><span>It stays in Customer Token Advances and will be adjusted automatically when this car is sold.</span></div>
-                </div>
-            </div>
-
-            <!-- CATEGORY SECTION -->
-            <div class="txn-section" id="category-section" style="display:none;">
-                <div class="form-group">
-                    <label class="form-label">Expense Category *</label>
-                    <input type="text" name="expense_category" class="form-control" placeholder="e.g., Painting, RTO Charges, Office Rent, Tea & Refreshments" list="categories">
-                    <datalist id="categories">
-                        <?php foreach ($expenseDatalistNames as $name): ?>
-                            <option value="<?= clean($name) ?>">
-                        <?php endforeach; ?>
-                    </datalist>
                 </div>
             </div>
 

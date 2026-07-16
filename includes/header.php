@@ -210,7 +210,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 </a>
                 <a href="<?= APP_URL ?>settings/categories.php" class="nav-link <?= $currentPage === 'categories' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-price-tag-3-line"></i></span>
-                    Entry Categories
+                    Custom Entry Types
                 </a>
                 <a href="<?= APP_URL ?>settings/financial_year.php" class="nav-link <?= $currentPage === 'financial_year' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-calendar-line"></i></span>

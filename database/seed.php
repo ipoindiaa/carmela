@@ -165,23 +165,23 @@ echo "\n";
 echo "🔧 Adding car expenses...\n";
 
 // Swift VXI expenses
-$engine->carExpense($carIds['GJ05MX1840'], 12000, '2025-11-08', $cashAccount['id'], 'Denting & Painting', 'Full body denting and fresh paint - Swift VXI');
-$engine->carExpense($carIds['GJ05MX1840'], 8500, '2025-11-10', $cashAccount['id'], 'Service & Oil Change', 'Engine oil change, filter replacement, AC service');
+$engine->carExpense($carIds['GJ05MX1840'], 12000, '2025-11-08', $cashAccount['id'], 'Full body denting and fresh paint - Swift VXI');
+$engine->carExpense($carIds['GJ05MX1840'], 8500, '2025-11-10', $cashAccount['id'], 'Engine oil change, filter replacement, AC service');
 echo "  ✅ GJ05MX1840 (Swift): Denting ₹12,000 + Service ₹8,500\n";
 
 // Creta SX expenses
-$engine->carExpense($carIds['GJ01AB7890'], 25000, '2025-12-15', $cashAccount['id'], 'Insurance Renewal', 'Comprehensive insurance renewal for 1 year');
-$engine->carExpense($carIds['GJ01AB7890'], 15000, '2025-12-18', $cashAccount['id'], 'Alloy Wheels', 'New set of 4 alloy wheels installed');
+$engine->carExpense($carIds['GJ01AB7890'], 25000, '2025-12-15', $cashAccount['id'], 'Comprehensive insurance renewal for 1 year');
+$engine->carExpense($carIds['GJ01AB7890'], 15000, '2025-12-18', $cashAccount['id'], 'New set of 4 alloy wheels installed');
 echo "  ✅ GJ01AB7890 (Creta): Insurance ₹25,000 + Alloy Wheels ₹15,000\n";
 
 // Honda City expenses
-$engine->carExpense($carIds['GJ03CD4567'], 18000, '2026-01-12', $cashAccount['id'], 'Clutch Replacement', 'Full clutch plate and bearing replacement');
-$engine->carExpense($carIds['GJ03CD4567'], 6500, '2026-01-14', $cashAccount['id'], 'Interior Cleaning', 'Deep interior cleaning and seat cover replacement');
+$engine->carExpense($carIds['GJ03CD4567'], 18000, '2026-01-12', $cashAccount['id'], 'Full clutch plate and bearing replacement');
+$engine->carExpense($carIds['GJ03CD4567'], 6500, '2026-01-14', $cashAccount['id'], 'Deep interior cleaning and seat cover replacement');
 echo "  ✅ GJ03CD4567 (City): Clutch ₹18,000 + Interior ₹6,500\n";
 
 // Fortuner expenses
-$engine->carExpense($carIds['GJ07GH6789'], 35000, '2026-02-18', $bankAccount['id'], 'RTO Transfer', 'RTO ownership transfer and road tax');
-$engine->carExpense($carIds['GJ07GH6789'], 45000, '2026-02-20', $bankAccount['id'], 'Full Detailing', 'Premium ceramic coating and full car detailing');
+$engine->carExpense($carIds['GJ07GH6789'], 35000, '2026-02-18', $bankAccount['id'], 'RTO ownership transfer and road tax');
+$engine->carExpense($carIds['GJ07GH6789'], 45000, '2026-02-20', $bankAccount['id'], 'Premium ceramic coating and full car detailing');
 echo "  ✅ GJ07GH6789 (Fortuner): RTO ₹35,000 + Detailing ₹45,000\n\n";
 
 // ============================================================
@@ -206,16 +206,16 @@ echo "  ✅ GJ07GH6789 (Fortuner) SOLD to Karan Industries — ₹32,50,000 (₹
 // ============================================================
 echo "📝 Recording general expenses...\n";
 
-$engine->generalExpense(15000, '2025-11-01', $cashAccount['id'], 'Office Rent', 'Showroom rent for November 2025');
-$engine->generalExpense(15000, '2025-12-01', $cashAccount['id'], 'Office Rent', 'Showroom rent for December 2025');
-$engine->generalExpense(15000, '2026-01-01', $cashAccount['id'], 'Office Rent', 'Showroom rent for January 2026');
-$engine->generalExpense(15000, '2026-02-01', $cashAccount['id'], 'Office Rent', 'Showroom rent for February 2026');
-$engine->generalExpense(15000, '2026-03-01', $cashAccount['id'], 'Office Rent', 'Showroom rent for March 2026');
+$engine->generalExpense(15000, '2025-11-01', $cashAccount['id'], 'Showroom rent for November 2025');
+$engine->generalExpense(15000, '2025-12-01', $cashAccount['id'], 'Showroom rent for December 2025');
+$engine->generalExpense(15000, '2026-01-01', $cashAccount['id'], 'Showroom rent for January 2026');
+$engine->generalExpense(15000, '2026-02-01', $cashAccount['id'], 'Showroom rent for February 2026');
+$engine->generalExpense(15000, '2026-03-01', $cashAccount['id'], 'Showroom rent for March 2026');
 echo "  ✅ Office rent — ₹15,000/month × 5 months\n";
 
-$engine->generalExpense(3500, '2026-01-05', $cashAccount['id'], 'Electricity Bill', 'Showroom electricity bill - January');
-$engine->generalExpense(8000, '2026-02-10', $cashAccount['id'], 'Petrol/Diesel', 'Fuel for test drives and deliveries');
-$engine->generalExpense(5000, '2026-03-05', $cashAccount['id'], 'Stationery & Printing', 'Invoice books, letterheads, visiting cards');
+$engine->generalExpense(3500, '2026-01-05', $cashAccount['id'], 'Showroom electricity bill - January');
+$engine->generalExpense(8000, '2026-02-10', $cashAccount['id'], 'Fuel for test drives and deliveries');
+$engine->generalExpense(5000, '2026-03-05', $cashAccount['id'], 'Invoice books, letterheads, visiting cards');
 echo "  ✅ Electricity ₹3,500 + Fuel ₹8,000 + Stationery ₹5,000\n\n";
 
 // ============================================================

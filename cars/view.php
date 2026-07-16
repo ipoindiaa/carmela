@@ -575,28 +575,46 @@ function removeFundingEditRow(button) {
     <div class="card-body" style="padding: 0;">
         <div class="table-container">
         <table>
-            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right flow-in">Money In</th><th class="text-right flow-out">Money Out</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
                     <tr><td colspan="7" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
                 <?php else: ?>
                     <?php foreach ($ledger as $l):
-                        $displayDebit = '';
-                        $displayCredit = '';
-                        if (!empty($l['car_line_type'])) {
-                            if ($l['car_line_type'] === 'DR') {
-                                $displayDebit = formatAmount($l['car_line_amount']);
+                        $displayMoneyIn = '';
+                        $displayMoneyOut = '';
+                        $flow = transactionBusinessFlow($l['transaction_type'], $l);
+                        $eventAmount = round(floatval($l['entry_amount'] ?? 0), 2);
+
+                        if (!empty($l['voucher_id']) && floatval($l['voucher_allocation_amount'] ?? 0) > 0) {
+                            $eventAmount = round(floatval($l['voucher_allocation_amount']), 2);
+                            $flow = ($l['voucher_primary_entry_type'] ?? 'CR') === 'DR' ? 'in' : 'out';
+                        } elseif ($eventAmount <= 0) {
+                            $eventAmount = max(
+                                floatval($l['cash_in_amount'] ?? 0),
+                                floatval($l['cash_out_amount'] ?? 0),
+                                floatval($l['car_line_amount'] ?? 0)
+                            );
+                        }
+
+                        if (!empty($l['is_reversal'])) {
+                            $flow = $flow === 'in' ? 'out' : ($flow === 'out' ? 'in' : $flow);
+                        }
+
+                        if ($flow === 'in' && $eventAmount > 0) {
+                            $displayMoneyIn = formatAmount($eventAmount);
+                        } elseif ($flow === 'out' && $eventAmount > 0) {
+                            $displayMoneyOut = formatAmount($eventAmount);
+                        } elseif (floatval($l['cash_in_amount'] ?? 0) > 0) {
+                            $displayMoneyIn = formatAmount($l['cash_in_amount']);
+                        } elseif (floatval($l['cash_out_amount'] ?? 0) > 0) {
+                            $displayMoneyOut = formatAmount($l['cash_out_amount']);
+                        } elseif (!empty($l['car_line_type']) && $eventAmount > 0) {
+                            if ($l['car_line_type'] === 'CR') {
+                                $displayMoneyIn = formatAmount($eventAmount);
                             } else {
-                                $displayCredit = formatAmount($l['car_line_amount']);
+                                $displayMoneyOut = formatAmount($eventAmount);
                             }
-                        } elseif (in_array($l['transaction_type'], ['LOAN_RECEIVED', 'RTO_RECOVERY'], true) && (float) $l['cash_in_amount'] > 0) {
-                            $displayDebit = formatAmount($l['cash_in_amount']);
-                        } elseif (in_array($l['transaction_type'], ['LOAN_REPAID'], true) && (float) $l['cash_out_amount'] > 0) {
-                            $displayCredit = formatAmount($l['cash_out_amount']);
-                        } elseif ((float) $l['cash_in_amount'] > 0) {
-                            $displayDebit = formatAmount($l['cash_in_amount']);
-                        } elseif ((float) $l['cash_out_amount'] > 0) {
-                            $displayCredit = formatAmount($l['cash_out_amount']);
                         }
                     ?>
                     <tr>
@@ -629,8 +647,8 @@ function removeFundingEditRow(button) {
                                 <span class="badge badge-green">Posted</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-right amount debit-amount"><?= $displayDebit ?></td>
-                        <td class="text-right amount credit-amount"><?= $displayCredit ?></td>
+                        <td class="text-right amount flow-in"><?= $displayMoneyIn ?></td>
+                        <td class="text-right amount flow-out"><?= $displayMoneyOut ?></td>
                     </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

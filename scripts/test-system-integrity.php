@@ -160,7 +160,7 @@ try {
     $cash = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'CASH-001'", [$business['id']]);
     $soldExpenseBlocked = false;
     try {
-        $engine->carExpense($pendingCarId, 500, date('Y-m-d'), $cash['id'], 'Repair', 'Should not post');
+        $engine->carExpense($pendingCarId, 500, date('Y-m-d'), $cash['id'], 'Should not post');
     } catch (Throwable $e) {
         $soldExpenseBlocked = str_contains($e->getMessage(), 'sold car');
     }
@@ -178,7 +178,7 @@ try {
 
     $profitAndLossBefore = $engine->getProfitAndLoss('2000-01-01', date('Y-m-d'));
     $expenseBefore = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $profitAndLossBefore['expenses'])), 2);
-    $reversedExpenseId = $engine->generalExpense(375, date('Y-m-d'), $cash['id'], 'Integrity Reversal Expense', 'Reverse immediately');
+    $reversedExpenseId = $engine->generalExpense(375, date('Y-m-d'), $cash['id'], 'Reverse immediately');
     $engine->reverseEntry($reversedExpenseId, 'Integrity report reversal check');
     $profitAndLossAfter = $engine->getProfitAndLoss('2000-01-01', date('Y-m-d'));
     $expenseAfter = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $profitAndLossAfter['expenses'])), 2);

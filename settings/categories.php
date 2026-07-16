@@ -1,5 +1,5 @@
 <?php
-$pageTitle = 'Entry Categories';
+$pageTitle = 'Custom Entry Types';
 $pageIcon = '<i class="ri-price-tag-3-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 Auth::requireAdmin();
@@ -7,14 +7,14 @@ Auth::requireAdmin();
 $businessId = Auth::user('business_id');
 $categoryGroups = [
     'in' => [
-        'label' => 'Jama / Money In',
+        'label' => 'Receive / Money In',
         'group_name' => 'INCOME',
         'sub_group' => 'Daily Jama Categories',
         'code_prefix' => 'INC',
         'icon' => 'ri-arrow-down-circle-line',
     ],
     'out' => [
-        'label' => 'Udhar / Money Out',
+        'label' => 'Payment / Money Out',
         'group_name' => 'EXPENSE',
         'sub_group' => 'Daily Udhar Categories',
         'code_prefix' => 'EXP',
@@ -54,12 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'create') {
             $direction = strtolower(post('direction'));
             if (!isset($categoryGroups[$direction])) {
-                throw new Exception('Invalid category direction.');
+                throw new Exception('Invalid entry direction.');
             }
 
             $name = trim(post('name'));
             if ($name === '') {
-                throw new Exception('Category name is required.');
+                throw new Exception('Entry type name is required.');
             }
 
             $code = strtoupper(trim(post('code')));
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $exists = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ?", [$businessId, $code]);
             if ($exists) {
-                throw new Exception('That category code already exists.');
+                throw new Exception('That entry type code already exists.');
             }
 
             $meta = $categoryGroups[$direction];
@@ -93,8 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'current_balance_type' => $direction === 'in' ? 'CR' : 'DR',
             ]);
             $createdCategory = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
-            Auth::auditCreate('account', $accountId, $createdCategory ?: ['name' => $name, 'code' => $code], "Created {$meta['label']} category $name", 'categories');
-            setFlash('success', 'Category added successfully.');
+            Auth::auditCreate('account', $accountId, $createdCategory ?: ['name' => $name, 'code' => $code], "Created {$meta['label']} entry type $name", 'categories');
+            setFlash('success', 'Custom entry type added successfully.');
         }
 
         if ($action === 'update') {
@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $name = trim(post('name'));
             $isActive = post('is_active', '0') === '1' ? 1 : 0;
             if ($name === '') {
-                throw new Exception('Category name is required.');
+                throw new Exception('Entry type name is required.');
             }
 
             $account = $db->fetch(
@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 array_merge([$accountId, $businessId], $systemCodes)
             );
             if (!$account) {
-                throw new Exception('Category not found.');
+                throw new Exception('Custom entry type not found.');
             }
 
             $db->query(
@@ -120,8 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$name, $isActive, $accountId, $businessId]
             );
             $updatedCategory = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
-            Auth::auditUpdate('account', $accountId, $account, $updatedCategory ?: [], "Updated category $name", 'categories');
-            setFlash('success', 'Category updated successfully.');
+            Auth::auditUpdate('account', $accountId, $account, $updatedCategory ?: [], "Updated custom entry type $name", 'categories');
+            setFlash('success', 'Custom entry type updated successfully.');
         }
 
         if ($action === 'delete') {
@@ -133,17 +133,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 array_merge([$accountId, $businessId], $systemCodes)
             );
             if (!$account) {
-                throw new Exception('Category not found.');
+                throw new Exception('Custom entry type not found.');
             }
 
             $usage = $db->fetch("SELECT COUNT(*) AS cnt FROM journal_lines WHERE account_id = ?", [$accountId]);
             if (($usage['cnt'] ?? 0) > 0) {
-                throw new Exception('This category has entries connected to it, so it cannot be deleted. Mark it inactive instead.');
+                throw new Exception('This entry type has transactions connected to it, so it cannot be deleted. Mark it inactive instead.');
             }
 
             $db->query("DELETE FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
-            Auth::auditLog('DELETE', 'account', $accountId, "Deleted category {$account['name']}", $account, null, 'categories');
-            setFlash('success', 'Category deleted successfully.');
+            Auth::auditLog('DELETE', 'account', $accountId, "Deleted custom entry type {$account['name']}", $account, null, 'categories');
+            setFlash('success', 'Custom entry type deleted successfully.');
         }
 
         redirect('categories.php');
@@ -173,41 +173,41 @@ $categories = $db->fetchAll(
 
 <div class="page-header">
     <div>
-        <h1><i class="ri-price-tag-3-line"></i> Entry Categories</h1>
-        <p class="text-muted">Create Jama and Udhar categories. Each category is its own ledger account for analysis.</p>
+        <h1><i class="ri-price-tag-3-line"></i> Custom Entry Types</h1>
+        <p class="text-muted">Add a distinct money-in or money-out type only when the predefined entry types do not fit.</p>
     </div>
 </div>
 
 <div class="card" style="margin-bottom: 18px;">
-    <div class="card-header"><h3><i class="ri-add-line"></i> Add Category</h3></div>
+    <div class="card-header"><h3><i class="ri-add-line"></i> Add Custom Entry Type</h3></div>
     <div class="card-body">
-        <form method="POST" data-confirm-submit="Create this entry category?">
+        <form method="POST" data-confirm-submit="Create this custom entry type?">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create">
             <div class="form-row-3">
                 <div class="form-group">
                     <label class="form-label">Type *</label>
                     <select name="direction" class="form-control searchable-select">
-                        <option value="out">Red / Udhar / Money Out</option>
-                        <option value="in">Green / Jama / Money In</option>
+                        <option value="out">Payment / Money Out</option>
+                        <option value="in">Receive / Money In</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Category Name *</label>
-                    <input type="text" name="name" class="form-control" placeholder="e.g., Fuel, Commission, Interest Income" required>
+                    <label class="form-label">Entry Type Name *</label>
+                    <input type="text" name="name" class="form-control" placeholder="e.g., Fuel or Interest Income" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Code</label>
                     <input type="text" name="code" class="form-control" placeholder="Auto if blank">
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Add Category</button>
+            <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Add Entry Type</button>
         </form>
     </div>
 </div>
 
 <div class="card">
-    <div class="card-header"><h3><i class="ri-list-check"></i> Jama / Udhar Categories</h3></div>
+    <div class="card-header"><h3><i class="ri-list-check"></i> Custom Money In / Money Out Types</h3></div>
     <div class="card-body" style="padding:0;">
         <div class="table-container table-container-inline">
             <table>
@@ -242,7 +242,7 @@ $categories = $db->fetchAll(
                                 </select>
                             </td>
                             <td class="text-center">
-                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;" data-confirm-submit="Save this category change?">
+                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;" data-confirm-submit="Save this entry type change?">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="update">
                                     <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
@@ -252,7 +252,7 @@ $categories = $db->fetchAll(
                                 <a href="../reports/entry_types.php?entry_type_id=<?= urlencode(customEntryTypeId($category['id'])) ?>#entry-type-details" class="btn btn-outline btn-sm" title="View entry type summary"><i class="ri-bar-chart-box-line"></i></a>
                                 <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
                                 <?php if (intval($category['linked_entries'] ?? 0) === 0): ?>
-                                    <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this category? This is allowed only because no entries are connected.">
+                                    <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this entry type? This is allowed only because no transactions are connected.">
                                         <?= csrfField() ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
@@ -265,7 +265,7 @@ $categories = $db->fetchAll(
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($categories)): ?>
-                        <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No Jama or Udhar categories yet.</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No custom entry types yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

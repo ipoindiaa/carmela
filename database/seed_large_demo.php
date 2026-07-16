@@ -303,7 +303,7 @@ try {
             $expense = pick($expenseCatalog);
             $expenseDate = date('Y-m-d', strtotime($purchaseDate . ' +' . mt_rand(2, 18) . ' days'));
             $expenseAmount = round(mt_rand($expense[1], $expense[2]) / 500) * 500;
-            $engine->carExpense($carRow['id'], $expenseAmount, $expenseDate, $expenseAmount > 25000 ? $bank['id'] : $cash['id'], $expense[0], "$marker {$expense[0]} for {$car['reg']}");
+            $engine->carExpense($carRow['id'], $expenseAmount, $expenseDate, $expenseAmount > 25000 ? $bank['id'] : $cash['id'], "$marker {$expense[0]} for {$car['reg']}");
             $expenseTotal += $expenseAmount;
         }
 
@@ -342,7 +342,7 @@ try {
             }
             $date = sprintf('2026-%02d-%02d', $month, min(26, 3 + $idx * 2));
             $amount = round(($expense[1] + mt_rand(-2500, 3500)) / 100) * 100;
-            $engine->generalExpense($amount, $date, $amount > 30000 ? $bank['id'] : $cash['id'], $expense[0], "$marker {$expense[0]} for " . date('M Y', strtotime($date)));
+            $engine->generalExpense($amount, $date, $amount > 30000 ? $bank['id'] : $cash['id'], "$marker {$expense[0]} for " . date('M Y', strtotime($date)));
         }
     }
     out("  General business expenses posted.");

@@ -99,10 +99,20 @@ assertEntryType($ambiguousBlocked, 'A simple correction cannot attach multiple c
 $usage = $db->fetch("SELECT COUNT(*) AS cnt FROM journal_lines WHERE account_id = ?", [$customAccountId]);
 assertEntryType(intval($usage['cnt']) > 0, 'A used custom type remains protected from deletion');
 
-$generalExpenseId = $engine->generalExpense(1000, date('Y-m-d'), $cash['id'], 'Regression Office Expense', 'Predefined entry identity test');
+$generalExpenseId = $engine->generalExpense(1000, date('Y-m-d'), $cash['id'], 'Predefined entry identity test');
 $generalExpense = $db->fetch("SELECT * FROM journal_entries WHERE id = ?", [$generalExpenseId]);
 assertEntryType($generalExpense['entry_type_id'] === systemEntryTypeId('GENERAL_EXPENSE'), 'Predefined expense stores the system entry-type ID');
 assertEntryType(transactionTypeLabel($generalExpense['transaction_type'], $generalExpense) === 'Office / Business Expense', 'Predefined entry label resolves from the shared type metadata');
+$generalExpenseAccount = $db->fetch(
+    "SELECT a.code
+     FROM journal_lines jl
+     JOIN accounts a ON a.id = jl.account_id
+     WHERE jl.journal_entry_id = ? AND jl.entry_type = 'DR'
+     ORDER BY jl.id
+     LIMIT 1",
+    [$generalExpenseId]
+);
+assertEntryType(($generalExpenseAccount['code'] ?? '') === 'GEN-EXP', 'Predefined office expense uses its canonical account instead of a nested category');
 
 $audit = $db->fetch(
     "SELECT COUNT(*) AS cnt FROM audit_log WHERE business_id = ? AND entity_type = 'journal_entry' AND entity_id = ? AND action = 'UPDATE'",
