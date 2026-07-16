@@ -130,6 +130,7 @@ $defaultOpeningDate = $selectedAccount['opening_balance_date'] ?? (getCurrentFY(
                     <a href="?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Edit opening balance"><i class="ri-edit-line"></i></a>
                     <a href="../reports/ledger.php?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="View ledger"><i class="ri-eye-line"></i></a>
                     <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
+                    <?php if (!empty($account['opening_entry_id']) || floatval($account['opening_balance']) > 0.009): ?><a href="../delete_record.php?entity_type=opening_balance&amp;id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm text-red" title="Delete opening balance"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                 </td>
             </tr>
         <?php endforeach; ?>

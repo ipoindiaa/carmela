@@ -19,19 +19,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
         if (!in_array($type, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER'], true)) throw new Exception('Invalid party type.');
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
+        $isActive = post('is_active', '0') === '1' ? 1 : 0;
         if ($type !== $party['type']) {
             $usage = $db->fetch("SELECT COUNT(*) AS cnt FROM journal_lines WHERE account_id = ?", [$party['account_id']]);
             if (($usage['cnt'] ?? 0) > 0) throw new Exception('Party type cannot be changed after ledger activity. Create a new party or reverse the connected entries first.');
         }
         $db->query(
             "UPDATE debtors_creditors SET name = ?, type = ?, phone = ?, email = ?, address = ?, pan_gstin = ?, is_active = ? WHERE id = ? AND business_id = ?",
-            [$name, $type, $phone, $email, post('address'), strtoupper(trim((string) post('pan_gstin'))), post('is_active', '0') === '1' ? 1 : 0, $id, $businessId]
+            [$name, $type, $phone, $email, post('address'), strtoupper(trim((string) post('pan_gstin'))), $isActive, $id, $businessId]
         );
         $isReceivable = in_array($type, ['DEBTOR', 'BUYER'], true);
         $oldPartyAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$party['account_id'], $businessId]);
         $db->query(
-            "UPDATE accounts SET name = ?, group_name = ?, sub_group = ?, entity_type = ? WHERE id = ? AND business_id = ?",
-            ["$name ($type)", $isReceivable ? 'ASSET' : 'LIABILITY', $isReceivable ? 'Sundry Debtors' : 'Sundry Creditors', $isReceivable ? 'DEBTOR' : 'CREDITOR', $party['account_id'], $businessId]
+            "UPDATE accounts SET name = ?, group_name = ?, sub_group = ?, entity_type = ?, is_active = ? WHERE id = ? AND business_id = ?",
+            ["$name ($type)", $isReceivable ? 'ASSET' : 'LIABILITY', $isReceivable ? 'Sundry Debtors' : 'Sundry Creditors', $isReceivable ? 'DEBTOR' : 'CREDITOR', $isActive, $party['account_id'], $businessId]
         );
         $newPartyAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$party['account_id'], $businessId]);
         Auth::auditUpdate('account', $party['account_id'], $oldPartyAccount ?: [], $newPartyAccount ?: [], 'Party ledger account updated', 'parties');
@@ -77,13 +78,14 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> <?= clean($party['name']) ?></h1>
     <div class="page-actions">
-        <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
-        <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
+        <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($party['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($party['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
+        <?php if (!empty($party['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
-        <?php if (Auth::isAdmin() && $debtorOutstanding > 0): ?>
+        <?php if (!empty($party['is_active']) && Auth::hasEntityAccess('party', 'delete')): ?><a href="../delete_record.php?entity_type=party&amp;id=<?= clean($party['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
+        <?php if (!empty($party['is_active']) && Auth::isAdmin() && $debtorOutstanding > 0): ?>
             <a href="write_off.php?id=<?= $party['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-close-circle-line"></i> Write Off Bad Debt</a>
         <?php endif; ?>
-        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php<?= empty($party['is_active']) ? '?show=deleted' : '' ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 

@@ -1366,6 +1366,17 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 .alert-warning { background: var(--accent-yellow-glow); border: 1px solid rgba(245,158,11,0.3); color: var(--accent-yellow); }
 .alert-info { background: var(--accent-blue-glow); border: 1px solid rgba(59,130,246,0.3); color: var(--accent-blue); }
 
+.alert-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.alert-copy span {
+    color: var(--text-secondary);
+    line-height: var(--line-height-normal);
+}
+
 .alert-close {
     margin-left: auto; background: none; border: none;
     color: inherit; cursor: pointer; font-size: 18px; opacity: 0.7;

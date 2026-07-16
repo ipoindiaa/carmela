@@ -274,11 +274,11 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 
         <div class="page-content animate-fade">
             <?php if ($flash = getFlash('success')): ?>
-                <div class="alert alert-success"><i class="ri-check-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-success" data-auto-dismiss><i class="ri-check-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>
             <?php if ($flash = getFlash('error')): ?>
-                <div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-error" data-auto-dismiss><i class="ri-error-warning-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>
             <?php if ($flash = getFlash('warning')): ?>
-                <div class="alert alert-warning"><i class="ri-alert-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-warning" data-auto-dismiss><i class="ri-alert-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>

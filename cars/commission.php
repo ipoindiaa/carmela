@@ -11,7 +11,13 @@ $status = strtoupper(trim((string) get('status', '')));
 $search = trim((string) get('q', ''));
 $where = "WHERE c.business_id = ? AND c.ownership_type = 'COMMISSION'";
 $params = [$businessId];
-if (in_array($status, ['IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED'], true)) { $where .= ' AND c.status = ?'; $params[] = $status; }
+if (in_array($status, ['IN_STOCK','SOLD','PENDING_PAYMENT','CANCELLED'], true)) {
+    $where .= ' AND c.status = ?';
+    $params[] = $status;
+} else {
+    $status = '';
+    $where .= " AND c.status <> 'CANCELLED'";
+}
 if ($search !== '') {
     $where .= " AND (c.registration_no LIKE ? OR c.make LIKE ? OR c.model LIKE ? OR owner.name LIKE ? OR buyer.name LIKE ?)";
     $needle = '%' . $search . '%';
@@ -38,7 +44,7 @@ $summary = $db->fetch(
             COALESCE(SUM(CASE WHEN ccs.status IN ('PENDING','PARTIAL') THEN ccs.owner_amount - ccs.paid_to_owner_amount ELSE 0 END), 0) AS owner_payable
      FROM cars c
      LEFT JOIN commission_car_settlements ccs ON ccs.car_id = c.id AND ccs.business_id = c.business_id
-     WHERE c.business_id = ? AND c.ownership_type = 'COMMISSION'",
+     WHERE c.business_id = ? AND c.ownership_type = 'COMMISSION' AND c.status <> 'CANCELLED'",
     [$businessId]
 );
 ?>
@@ -64,7 +70,7 @@ $summary = $db->fetch(
         <?php if ($search): ?><a href="commission.php<?= $status ? '?status=' . urlencode($status) : '' ?>" class="btn btn-outline btn-sm">Clear</a><?php endif; ?>
     </form>
     <div class="filter-chip-row">
-        <?php foreach (['' => 'All', 'IN_STOCK' => 'With Us', 'SOLD' => 'Sold', 'PENDING_PAYMENT' => 'Buyer Pending'] as $value => $label): ?>
+        <?php foreach (['' => 'All', 'IN_STOCK' => 'With Us', 'SOLD' => 'Sold', 'PENDING_PAYMENT' => 'Buyer Pending', 'CANCELLED' => 'Deleted Records'] as $value => $label): ?>
             <a class="btn btn-sm <?= $status === $value ? 'btn-primary' : 'btn-outline' ?>" href="commission.php?<?= http_build_query(array_filter(['status' => $value, 'q' => $search])) ?>"><?= clean($label) ?></a>
         <?php endforeach; ?>
     </div>
@@ -84,7 +90,7 @@ $summary = $db->fetch(
                 <td class="text-right amount flow-in"><?= $car['sale_commission_amount'] ? formatAmount($car['sale_commission_amount']) : '-' ?></td>
                 <td class="text-right amount <?= $ownerDue > 0 ? 'flow-out' : '' ?>"><?= $ownerDue > 0 ? formatAmount($ownerDue) : '-' ?></td>
                 <td><span class="badge <?= $car['status'] === 'IN_STOCK' ? 'badge-blue' : ($car['status'] === 'SOLD' ? 'badge-green' : 'badge-yellow') ?>"><?= clean(CAR_STATUS[$car['status']] ?? $car['status']) ?></span></td>
-                <td class="text-center"><div class="table-action-stack"><a href="commission_view.php?id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline" title="History"><i class="ri-history-line"></i></a></div></td>
+                <td class="text-center"><div class="table-action-stack"><a href="commission_view.php?id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline" title="History"><i class="ri-history-line"></i></a><?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?></div></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

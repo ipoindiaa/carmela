@@ -3088,6 +3088,10 @@ class AccountingEngine {
     }
 
     private function assertEntryCanBeReversed($entry, $lines, $allowLinkedGuard = true) {
+        if (!empty($entry['is_reversal']) || $entry['transaction_type'] === 'REVERSAL') {
+            throw new Exception('A reversal entry is permanent correction history and cannot itself be reversed.');
+        }
+
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
             $token = $this->db->fetch(
                 "SELECT applied_amount FROM car_tokens WHERE business_id = ? AND journal_entry_id = ?",
@@ -3285,6 +3289,58 @@ class AccountingEngine {
                         [$token['id'], $this->businessId]
                     );
                     Auth::auditUpdate('car_token', $token['id'], $token, array_merge($token, ['status' => 'REVERSED']), 'Car token reversed', 'transactions');
+                }
+                break;
+
+            case 'RTO_RECOVERY':
+                $recovery = $this->db->fetch(
+                    "SELECT rr.*, r.recovered_amount, r.last_recovery_entry_id
+                     FROM rto_recoveries rr
+                     JOIN rto_records r ON r.id = rr.rto_record_id AND r.business_id = rr.business_id
+                     WHERE rr.business_id = ? AND rr.journal_entry_id = ?",
+                    [$this->businessId, $entry['id']]
+                );
+                if ($recovery && floatval($recovery['amount']) > 0.009) {
+                    $newRecovered = round(max(0, floatval($recovery['recovered_amount']) - floatval($recovery['amount'])), 2);
+                    $this->db->query(
+                        "UPDATE rto_recoveries SET amount = 0, narration = CONCAT(COALESCE(narration,''), ' | Reversed') WHERE id = ? AND business_id = ?",
+                        [$recovery['id'], $this->businessId]
+                    );
+                    $latestRecovery = $this->db->fetch(
+                        "SELECT journal_entry_id FROM rto_recoveries WHERE business_id = ? AND rto_record_id = ? AND amount > 0.009 ORDER BY created_at DESC LIMIT 1",
+                        [$this->businessId, $recovery['rto_record_id']]
+                    );
+                    $this->db->query(
+                        "UPDATE rto_records SET recovered_amount = ?, last_recovery_entry_id = ? WHERE id = ? AND business_id = ?",
+                        [$newRecovered, $latestRecovery['journal_entry_id'] ?? null, $recovery['rto_record_id'], $this->businessId]
+                    );
+                    Auth::auditUpdate('rto_record', $recovery['rto_record_id'], [
+                        'recovered_amount' => $recovery['recovered_amount'],
+                        'last_recovery_entry_id' => $recovery['last_recovery_entry_id'],
+                    ], [
+                        'recovered_amount' => $newRecovered,
+                        'last_recovery_entry_id' => $latestRecovery['journal_entry_id'] ?? null,
+                    ], 'RTO recovery reversed', 'rto');
+                }
+                break;
+
+            case 'RTO_EXPENSE':
+                $rtoRecord = $this->db->fetch(
+                    "SELECT * FROM rto_records WHERE business_id = ? AND expense_entry_id = ?",
+                    [$this->businessId, $entry['id']]
+                );
+                if ($rtoRecord) {
+                    $this->db->query(
+                        "UPDATE rto_records SET expense_amount = 0, expense_entry_id = NULL WHERE id = ? AND business_id = ?",
+                        [$rtoRecord['id'], $this->businessId]
+                    );
+                    Auth::auditUpdate('rto_record', $rtoRecord['id'], [
+                        'expense_amount' => $rtoRecord['expense_amount'],
+                        'expense_entry_id' => $rtoRecord['expense_entry_id'],
+                    ], [
+                        'expense_amount' => 0,
+                        'expense_entry_id' => null,
+                    ], 'RTO expense reversed', 'rto');
                 }
                 break;
 

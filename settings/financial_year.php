@@ -61,6 +61,7 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
                 <span class="text-muted">Current</span>
                 <?php endif; ?>
                 <a href="../reports/change_history.php?entity_type=financial_year&amp;entity_id=<?= clean($fy['id']) ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
+                <?php if (!$fy['is_active']): ?><a href="../delete_record.php?entity_type=financial_year&amp;id=<?= clean($fy['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete financial year"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
             </td>
         </tr>
         <?php endforeach; ?>

@@ -16,10 +16,11 @@ if (!$car) { setFlash('error', 'Car not found.'); redirect('list.php'); }
 if (($car['ownership_type'] ?? 'OWNED') === 'COMMISSION') { redirect('commission_view.php?id=' . urlencode($id)); }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    Auth::requireEntityAccess('car', 'write');
+    $action = post('action');
+    Auth::requireEntityAccess('car', $action === 'delete_car_image' ? 'delete' : 'write');
     verifyCsrf();
     try {
-        $action = post('action');
+        if ($car['status'] === 'CANCELLED') throw new Exception('Deleted cars are read-only. Their history remains available.');
         if ($action === 'update_details') {
             $year = intval(post('year')) ?: null;
             if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
@@ -193,8 +194,9 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
 <div class="page-header">
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div class="page-actions car-detail-actions">
-        <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
+        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($car['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
@@ -207,11 +209,11 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
         <a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-shield-2-line"></i> RTO</a>
-        <a href="list.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 
-<?php if (get('edit') === '1' && Auth::hasEntityAccess('car', 'write')): ?>
+<?php if (get('edit') === '1' && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
 <div class="card car-edit-card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Car Details</h3></div>
     <div class="card-body">
@@ -462,7 +464,7 @@ function removeFundingEditRow(button) {
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                                        <?php if (Auth::hasEntityAccess('car', 'write')): ?><form method="POST" data-confirm-submit="Delete this file? The deletion will be recorded in History." style="display:inline-flex;">
+                                        <?php if (Auth::hasEntityAccess('car', 'delete')): ?><form method="POST" data-confirm-submit="Delete this file? The deletion will be recorded in History." style="display:inline-flex;">
                                             <?= csrfField() ?>
                                             <input type="hidden" name="action" value="delete_car_image">
                                             <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
@@ -498,16 +500,16 @@ function removeFundingEditRow(button) {
     <div class="card">
         <div class="card-header"><h3><i class="ri-key-2-line"></i> Second Key</h3></div>
         <div class="card-body">
-            <form method="POST" class="inline-entry-form">
+            <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><form method="POST" class="inline-entry-form">
                 <?= csrfField() ?><input type="hidden" name="action" value="second_key_event">
                 <select name="event_type" class="form-control"><option value="RECEIVED">Second Key Received</option><option value="GIVEN">Second Key Given</option></select>
                 <input type="date" name="event_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
                 <input type="text" name="narration" class="form-control" placeholder="Narration">
                 <button class="btn btn-primary btn-sm">Save</button>
-            </form>
+            </form><?php endif; ?>
             <?php if (empty($keyEvents)): ?><p class="text-muted" style="margin-top:12px;">No key movement recorded.</p><?php else: ?>
-            <table class="table-compact" style="margin-top:12px;"><thead><tr><th>Date / Time</th><th>Event</th><th>Narration</th></tr></thead><tbody>
-                <?php foreach ($keyEvents as $event): ?><tr><td><?= renderDateTimeStack($event['event_date'], $event['created_at']) ?></td><td><span class="badge <?= $event['event_type'] === 'RECEIVED' ? 'badge-green' : 'badge-yellow' ?>"><?= clean($event['event_type']) ?></span></td><td><?= clean($event['narration'] ?: '-') ?></td></tr><?php endforeach; ?>
+            <table class="table-compact" style="margin-top:12px;"><thead><tr><th>Date / Time</th><th>Event</th><th>Narration</th><th class="text-center">Action</th></tr></thead><tbody>
+                <?php foreach ($keyEvents as $event): ?><tr><td><?= renderDateTimeStack($event['event_date'], $event['created_at']) ?></td><td><span class="badge <?= $event['event_type'] === 'RECEIVED' ? 'badge-green' : 'badge-yellow' ?>"><?= clean($event['event_type']) ?></span></td><td><?= clean($event['narration'] ?: '-') ?></td><td class="text-center"><?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=second_key_event&amp;id=<?= clean($event['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete second key event"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
         </div>
     </div>

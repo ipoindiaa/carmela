@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
 Auth::requireEntityAccess('employee', 'read');
 $search = trim((string) get('q', ''));
+$showDeleted = get('show', '') === 'deleted';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     Auth::requireEntityAccess('employee', 'write');
@@ -38,8 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
 }
 
-$employeeWhere = "e.business_id = ?";
-$employeeParams = [$businessId];
+$employeeWhere = "e.business_id = ? AND e.is_active = ?";
+$employeeParams = [$businessId, $showDeleted ? 0 : 1];
 if ($search !== '') {
     $employeeWhere .= " AND (
         e.name LIKE ?
@@ -71,12 +72,14 @@ $employees = $db->fetchAll(
 
 <div class="filter-bar">
     <form method="GET">
+        <?php if ($showDeleted): ?><input type="hidden" name="show" value="deleted"><?php endif; ?>
         <div class="filter-main-field">
             <label class="form-label">Search Employee</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, role, phone, salary, date, or status">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
-        <?php if ($search !== ''): ?><a href="list.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+        <?php if ($search !== ''): ?><a href="list.php<?= $showDeleted ? '?show=deleted' : '' ?>" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+        <a href="list.php<?= $showDeleted ? '' : '?show=deleted' ?>" class="btn btn-outline btn-sm"><i class="<?= $showDeleted ? 'ri-arrow-left-line' : 'ri-delete-bin-line' ?>"></i> <?= $showDeleted ? 'Active Employees' : 'Deleted Records' ?></a>
     </form>
 </div>
 
@@ -99,8 +102,9 @@ $employees = $db->fetchAll(
                     <td class="text-center"><span class="badge <?= $e['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $e['is_active'] ? 'Active' : 'Left' ?></span></td>
                     <td class="text-center">
                         <a href="view.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a>
-                        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $e['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
+                        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $e['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="<?= !empty($e['is_active']) ? 'Edit' : 'Restore' ?>"><i class="<?= !empty($e['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i></a><?php endif; ?>
                         <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $e['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
+                        <?php if (!empty($e['is_active']) && Auth::hasEntityAccess('employee', 'delete')): ?><a href="../delete_record.php?entity_type=employee&amp;id=<?= clean($e['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>

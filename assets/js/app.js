@@ -15,8 +15,9 @@ document.addEventListener('DOMContentLoaded', function() {
     initBreadcrumbs();
     initFloatingTooltips();
 
-    // Auto-dismiss alerts after 5 seconds
-    document.querySelectorAll('.alert').forEach(alert => {
+    // Only transient flash messages dismiss themselves. Contextual warnings
+    // inside forms must remain visible while the user makes a decision.
+    document.querySelectorAll('.alert[data-auto-dismiss]').forEach(alert => {
         setTimeout(() => {
             alert.style.transition = 'opacity 0.3s, transform 0.3s';
             alert.style.opacity = '0';

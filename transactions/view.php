@@ -60,6 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'upload_vouchers
         redirect("view.php?id=$id");
     }
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'delete_voucher') {
+    if (!$canReverseEntry) {
+        setFlash('error', 'You do not have permission to delete files from this transaction.');
+        redirect("view.php?id=$id");
+    }
+    verifyCsrf();
+    try {
+        deleteAttachment($businessId, post('attachment_id'), 'JOURNAL_ENTRY', $id);
+        setFlash('success', 'Voucher file deleted. The action is available in History and the Audit Log.');
+        redirect("view.php?id=$id");
+    } catch (Exception $e) {
+        setFlash('error', $e->getMessage());
+        redirect("view.php?id=$id");
+    }
+}
 
 $lines = $db->fetchAll(
     "SELECT jl.*, a.name as account_name, a.code as account_code FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id WHERE jl.journal_entry_id = ? ORDER BY jl.entry_type DESC, jl.amount DESC", [$id]);
@@ -76,8 +91,8 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
             <a href="edit.php?id=<?= $entry['id'] ?>" class="btn btn-primary btn-sm"><i class="ri-edit-line"></i> Edit</a>
         <?php endif; ?>
         <a href="../reports/change_history.php?entity_type=journal_entry&amp;entity_id=<?= urlencode($entry['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
-        <?php if ($entry['status'] === 'POSTED' && $canReverseEntry): ?>
-            <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm" data-confirm="Reverse this entry?"><i class="ri-arrow-go-back-line"></i> Reverse</a>
+        <?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && $canReverseEntry): ?>
+            <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete Entry</a>
         <?php endif; ?>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
@@ -237,6 +252,12 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                         <div class="attachment-actions">
                             <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                             <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
+                            <?php if ($canReverseEntry): ?><form method="POST" data-confirm-submit="Delete this voucher file? The deletion will be recorded in History." style="display:inline-flex;">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="delete_voucher">
+                                <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
+                                <button type="submit" class="btn btn-sm btn-outline text-red"><i class="ri-delete-bin-line"></i> Delete</button>
+                            </form><?php endif; ?>
                         </div>
                     </div>
                 <?php endforeach; ?>

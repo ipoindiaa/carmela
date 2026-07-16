@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::requireEntityAccess('car', 'write');
     verifyCsrf();
     try {
+        if ($car['status'] === 'CANCELLED') throw new Exception('Deleted commission cars are read-only. Their history remains available.');
         $action = post('action');
         if ($action === 'update_details') {
             $ownerPartyId = post('commission_owner_party_id');
@@ -103,11 +104,12 @@ $entries = $db->fetchAll(
 <div class="page-header">
     <div><h1><i class="ri-hand-coin-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1><p class="page-subtitle">Commission car owned by <?= clean($car['owner_name']) ?></p></div>
     <div class="page-actions">
-        <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="commission_view.php?id=<?= clean($id) ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="commission_view.php?id=<?= clean($id) ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($id) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
+        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($id) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if ($settlement): ?><a href="../reports/change_history.php?entity_type=commission_car_settlement&amp;entity_id=<?= clean($settlement['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-history-line"></i> Settlement History</a><?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $id, 'narration' => 'Token received for commission car ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a><?php endif; ?>
-        <a href="commission.php" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="commission.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 
@@ -115,7 +117,7 @@ $entries = $db->fetchAll(
     <i class="ri-shield-check-line"></i><div><strong>Customer-owned vehicle</strong><span>Gross sale value is memorandum information. Only commission enters Profit &amp; Loss.</span></div>
 </div>
 
-<?php if (get('edit') === '1' && Auth::hasEntityAccess('car', 'write')): ?>
+<?php if (get('edit') === '1' && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
 <form method="POST" class="card car-edit-card" data-confirm-submit="Save these commission car changes? Every changed field will be recorded in History.">
     <?= csrfField() ?><input type="hidden" name="action" value="update_details">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Commission Car</h3></div>
@@ -202,6 +204,6 @@ $entries = $db->fetchAll(
 </form>
 <?php endif; ?>
 
-<div class="card"><div class="card-header"><h3><i class="ri-exchange-line"></i> Entries and Reversal History</h3></div><div class="table-container"><table><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Narration</th><th class="text-right">Money In</th><th class="text-right">Money Out</th><th>Status</th><th>Action</th></tr></thead><tbody><?php if (!$entries): ?><tr><td colspan="8" class="text-center text-muted" style="padding:32px;">No financial entries yet.</td></tr><?php endif; ?><?php foreach ($entries as $entry): ?><tr><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= clean($entry['id']) ?>"><?= clean($entry['reference_no']) ?></a></td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td><td><?= clean($entry['narration']) ?></td><td class="text-right flow-in"><?= $entry['money_in'] > 0 ? formatAmount($entry['money_in']) : '-' ?></td><td class="text-right flow-out"><?= $entry['money_out'] > 0 ? formatAmount($entry['money_out']) : '-' ?></td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= clean($entry['status']) ?></span></td><td><?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && Auth::canAccessTransactionEntry($entry['id'], $businessId, 'delete')): ?><a href="../transactions/reverse.php?id=<?= clean($entry['id']) ?>" class="btn btn-sm btn-outline"><i class="ri-arrow-go-back-line"></i> Reverse</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div></div>
+<div class="card"><div class="card-header"><h3><i class="ri-exchange-line"></i> Entries and Deletion History</h3></div><div class="table-container"><table><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Narration</th><th class="text-right">Money In</th><th class="text-right">Money Out</th><th>Status</th><th>Action</th></tr></thead><tbody><?php if (!$entries): ?><tr><td colspan="8" class="text-center text-muted" style="padding:32px;">No financial entries yet.</td></tr><?php endif; ?><?php foreach ($entries as $entry): ?><tr><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= clean($entry['id']) ?>"><?= clean($entry['reference_no']) ?></a></td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td><td><?= clean($entry['narration']) ?></td><td class="text-right flow-in"><?= $entry['money_in'] > 0 ? formatAmount($entry['money_in']) : '-' ?></td><td class="text-right flow-out"><?= $entry['money_out'] > 0 ? formatAmount($entry['money_out']) : '-' ?></td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= clean($entry['status']) ?></span></td><td><?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && Auth::canAccessTransactionEntry($entry['id'], $businessId, 'delete')): ?><a href="../transactions/reverse.php?id=<?= clean($entry['id']) ?>" class="btn btn-sm btn-outline text-red"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div></div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -37,10 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
 $page = max(1, intval(get('page', 1)));
 $perPage = 30;
 $search = trim((string) get('q', ''));
+$showDeleted = get('show', '') === 'deleted';
 
-function partiesListUrl($page, $lazy = false, $search = '') {
+function partiesListUrl($page, $lazy = false, $search = '', $showDeleted = false) {
     $query = ['page' => $page];
     if ($search !== '') $query['q'] = $search;
+    if ($showDeleted) $query['show'] = 'deleted';
     if ($lazy) $query['lazy'] = 1;
     return 'list.php?' . http_build_query($query);
 }
@@ -64,7 +66,7 @@ function renderPartyRows($parties, $snapshots) {
             <div class="text-muted" style="font-size: 11px;"><?= clean($outstandingLabel) ?></div>
         </td>
         <td><?= $p['is_bad_debt'] ? '<span class="badge badge-red">Bad Debt</span>' : '-' ?></td>
-        <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
+        <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="<?= !empty($p['is_active']) ? 'Edit' : 'Restore' ?>"><i class="<?= !empty($p['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a><?php if (!empty($p['is_active']) && Auth::hasEntityAccess('party', 'delete')): ?><a href="../delete_record.php?entity_type=party&amp;id=<?= clean($p['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td>
     </tr>
     <?php endforeach; ?>
     <?php if (empty($parties)): ?><tr><td colspan="6" class="text-center text-muted" style="padding: 40px;">No parties yet</td></tr><?php endif; ?>
@@ -72,8 +74,8 @@ function renderPartyRows($parties, $snapshots) {
     return trim(ob_get_clean());
 }
 
-$partyWhere = "dc.business_id = ?";
-$partyParams = [$businessId];
+$partyWhere = "dc.business_id = ? AND dc.is_active = ?";
+$partyParams = [$businessId, $showDeleted ? 0 : 1];
 if ($search !== '') {
     $partyWhere .= " AND (dc.name LIKE ? OR dc.phone LIKE ? OR dc.type LIKE ? OR dc.pan_gstin LIKE ?)";
     $needle = '%' . $search . '%';
@@ -123,12 +125,12 @@ if ($isLazyRequest) {
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
         'html' => renderPartyRows($parties, $partySnapshots),
-        'next_url' => $nextPage ? partiesListUrl($nextPage, true, $search) : '',
+        'next_url' => $nextPage ? partiesListUrl($nextPage, true, $search, $showDeleted) : '',
     ]);
     exit;
 }
 
-$nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, $search) : '';
+$nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, $search, $showDeleted) : '';
 ?>
 
 <div class="page-header">
@@ -138,12 +140,14 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <div class="filter-bar">
     <form method="GET">
+        <?php if ($showDeleted): ?><input type="hidden" name="show" value="deleted"><?php endif; ?>
         <div class="filter-main-field">
             <label class="form-label">Search Party</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, type, or GSTIN">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
-        <?php if ($search !== ''): ?><a href="list.php" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+        <?php if ($search !== ''): ?><a href="list.php<?= $showDeleted ? '?show=deleted' : '' ?>" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>
+        <a href="list.php<?= $showDeleted ? '' : '?show=deleted' ?>" class="btn btn-outline btn-sm"><i class="<?= $showDeleted ? 'ri-arrow-left-line' : 'ri-delete-bin-line' ?>"></i> <?= $showDeleted ? 'Active Parties' : 'Deleted Records' ?></a>
     </form>
 </div>
 
@@ -163,11 +167,11 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination no-js-pagination">
-    <?php if ($page > 1): ?><a href="<?= clean(partiesListUrl($page - 1, false, $search)) ?>">← Prev</a><?php endif; ?>
+    <?php if ($page > 1): ?><a href="<?= clean(partiesListUrl($page - 1, false, $search, $showDeleted)) ?>">← Prev</a><?php endif; ?>
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="<?= clean(partiesListUrl($i, false, $search)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(partiesListUrl($i, false, $search, $showDeleted)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
-    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(partiesListUrl($page + 1, false, $search)) ?>">Next →</a><?php endif; ?>
+    <?php if ($page < $pagination['total_pages']): ?><a href="<?= clean(partiesListUrl($page + 1, false, $search, $showDeleted)) ?>">Next →</a><?php endif; ?>
 </div>
 <?php endif; ?>
 

@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
         );
         if (!empty($emp['advance_account_id'])) {
             $oldAdvanceAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$emp['advance_account_id'], $businessId]);
-            $db->query("UPDATE accounts SET name = ? WHERE id = ? AND business_id = ?", ["$name - Advance A/c", $emp['advance_account_id'], $businessId]);
+            $db->query("UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?", ["$name - Advance A/c", $isActive, $emp['advance_account_id'], $businessId]);
             $newAdvanceAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$emp['advance_account_id'], $businessId]);
             Auth::auditUpdate('account', $emp['advance_account_id'], $oldAdvanceAccount ?: [], $newAdvanceAccount ?: [], 'Employee advance account renamed', 'employees');
         }
@@ -56,15 +56,16 @@ $advanceLedger = $db->fetchAll(
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> <?= clean($emp['name']) ?></h1>
     <div class="page-actions">
-        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $emp['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if (Auth::hasEntityAccess('employee', 'write')): ?><a href="view.php?id=<?= $emp['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($emp['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($emp['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $emp['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
-        <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $emp['advance_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Advance</a><?php endif; ?>
-        <a href="../transactions/new.php?type=SALARY_PAYMENT" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
-        <a href="../transactions/new.php?type=EMPLOYEE_ADVANCE" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a>
-        <?php if (Auth::isAdmin() && $advanceOutstanding > 0): ?>
+        <?php if (!empty($emp['is_active']) && Auth::hasEntityAccess('employee', 'delete')): ?><a href="../delete_record.php?entity_type=employee&amp;id=<?= clean($emp['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
+        <?php if (!empty($emp['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $emp['advance_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Advance</a><?php endif; ?>
+        <?php if (!empty($emp['is_active'])): ?><a href="../transactions/new.php?type=SALARY_PAYMENT" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
+        <a href="../transactions/new.php?type=EMPLOYEE_ADVANCE" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a><?php endif; ?>
+        <?php if (!empty($emp['is_active']) && Auth::isAdmin() && $advanceOutstanding > 0): ?>
             <a href="write_off.php?id=<?= $emp['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-close-circle-line"></i> Write Off Advance</a>
         <?php endif; ?>
-        <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+        <a href="list.php<?= empty($emp['is_active']) ? '?show=deleted' : '' ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 

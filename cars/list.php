@@ -18,6 +18,9 @@ $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 Auth::requireEntityAccess('car', 'read');
 
 $filter = get('status', '');
+if (!in_array($filter, ['', 'IN_STOCK', 'SOLD', 'PENDING_PAYMENT', 'CANCELLED'], true)) {
+    $filter = '';
+}
 $search = trim((string) get('q', ''));
 $page = max(1, intval(get('page', 1)));
 $perPage = 24;
@@ -77,8 +80,9 @@ function renderCarRows($cars, $engine) {
             <td class="text-center">
                 <div class="table-action-stack">
                     <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
-                    <?php if (Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
+                    <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
                     <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
+                    <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                     <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
                         <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
                     <?php endif; ?>
@@ -96,7 +100,12 @@ function renderCarRows($cars, $engine) {
 
 $where = "WHERE c.business_id = ? AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED'";
 $params = [$businessId];
-if ($filter) { $where .= " AND c.status = ?"; $params[] = $filter; }
+if ($filter) {
+    $where .= " AND c.status = ?";
+    $params[] = $filter;
+} else {
+    $where .= " AND c.status <> 'CANCELLED'";
+}
 if ($search !== '') {
     $where .= " AND (
         UPPER(REPLACE(REPLACE(c.registration_no, '-', ''), ' ', '')) LIKE ?
@@ -213,7 +222,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
     <a href="list.php?<?= http_build_query(array_filter(['status' => 'IN_STOCK', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'IN_STOCK' ? 'btn-primary' : 'btn-outline' ?>">In Stock</a>
     <a href="list.php?<?= http_build_query(array_filter(['status' => 'SOLD', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'SOLD' ? 'btn-primary' : 'btn-outline' ?>">Sold</a>
     <a href="list.php?<?= http_build_query(array_filter(['status' => 'PENDING_PAYMENT', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'PENDING_PAYMENT' ? 'btn-primary' : 'btn-outline' ?>">Pending</a>
-    <a href="list.php?<?= http_build_query(array_filter(['status' => 'CANCELLED', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'CANCELLED' ? 'btn-primary' : 'btn-outline' ?>">Cancelled</a>
+    <a href="list.php?<?= http_build_query(array_filter(['status' => 'CANCELLED', 'q' => $search])) ?>" class="btn btn-sm <?= $filter === 'CANCELLED' ? 'btn-primary' : 'btn-outline' ?>"><i class="ri-delete-bin-line"></i> Deleted Records</a>
 </div>
 
 <div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">

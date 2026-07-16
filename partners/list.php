@@ -12,6 +12,7 @@ $businessId = Auth::user('business_id');
 Auth::requireEntityAccess('partner', 'read');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $search = trim((string) get('q', ''));
+$showDeleted = get('show', '') === 'deleted';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     Auth::requireEntityAccess('partner', 'write');
@@ -25,8 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
 }
 
-$partnerWhere = "WHERE p.business_id = ?";
-$partnerParams = [$businessId];
+$partnerWhere = "WHERE p.business_id = ? AND p.is_active = ?";
+$partnerParams = [$businessId, $showDeleted ? 0 : 1];
 if ($requestedType !== '') {
     $partnerWhere .= " AND p.partner_type = ?";
     $partnerParams[] = $requestedType;
@@ -73,12 +74,14 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="filter-bar">
     <form method="GET">
         <?php if ($requestedType !== ''): ?><input type="hidden" name="type" value="<?= clean($requestedType) ?>"><?php endif; ?>
+        <?php if ($showDeleted): ?><input type="hidden" name="show" value="deleted"><?php endif; ?>
         <div class="filter-main-field filter-main-field-wide">
             <label class="form-label">Search partner</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email, PAN, share, date, or status">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
-        <a href="list.php<?= $requestedType !== '' ? '?type=' . urlencode($requestedType) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
+        <a href="list.php?<?= http_build_query(array_filter(['type' => $requestedType, 'show' => $showDeleted ? 'deleted' : ''])) ?>" class="btn btn-outline btn-sm">Clear</a>
+        <a href="list.php?<?= http_build_query(array_filter(['type' => $requestedType, 'show' => $showDeleted ? '' : 'deleted'])) ?>" class="btn btn-outline btn-sm"><i class="<?= $showDeleted ? 'ri-arrow-left-line' : 'ri-delete-bin-line' ?>"></i> <?= $showDeleted ? 'Active Partners' : 'Deleted Records' ?></a>
     </form>
 </div>
 
@@ -109,7 +112,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
+                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="<?= !empty($p['is_active']) ? 'Edit' : 'Restore' ?>"><i class="<?= !empty($p['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a><?php if (!empty($p['is_active']) && Auth::hasEntityAccess('partner', 'delete')): ?><a href="../delete_record.php?entity_type=partner&amp;id=<?= clean($p['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -136,7 +139,7 @@ $pageDescription = $requestedType === 'CARWISE'
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
-                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a></td>
+                    <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="<?= !empty($p['is_active']) ? 'Edit' : 'Restore' ?>"><i class="<?= !empty($p['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a><?php if (!empty($p['is_active']) && Auth::hasEntityAccess('partner', 'delete')): ?><a href="../delete_record.php?entity_type=partner&amp;id=<?= clean($p['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

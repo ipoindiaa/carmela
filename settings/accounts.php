@@ -3,6 +3,7 @@ $pageTitle = 'Account Settings';
 $pageIcon = '<i class="ri-bank-card-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+require_once __DIR__ . '/../includes/business_data_reset.php';
 Auth::requireAdmin();
 
 $businessId = Auth::user('business_id');
@@ -36,6 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post('action');
 
     try {
+        if ($action === 'clear_database') {
+            $resetService = new BusinessDataResetService($businessId, Auth::user('user_id'));
+            $result = $resetService->reset(post('current_password'), post('confirmation_phrase'));
+            if (!empty($result['file_cleanup_failed'])) {
+                setFlash('warning', 'Business data was cleared, but one or more old attachment files could not be removed from storage.');
+            }
+            setFlash('success', 'All business data was cleared. Your users and business profile were kept, and clean default accounts were recreated.');
+        }
+
         if ($action === 'create') {
             $type = strtoupper(post('entity_type'));
             if (!isset($accountTypes[$type])) {
@@ -125,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         redirect('accounts.php');
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         setFlash('error', $e->getMessage());
     }
 }
@@ -237,6 +247,7 @@ $accounts = $db->fetchAll(
                                     <a href="../reports/ledger.php?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="View ledger"><i class="ri-eye-line"></i></a>
                                     <a href="opening_balances.php?account_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Edit opening balance"><i class="ri-scales-3-line"></i></a>
                                     <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
+                                    <?php if (!empty($account['is_active'])): ?><a href="../delete_record.php?entity_type=account&amp;id=<?= clean($account['id']) ?>" class="btn btn-outline btn-sm text-red" title="Delete account"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                                 </form>
                             </td>
                         </tr>
@@ -247,6 +258,72 @@ $accounts = $db->fetchAll(
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 18px; border: 1px solid var(--danger, #dc2626);">
+    <div class="card-header">
+        <h3 class="text-red"><i class="ri-alarm-warning-line"></i> Danger Zone</h3>
+    </div>
+    <div class="card-body">
+        <h4 style="margin-bottom: 8px;">Clear all business data</h4>
+        <p class="text-muted" style="margin-bottom: 14px;">
+            Permanently erase transactions, cars, parties, partners, employees, RTO records, accounts, audit history, alerts, categories, and attachments.
+            Your business profile, user logins, and book permissions will be kept. Clean default accounts and the current financial year will be recreated.
+        </p>
+        <button type="button" class="btn btn-danger" onclick="openModal('clearDatabaseWarningModal')">
+            <i class="ri-delete-bin-6-line"></i> Clear Database
+        </button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="clearDatabaseWarningModal" role="dialog" aria-modal="true" aria-labelledby="clearDatabaseWarningTitle">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="clearDatabaseWarningTitle"><i class="ri-error-warning-line text-red"></i> Permanent data deletion</h3>
+            <button type="button" class="modal-close" onclick="closeModal('clearDatabaseWarningModal')" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-error" style="margin-bottom: 14px;">
+                <i class="ri-alarm-warning-line"></i>
+                <span>This action cannot be undone. There is no recovery option inside the application.</span>
+            </div>
+            <p>This will remove all accounting and operational data for <strong><?= clean(Auth::user('business_name')) ?></strong>, including uploaded attachments.</p>
+            <p class="text-muted" style="margin-top: 10px;">Only the business profile, user logins, and their permissions will remain.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('clearDatabaseWarningModal')">Cancel</button>
+            <button type="button" class="btn btn-danger" onclick="closeModal('clearDatabaseWarningModal'); openModal('clearDatabasePasswordModal'); document.getElementById('clearDatabasePassword').focus();">
+                I understand, continue
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="clearDatabasePasswordModal" role="dialog" aria-modal="true" aria-labelledby="clearDatabasePasswordTitle">
+    <div class="modal">
+        <form method="POST" autocomplete="off">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="clear_database">
+            <div class="modal-header">
+                <h3 id="clearDatabasePasswordTitle"><i class="ri-lock-password-line text-red"></i> Confirm database reset</h3>
+                <button type="button" class="modal-close" onclick="closeModal('clearDatabasePasswordModal')" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="clearDatabasePassword">Your current password *</label>
+                    <input type="password" id="clearDatabasePassword" name="current_password" class="form-control" autocomplete="current-password" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="clearDatabasePhrase">Type CLEAR to confirm *</label>
+                    <input type="text" id="clearDatabasePhrase" name="confirmation_phrase" class="form-control" placeholder="CLEAR" pattern="CLEAR" autocomplete="off" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeModal('clearDatabasePasswordModal')">Cancel</button>
+                <button type="submit" class="btn btn-danger"><i class="ri-delete-bin-6-line"></i> Permanently Clear Data</button>
+            </div>
+        </form>
     </div>
 </div>
 

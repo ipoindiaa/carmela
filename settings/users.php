@@ -262,6 +262,7 @@ foreach ($users as $user) {
                     <button class="btn btn-sm btn-outline" onclick="document.getElementById('reset-uid').value='<?= $u['id'] ?>';openModal('reset-password')">
                         <i class="ri-lock-line"></i>
                     </button>
+                    <?php if ($u['id'] !== Auth::user('user_id') && !empty($u['is_active'])): ?><a href="../delete_record.php?entity_type=user&amp;id=<?= clean($u['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete user"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                 </td>
             </tr>
         <?php endforeach; ?>

@@ -10,6 +10,7 @@ $businessId = Auth::user('business_id');
 $userId = Auth::user('user_id');
 $engine = new AccountingEngine($businessId, $userId);
 $canWriteRto = Auth::hasBookAccess('rto_book', 'write');
+$canDeleteRto = Auth::hasBookAccess('rto_book', 'delete');
 $primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'write');
 $paymentAccounts = array_merge($primaryAccountGroups['cash_book'] ?? [], $primaryAccountGroups['bank_book'] ?? []);
 $paymentAccountIds = array_values(array_filter(array_map(static fn($account) => $account['id'] ?? null, $paymentAccounts)));
@@ -96,7 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $q = trim((string) get('q', ''));
-$where = "WHERE r.business_id = ?";
+$showDeleted = get('show') === 'deleted';
+$where = "WHERE r.business_id = ? AND r.status " . ($showDeleted ? "= 'CANCELLED'" : "<> 'CANCELLED'");
 $params = [$businessId];
 if ($selectedCarId !== '') {
     $where .= " AND r.car_id = ?";
@@ -114,7 +116,7 @@ $stats = $db->fetch(
         COALESCE(SUM(recovered_amount),0) AS recovered,
         COUNT(*) AS total_cases
      FROM rto_records
-     WHERE business_id = ?",
+     WHERE business_id = ? AND status <> 'CANCELLED'",
     [$businessId]
 );
 
@@ -176,6 +178,7 @@ $rtoEntries = $db->fetchAll(
         <input type="search" name="q" class="form-control" value="<?= clean($q) ?>" placeholder="Search car, buyer, agent, work name">
         <button class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
         <a href="list.php<?= $selectedCarId !== '' ? '?car_id=' . urlencode($selectedCarId) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
+        <a href="list.php?show=<?= $showDeleted ? 'active' : 'deleted' ?>" class="btn btn-outline btn-sm"><i class="ri-archive-line"></i> <?= $showDeleted ? 'Active Records' : 'Deleted Records' ?></a>
     </form>
 </div>
 
@@ -265,11 +268,12 @@ $rtoEntries = $db->fetchAll(
                     <th class="text-right">Received</th>
                     <th class="text-right">Spent</th>
                     <th>Files</th>
+                    <th class="text-center">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($records)): ?>
-                    <tr><td colspan="6" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($records as $record):
                     $attachments = fetchEntityAttachments($businessId, 'RTO_RECORD', $record['id'], 'RTO_DOC');
@@ -298,6 +302,10 @@ $rtoEntries = $db->fetchAll(
                             <a href="<?= clean($url) ?>" target="_blank" class="mini-pill mini-pill-neutral"><i class="ri-attachment-line"></i> Open</a>
                             <button type="button" class="mini-pill mini-pill-neutral" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
                         <?php endforeach; ?>
+                    </td>
+                    <td class="text-center">
+                        <a href="../reports/change_history.php?entity_type=rto_record&amp;entity_id=<?= clean($record['id']) ?>" class="btn btn-sm btn-outline" title="History"><i class="ri-history-line"></i></a>
+                        <?php if ($record['status'] !== 'CANCELLED' && $canDeleteRto): ?><a href="../delete_record.php?entity_type=rto_record&amp;id=<?= clean($record['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>

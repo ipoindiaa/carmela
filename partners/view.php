@@ -22,20 +22,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
         $email = validateEmailAddress(post('email'), 'Email');
         $share = round(parseDecimalInput(post('profit_share_pct', 0)), 2);
         if ($share < 0 || $share > 100) throw new Exception('Profit share must be between 0 and 100.');
+        $isActive = post('is_active', '0') === '1' ? 1 : 0;
 
         $db->query(
             "UPDATE partners SET name = ?, partner_type = ?, phone = ?, email = ?, pan = ?, profit_share_pct = ?, joined_date = ?, is_active = ? WHERE id = ? AND business_id = ?",
-            [$name, $partnerType, $phone, $email, strtoupper(trim((string) post('pan'))), $share, post('joined_date'), post('is_active', '0') === '1' ? 1 : 0, $id, $businessId]
+            [$name, $partnerType, $phone, $email, strtoupper(trim((string) post('pan'))), $share, post('joined_date'), $isActive, $id, $businessId]
         );
         if (!empty($partner['capital_account_id'])) {
             $oldCapitalAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$partner['capital_account_id'], $businessId]);
-            $db->query("UPDATE accounts SET name = ? WHERE id = ? AND business_id = ?", ["$name - Capital A/c", $partner['capital_account_id'], $businessId]);
+            $db->query("UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?", ["$name - Capital A/c", $isActive, $partner['capital_account_id'], $businessId]);
             $newCapitalAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$partner['capital_account_id'], $businessId]);
             Auth::auditUpdate('account', $partner['capital_account_id'], $oldCapitalAccount ?: [], $newCapitalAccount ?: [], 'Partner capital account renamed', 'partners');
         }
         if (!empty($partner['current_account_id'])) {
             $oldCurrentAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$partner['current_account_id'], $businessId]);
-            $db->query("UPDATE accounts SET name = ? WHERE id = ? AND business_id = ?", ["$name - Current A/c", $partner['current_account_id'], $businessId]);
+            $db->query("UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?", ["$name - Current A/c", $isActive, $partner['current_account_id'], $businessId]);
             $newCurrentAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$partner['current_account_id'], $businessId]);
             Auth::auditUpdate('account', $partner['current_account_id'], $oldCurrentAccount ?: [], $newCurrentAccount ?: [], 'Partner current account renamed', 'partners');
         }
@@ -109,10 +110,11 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 <div class="page-header">
     <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?> <span class="badge badge-purple"><?= clean($partnerTypeLabel) ?></span></h1>
     <div class="page-actions">
-        <?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $partner['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $partner['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($partner['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($partner['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $partner['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
-        <?php if (Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $partner['capital_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Capital</a><?php endif; ?>
-        <a href="list.php?type=<?= clean($backType) ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
+        <?php if (!empty($partner['is_active']) && Auth::hasEntityAccess('partner', 'delete')): ?><a href="../delete_record.php?entity_type=partner&amp;id=<?= clean($partner['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
+        <?php if (!empty($partner['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $partner['capital_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Capital</a><?php endif; ?>
+        <a href="list.php?<?= http_build_query(array_filter(['type' => $backType, 'show' => empty($partner['is_active']) ? 'deleted' : ''])) ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
 
