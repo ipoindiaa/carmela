@@ -275,9 +275,91 @@ function initCurrencyInputs(scope = document) {
 function initRegistrationInputs(scope = document) {
     scope.querySelectorAll('input.registration-input:not([data-registration-ready])').forEach((input) => {
         input.dataset.registrationReady = '1';
+        let requestTimer = null;
+        let activeRequest = null;
+        let lastCheckedValue = '';
+        const checkUrl = input.dataset.registrationCheckUrl || '';
+        const feedback = document.createElement('div');
+        feedback.className = 'registration-feedback';
+        feedback.setAttribute('aria-live', 'polite');
+        input.insertAdjacentElement('afterend', feedback);
+
+        const clearAvailabilityState = () => {
+            input.setCustomValidity('');
+            input.removeAttribute('aria-invalid');
+            input.classList.remove('is-invalid', 'is-valid');
+            feedback.className = 'registration-feedback';
+            feedback.replaceChildren();
+        };
+
+        const renderAvailability = (result) => {
+            clearAvailabilityState();
+            if (!result || result.valid === false) return;
+            if (result.available) {
+                input.classList.add('is-valid');
+                feedback.classList.add('is-success');
+                feedback.textContent = result.message || 'Registration number is available.';
+                return;
+            }
+
+            const message = result.message || 'This registration number already exists.';
+            input.setCustomValidity(message);
+            input.setAttribute('aria-invalid', 'true');
+            input.classList.add('is-invalid');
+            feedback.classList.add('is-error');
+            const text = document.createElement('span');
+            const details = result.car
+                ? [result.car.registration_no, result.car.vehicle, result.car.ownership, result.car.status].filter(Boolean).join(' - ')
+                : '';
+            text.textContent = details ? `${message} ${details}. ` : `${message} `;
+            feedback.appendChild(text);
+            if (result.car?.url) {
+                const link = document.createElement('a');
+                link.href = result.car.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.textContent = 'Open existing car';
+                feedback.appendChild(link);
+            }
+        };
+
+        const checkAvailability = async () => {
+            const registrationNo = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!checkUrl || !/^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$/.test(registrationNo)) {
+                lastCheckedValue = '';
+                if (activeRequest) activeRequest.abort();
+                clearAvailabilityState();
+                return;
+            }
+            if (registrationNo === lastCheckedValue) return;
+            lastCheckedValue = registrationNo;
+            if (activeRequest) activeRequest.abort();
+            activeRequest = new AbortController();
+            feedback.className = 'registration-feedback is-checking';
+            feedback.textContent = 'Checking registration number...';
+            try {
+                const url = new URL(checkUrl, window.location.href);
+                url.searchParams.set('registration_no', registrationNo);
+                const response = await fetch(url, {
+                    headers: { Accept: 'application/json' },
+                    signal: activeRequest.signal,
+                });
+                const result = await response.json();
+                renderAvailability(result);
+            } catch (error) {
+                if (error.name !== 'AbortError') clearAvailabilityState();
+            }
+        };
+
         input.addEventListener('input', () => {
             input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            lastCheckedValue = '';
+            clearTimeout(requestTimer);
+            clearAvailabilityState();
+            requestTimer = window.setTimeout(checkAvailability, 350);
         });
+        input.addEventListener('blur', checkAvailability);
+        if (input.value) checkAvailability();
     });
 }
 

@@ -63,7 +63,7 @@ if ($isPost) {
             <div><strong>This car belongs to the customer.</strong><span>The expected selling value is for tracking only. Income is recorded only when commission is earned at sale.</span></div>
         </div>
         <div class="form-row-3">
-            <div class="form-group"><label class="form-label">Registration No. *</label><input type="text" name="registration_no" class="form-control registration-input" placeholder="GJ05AA0001" maxlength="11" value="<?= clean(post('registration_no')) ?>" required></div>
+            <div class="form-group"><label class="form-label">Registration No. *</label><input type="text" name="registration_no" class="form-control registration-input" placeholder="GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" title="Use format like GJ05AA0001. Last 4 characters must be digits." value="<?= clean(post('registration_no')) ?>" data-registration-check-url="<?= clean(APP_URL . 'cars/check_registration.php') ?>" required></div>
             <div class="form-group"><label class="form-label">Received Date *</label><input type="date" name="received_date" class="form-control" value="<?= clean(post('received_date', date('Y-m-d'))) ?>" required></div>
             <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= post('has_second_key', '0') !== '1' ? 'selected' : '' ?>>No</option><option value="1" <?= post('has_second_key') === '1' ? 'selected' : '' ?>>Yes</option></select></div>
         </div>

@@ -252,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!isValidRegistrationNo($carRegNo)) {
                         throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
                     }
-                    $existingCar = $db->fetch("SELECT id FROM cars WHERE business_id = ? AND registration_no = ?", [$businessId, $carRegNo]);
+                    $existingCar = findCarByRegistrationNo($db, $businessId, $carRegNo);
                     if ($existingCar) {
                         throw new Exception('A car with this registration number already exists.');
                     }
@@ -618,7 +618,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">Registration No. *</label>
-                        <input type="text" name="car_reg_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" title="Use format like GJ05AA0001. Last 4 characters must be digits.">
+                        <input type="text" name="car_reg_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" title="Use format like GJ05AA0001. Last 4 characters must be digits." value="<?= clean(post('car_reg_no')) ?>" data-registration-check-url="<?= clean(APP_URL . 'cars/check_registration.php') ?>">
                         <div class="form-hint">Last 4 digits must stay exactly 4 numbers, like <strong>0001</strong>.</div>
                     </div>
                     <div class="form-group">

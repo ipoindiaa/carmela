@@ -8,11 +8,13 @@ Auth::requireAdmin();
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $selectedAccountId = get('account_id', '');
+$returnContext = get('return', '') === 'rto' ? 'rto' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
     try {
         $selectedAccountId = post('account_id');
+        $returnContext = post('return_context', '') === 'rto' ? 'rto' : '';
         $account = $db->fetch(
             "SELECT id, name FROM accounts WHERE id = ? AND business_id = ? AND code <> 'OB-EQUITY'",
             [$selectedAccountId, $businessId]
@@ -27,7 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reason = trim((string) post('reason'));
         $engine->setOpeningBalance($selectedAccountId, $amount, $type, $date, $reason);
         setFlash('success', 'Opening balance updated for ' . $account['name'] . '.');
-        redirect('opening_balances.php?account_id=' . urlencode($selectedAccountId));
+        $redirectParams = ['account_id' => $selectedAccountId];
+        if ($returnContext === 'rto') $redirectParams['return'] = 'rto';
+        redirect('opening_balances.php?' . http_build_query($redirectParams));
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
     }
@@ -61,6 +65,7 @@ foreach ($accounts as $account) {
     }
 }
 $defaultOpeningDate = $selectedAccount['opening_balance_date'] ?? (getCurrentFY() . '-04-01');
+$isRtoOpening = ($selectedAccount['code'] ?? '') === 'RTO-OPEN';
 ?>
 
 <div class="page-header">
@@ -68,7 +73,10 @@ $defaultOpeningDate = $selectedAccount['opening_balance_date'] ?? (getCurrentFY(
         <h1><i class="ri-scales-3-line"></i> Opening Balances</h1>
         <div class="text-muted">Set the dated starting balance for cash, bank, parties, partners, employees, cars, and other balance-sheet accounts.</div>
     </div>
-    <a href="accounts.php" class="btn btn-outline"><i class="ri-bank-card-line"></i> Account Settings</a>
+    <div class="page-actions">
+        <?php if ($returnContext === 'rto'): ?><a href="../rto/list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back to RTO Book</a><?php endif; ?>
+        <a href="accounts.php" class="btn btn-outline"><i class="ri-bank-card-line"></i> Account Settings</a>
+    </div>
 </div>
 
 <div class="card" style="margin-bottom:18px;">
@@ -76,10 +84,17 @@ $defaultOpeningDate = $selectedAccount['opening_balance_date'] ?? (getCurrentFY(
     <div class="card-body">
         <form method="POST" data-confirm-submit="Update this opening balance? The previous opening entry will be reversed and retained in history.">
             <?= csrfField() ?>
+            <input type="hidden" name="return_context" value="<?= clean($returnContext) ?>">
+            <?php if ($isRtoOpening): ?>
+                <div class="alert alert-info">
+                    <i class="ri-information-line"></i>
+                    <div><strong>This amount belongs to the RTO Book, not to any car.</strong><span>Use DR for old RTO money available or receivable. Use CR for an old RTO amount payable.</span></div>
+                </div>
+            <?php endif; ?>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Account *</label>
-                    <select name="account_id" class="form-control searchable-select" required onchange="window.location='opening_balances.php?account_id='+encodeURIComponent(this.value)">
+                    <select name="account_id" class="form-control searchable-select" required onchange="window.location='opening_balances.php?account_id='+encodeURIComponent(this.value)<?= $returnContext === 'rto' ? "+'&return=rto'" : '' ?>">
                         <option value="">Select account</option>
                         <?php foreach ($accounts as $account): ?>
                             <option value="<?= clean($account['id']) ?>" <?= $selectedAccountId === $account['id'] ? 'selected' : '' ?>><?= clean($account['name']) ?> (<?= clean($account['code']) ?>) - <?= clean($account['account_area']) ?></option>

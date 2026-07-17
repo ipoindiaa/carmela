@@ -32,6 +32,7 @@ class AccountingEngine {
             ['GEN-EXP', 'Office / Business Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['CAR-REPAIR', 'Car Repair / Service', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
             ['RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
+            ['RTO-OPEN', 'RTO Book Opening Balance', 'ASSET', 'Current Assets', 'GENERAL'],
             ['RENT-EXP', 'Office Rent', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['MISC-EXP', 'Miscellaneous Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
             ['CAR-REV', 'Car Sales Revenue', 'INCOME', 'Direct Income', 'GENERAL'],
@@ -251,6 +252,62 @@ class AccountingEngine {
             if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
             throw $e;
         }
+    }
+
+    public function getRtoOpeningAccount($createIfMissing = false) {
+        $account = $this->db->fetch(
+            "SELECT * FROM accounts WHERE business_id = ? AND code = 'RTO-OPEN' LIMIT 1",
+            [$this->businessId]
+        );
+        if (!$account && $createIfMissing) {
+            try {
+                $accountId = $this->createAccount(
+                    'RTO-OPEN',
+                    'RTO Book Opening Balance',
+                    'ASSET',
+                    'Current Assets',
+                    'GENERAL'
+                );
+            } catch (Throwable $e) {
+                $concurrentAccount = $this->db->fetch(
+                    "SELECT * FROM accounts WHERE business_id = ? AND code = 'RTO-OPEN' LIMIT 1",
+                    [$this->businessId]
+                );
+                if (!$concurrentAccount) throw $e;
+                return $concurrentAccount;
+            }
+            $account = $this->db->fetch(
+                "SELECT * FROM accounts WHERE id = ? AND business_id = ?",
+                [$accountId, $this->businessId]
+            );
+        }
+        return $account ?: null;
+    }
+
+    public function getRtoBookSummary() {
+        $totals = $this->db->fetch(
+            "SELECT COALESCE(SUM(expense_amount), 0) AS spent,
+                    COALESCE(SUM(recovered_amount), 0) AS recovered,
+                    COUNT(*) AS total_cases
+             FROM rto_records
+             WHERE business_id = ? AND status <> 'CANCELLED'",
+            [$this->businessId]
+        );
+        $openingAccount = $this->getRtoOpeningAccount(false);
+        $opening = $openingAccount
+            ? signedBalanceValue($openingAccount['opening_balance'] ?? 0, $openingAccount['opening_balance_type'] ?? 'DR')
+            : 0.0;
+        $spent = floatval($totals['spent'] ?? 0);
+        $recovered = floatval($totals['recovered'] ?? 0);
+
+        return [
+            'opening' => round($opening, 2),
+            'spent' => round($spent, 2),
+            'recovered' => round($recovered, 2),
+            'net' => round($opening + $recovered - $spent, 2),
+            'total_cases' => intval($totals['total_cases'] ?? 0),
+            'opening_account' => $openingAccount,
+        ];
     }
 
     private function ensureAdvancedSchema() {
@@ -1373,10 +1430,7 @@ class AccountingEngine {
         if (!isValidRegistrationNo($registrationNo)) {
             throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
         }
-        $existing = $this->db->fetch(
-            "SELECT id FROM cars WHERE business_id = ? AND registration_no = ?",
-            [$this->businessId, $registrationNo]
-        );
+        $existing = findCarByRegistrationNo($this->db, $this->businessId, $registrationNo);
         if ($existing) throw new Exception('A car with this registration number already exists.');
 
         $receivedDate = trim((string) ($data['received_date'] ?? ''));

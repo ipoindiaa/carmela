@@ -348,6 +348,23 @@ function isValidRegistrationNo($value) {
 }
 
 /**
+ * Find an existing car using the normalized registration number, including
+ * legacy rows that may still contain spaces, dashes, slashes, or dots.
+ */
+function findCarByRegistrationNo($db, $businessId, $value) {
+    $normalized = normalizeRegistrationNo($value);
+    if ($normalized === '') return null;
+
+    return $db->fetch(
+        "SELECT * FROM cars
+         WHERE business_id = ?
+           AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(registration_no, ' ', ''), '-', ''), '/', ''), '.', '')) = ?
+         LIMIT 1",
+        [$businessId, $normalized]
+    ) ?: null;
+}
+
+/**
  * Generate next reference number
  */
 function getNextRefNo($db, $businessId, $date = null, $prefix = 'JE') {

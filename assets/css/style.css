@@ -6137,3 +6137,37 @@ table td .form-control {
         transition-duration: 0.01ms !important;
     }
 }
+.registration-feedback {
+    min-height: 18px;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.registration-feedback:empty {
+    display: none;
+}
+
+.registration-feedback.is-error {
+    color: var(--accent-red);
+}
+
+.registration-feedback.is-success {
+    color: var(--accent-green);
+}
+
+.registration-feedback a {
+    color: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.registration-input.is-invalid {
+    border-color: var(--accent-red);
+    box-shadow: var(--focus-ring);
+}
+
+.registration-input.is-valid {
+    border-color: var(--accent-green);
+}

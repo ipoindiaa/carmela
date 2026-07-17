@@ -142,7 +142,7 @@ assertResetTest(!$db->fetch("SELECT id FROM attachments WHERE business_id = ? LI
 assertResetTest(!is_dir($attachmentDir), 'Business attachment files are cleared');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM users WHERE business_id = ?", [$business['id']])['cnt'] === 2, 'Business users are preserved');
 $defaultAccountCount = (int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ?", [$business['id']])['cnt'];
-assertResetTest($defaultAccountCount === 14, 'Clean default accounts are recreated');
+assertResetTest($defaultAccountCount === 15, 'Clean default accounts are recreated');
 $canonicalExpenseCount = (int) $db->fetch(
     "SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ? AND code IN ('GEN-EXP', 'CAR-REPAIR', 'RTO-EXP')",
     [$business['id']]

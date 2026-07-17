@@ -15,6 +15,7 @@ $primaryAccountGroups = Auth::getAccessiblePrimaryAccountList($businessId, 'writ
 $paymentAccounts = array_merge($primaryAccountGroups['cash_book'] ?? [], $primaryAccountGroups['bank_book'] ?? []);
 $paymentAccountIds = array_values(array_filter(array_map(static fn($account) => $account['id'] ?? null, $paymentAccounts)));
 $selectedCarId = get('car_id', '');
+$rtoOpeningAccount = $engine->getRtoOpeningAccount(true);
 
 $resolveRtoCase = function () use ($db, $businessId, $userId) {
     $carId = trim((string) post('car_id'));
@@ -110,15 +111,7 @@ if ($q !== '') {
     array_push($params, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 
-$stats = $db->fetch(
-    "SELECT
-        COALESCE(SUM(expense_amount),0) AS spent,
-        COALESCE(SUM(recovered_amount),0) AS recovered,
-        COUNT(*) AS total_cases
-     FROM rto_records
-     WHERE business_id = ? AND status <> 'CANCELLED'",
-    [$businessId]
-);
+$stats = $engine->getRtoBookSummary();
 
 $records = $db->fetchAll(
     "SELECT r.*, c.registration_no, c.make, c.model, c.status AS car_status
@@ -138,6 +131,19 @@ $cars = $db->fetchAll(
     [$businessId]
 );
 
+$rtoEntryWhere = "je.transaction_type IN ('RTO_EXPENSE', 'RTO_RECOVERY')";
+$rtoEntryParams = [$businessId];
+if ($selectedCarId === '' && !empty($rtoOpeningAccount['id'])) {
+    $rtoEntryWhere = "($rtoEntryWhere OR EXISTS (
+        SELECT 1 FROM journal_lines opening_line
+        WHERE opening_line.journal_entry_id = je.id AND opening_line.account_id = ?
+    ))";
+    $rtoEntryParams[] = $rtoOpeningAccount['id'];
+}
+if ($selectedCarId !== '') {
+    $rtoEntryWhere .= ' AND je.car_id = ?';
+    $rtoEntryParams[] = $selectedCarId;
+}
 $rtoEntries = $db->fetchAll(
     "SELECT je.id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.entry_type_id, je.entry_amount, je.narration,
             c.id AS car_id, c.registration_no, c.make, c.model
@@ -145,30 +151,33 @@ $rtoEntries = $db->fetchAll(
      LEFT JOIN cars c ON c.id = je.car_id
      WHERE je.business_id = ?
        AND je.status IN ('POSTED','REVERSED')
-       AND je.transaction_type IN ('RTO_EXPENSE', 'RTO_RECOVERY')
-       " . ($selectedCarId !== '' ? "AND je.car_id = ?" : "") . "
+       AND $rtoEntryWhere
      ORDER BY je.entry_date DESC, je.created_at DESC
      LIMIT 200",
-    $selectedCarId !== '' ? [$businessId, $selectedCarId] : [$businessId]
+    $rtoEntryParams
 );
 ?>
 
 <div class="page-header">
     <h1><i class="ri-file-shield-2-line"></i> RTO Book</h1>
-    <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Money</a><?php endif; ?>
+    <div class="page-actions">
+        <?php if (Auth::isAdmin() && $rtoOpeningAccount): ?><a href="../settings/opening_balances.php?account_id=<?= clean($rtoOpeningAccount['id']) ?>&amp;return=rto" class="btn btn-outline"><i class="ri-scales-3-line"></i> RTO Opening Balance</a><?php endif; ?>
+        <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Money</a><?php endif; ?>
+    </div>
 </div>
 
 <div class="stats-grid compact-operational-grid">
+    <div class="stat-card"><div class="stat-value <?= ($stats['opening'] ?? 0) >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($stats['opening'] ?? 0, true) ?></div><div class="stat-label">Opening RTO Balance</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($stats['recovered'] ?? 0) ?></div><div class="stat-label">RTO Received From Buyer</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['spent'] ?? 0) ?></div><div class="stat-label">RTO Paid To Agent / Office</div></div>
-    <?php $rtoNet = (float)($stats['recovered'] ?? 0) - (float)($stats['spent'] ?? 0); ?>
+    <?php $rtoNet = (float) ($stats['net'] ?? 0); ?>
     <div class="stat-card"><div class="stat-value <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($rtoNet, true) ?></div><div class="stat-label">Net RTO Balance</div></div>
-    <div class="stat-card"><div class="stat-value"><?= intval($stats['total_cases'] ?? 0) ?></div><div class="stat-label">RTO Entries</div></div>
 </div>
 
 <div class="entry-menu-legend page-helper-strip">
     <span><i class="ri-arrow-down-circle-line"></i> Buyer gives RTO money = income in that car</span>
     <span><i class="ri-arrow-up-circle-line"></i> You pay agent / office = expense of that car</span>
+    <span><i class="ri-scales-3-line"></i> Old RTO amount = RTO Opening Balance, without selecting a car</span>
     <span><i class="ri-attachment-2"></i> Photos, documents, and archives can be attached to every case</span>
 </div>
 
@@ -341,7 +350,8 @@ $rtoEntries = $db->fetchAll(
                                 <a href="../cars/view.php?id=<?= clean($entry['car_id']) ?>"><?= clean(formatRegistrationNo($entry['registration_no'])) ?></a>
                                 <div class="text-muted"><?= clean(trim(($entry['make'] ?? '') . ' ' . ($entry['model'] ?? ''))) ?></div>
                             <?php else: ?>
-                                -
+                                <span class="text-bold">RTO Book</span>
+                                <div class="text-muted">Opening balance · no car linked</div>
                             <?php endif; ?>
                         </td>
                         <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span></td>
