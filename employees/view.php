@@ -48,7 +48,7 @@ $advanceOutstanding = (($emp['advance_balance_type'] ?? 'DR') === 'DR') ? abs((f
 
 $salaryHistory = $db->fetchAll("SELECT * FROM salary_records WHERE employee_id = ? ORDER BY processed_date DESC, created_at DESC", [$id]);
 $advanceLedger = $db->fetchAll(
-    "SELECT je.entry_date, je.created_at, je.reference_no, je.narration, jl.amount, jl.entry_type
+    "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$emp['advance_account_id']]);
 ?>
@@ -139,14 +139,14 @@ $advanceLedger = $db->fetchAll(
     <div class="card">
         <div class="card-header"><h3>Advance Ledger</h3></div>
         <div class="card-body card-body-flush table-container">
-            <table><thead><tr><th>Date / Time</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
+            <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
             <tbody>
             <?php foreach ($advanceLedger as $l): ?>
-            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
+            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
-            <?php if (empty($advanceLedger)): ?><tr><td colspan="4" class="text-center text-muted empty-table-cell">No advance entries</td></tr><?php endif; ?>
+            <?php if (empty($advanceLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No advance entries</td></tr><?php endif; ?>
             </tbody></table>
         </div>
     </div>

@@ -59,7 +59,7 @@ if ($bankAccount) {
 $entries = [];
 if ($bankAccount) {
     $entries = $db->fetchAll(
-        "SELECT je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
+        "SELECT je.id AS entry_id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
          FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
          WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date BETWEEN ? AND ?
          ORDER BY je.entry_date, je.created_at",
@@ -122,7 +122,7 @@ $displayEntries = array_reverse($displayEntries);
         <tbody>
         <?php foreach ($displayEntries as $e): ?>
         <tr>
-            <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><?= $e['reference_no'] ?></td>
+            <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($e['entry_id']) ?>"><?= clean($e['reference_no']) ?></a></td>
             <td><span class="badge badge-blue" style="font-size:10px;"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>

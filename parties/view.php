@@ -58,7 +58,7 @@ $debtorOutstanding = in_array($party['type'], ['DEBTOR', 'BUYER'], true) && ($pa
     : 0;
 
 $ledger = $db->fetchAll(
-    "SELECT je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
+    "SELECT je.id AS entry_id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') ORDER BY je.entry_date DESC, je.created_at DESC", [$party['account_id']]);
 $partyTokens = $db->fetchAll(
@@ -149,7 +149,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
             <?php foreach ($openItems as $item): $days = max(0, (int) floor((time() - strtotime($item['entry_date'])) / 86400)); ?>
                 <tr>
                     <td><?= renderDateTimeStack($item['entry_date'], $item['created_at'] ?? null) ?></td>
-                    <td><?= clean($item['reference_no']) ?></td>
+                    <td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($item['journal_entry_id']) ?>"><?= clean($item['reference_no']) ?></a></td>
                     <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($item['transaction_type'], $item)) ?></span></td>
                     <td><?= clean(mb_substr($item['narration'] ?? '', 0, 60)) ?></td>
                     <td class="text-right amount <?= in_array($party['type'], ['DEBTOR', 'BUYER'], true) ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($item['outstanding_amount']) ?></td>
@@ -169,7 +169,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Dr</th><th class="text-right credit-amount">Cr</th></tr></thead>
             <tbody>
             <?php foreach ($ledger as $l): ?>
-            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><?= $l['reference_no'] ?></td><td><?= clean(mb_substr($l['narration']??'',0,50)) ?></td>
+            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,50)) ?></td>
                 <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
             <?php endforeach; ?>
