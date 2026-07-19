@@ -11,6 +11,7 @@ $accessibleAccountIds = Auth::getAccessiblePrimaryAccountIds($businessId, 'read'
 $dateFrom = get('from', date('Y-m-01'));
 $dateTo = get('to', date('Y-m-d'));
 $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAccountIds);
+$canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
 ?>
 
 <div class="page-header">
@@ -47,7 +48,7 @@ $vouchers = $engine->getJournalVoucherRegister($dateFrom, $dateTo, $accessibleAc
                         </td>
                         <td><?= renderDateTimeStack($voucher['voucher_date'], $voucher['created_at'] ?? null) ?></td>
                         <td><?= clean($voucher['voucher_type']) ?></td>
-                        <td><?= clean($voucher['primary_account_name']) ?> <span class="dr-cr-pill <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= $voucher['primary_entry_type'] ?></span></td>
+                        <td><?php if ($canViewLedger): ?><a class="text-bold" href="<?= clean(accountLedgerUrl($voucher['primary_account_id'], $dateFrom, $dateTo)) ?>"><?= clean($voucher['primary_account_name']) ?></a><?php else: ?><?= clean($voucher['primary_account_name']) ?><?php endif; ?> <span class="dr-cr-pill <?= $voucher['primary_entry_type'] === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= $voucher['primary_entry_type'] ?></span></td>
                         <td style="min-width:210px;">
                             <?php if (empty($voucher['car_allocations'])): ?>
                                 <span class="text-muted">No car allocation</span>

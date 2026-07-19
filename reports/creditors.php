@@ -33,7 +33,7 @@ foreach ($creditors as $creditor) {
             <?php else: ?>
                 <?php foreach ($creditors as $creditor): ?>
                     <tr>
-                        <td class="text-bold"><?= clean($creditor['name']) ?></td>
+                        <td><a class="text-bold" href="../parties/view.php?id=<?= urlencode($creditor['id']) ?>"><?= clean($creditor['name']) ?></a></td>
                         <td><?= clean($creditor['type']) ?></td>
                         <td><?= clean($creditor['phone'] ?: '-') ?></td>
                         <td><?= clean($creditor['email'] ?: '-') ?></td>

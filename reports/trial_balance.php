@@ -8,6 +8,8 @@ $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $asOnDate = get('as_on', date('Y-m-d'));
 $accounts = $engine->getTrialBalance($asOnDate);
+$canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
+$ledgerFromDate = getCurrentFY($asOnDate) . '-04-01';
 
 $totalDr = $totalCr = 0;
 foreach ($accounts as $a) {
@@ -40,8 +42,8 @@ $balanced = abs($totalDr - $totalCr) < 0.01;
                 <tr class="table-group-row"><td colspan="5"><?= ACCOUNT_GROUPS[$a['group_name']] ?? $a['group_name'] ?></td></tr>
             <?php } ?>
             <tr>
-                <td class="text-muted"><?= $a['code'] ?></td>
-                <td><?= clean($a['name']) ?></td>
+                <td class="text-muted"><?php if ($canViewLedger): ?><a href="<?= clean(accountLedgerUrl($a['id'], $ledgerFromDate, $asOnDate)) ?>"><?= clean($a['code']) ?></a><?php else: ?><?= clean($a['code']) ?><?php endif; ?></td>
+                <td><?php if ($canViewLedger): ?><a class="text-bold" href="<?= clean(accountLedgerUrl($a['id'], $ledgerFromDate, $asOnDate)) ?>"><?= clean($a['name']) ?></a><?php else: ?><?= clean($a['name']) ?><?php endif; ?></td>
                 <td class="text-muted"><?= $a['sub_group'] ?></td>
                 <td class="text-right amount debit-amount"><?= $a['balance_type'] === 'DR' ? formatAmount($a['balance_amount']) : '' ?></td>
                 <td class="text-right amount credit-amount"><?= $a['balance_type'] === 'CR' ? formatAmount($a['balance_amount']) : '' ?></td>

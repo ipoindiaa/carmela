@@ -10,6 +10,7 @@ $fy = getCurrentFY();
 $dateFrom = get('from', $fy . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
 $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
+$canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
 ?>
 
 <div class="page-header">
@@ -32,7 +33,7 @@ $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
             <table data-static-table="1">
                 <tbody>
                     <?php foreach ($pnl['income'] as $item): ?>
-                    <tr><td><?= clean($item['name']) ?></td><td class="text-right amount positive"><?= formatAmount($item['amount']) ?></td></tr>
+                    <tr><td><?php if ($canViewLedger): ?><a class="text-bold" href="<?= clean(accountLedgerUrl($item['id'], $dateFrom, $dateTo)) ?>"><?= clean($item['name']) ?></a><?php else: ?><?= clean($item['name']) ?><?php endif; ?></td><td class="text-right amount positive"><?= formatAmount($item['amount']) ?></td></tr>
                     <?php endforeach; ?>
                     <?php if (empty($pnl['income'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No income recorded</td></tr><?php endif; ?>
                     <tr class="table-summary-row"><td>Total Income</td><td class="text-right amount text-green"><?= formatAmount($pnl['total_income']) ?></td></tr>
@@ -46,7 +47,7 @@ $pnl = $engine->getProfitAndLoss($dateFrom, $dateTo);
             <table data-static-table="1">
                 <tbody>
                     <?php foreach ($pnl['expenses'] as $item): ?>
-                    <tr><td><?= clean($item['name']) ?></td><td class="text-right amount negative"><?= formatAmount($item['amount']) ?></td></tr>
+                    <tr><td><?php if ($canViewLedger): ?><a class="text-bold" href="<?= clean(accountLedgerUrl($item['id'], $dateFrom, $dateTo)) ?>"><?= clean($item['name']) ?></a><?php else: ?><?= clean($item['name']) ?><?php endif; ?></td><td class="text-right amount negative"><?= formatAmount($item['amount']) ?></td></tr>
                     <?php endforeach; ?>
                     <?php if (empty($pnl['expenses'])): ?><tr><td class="text-center text-muted" style="padding:20px;">No expenses recorded</td></tr><?php endif; ?>
                     <tr class="table-summary-row"><td>Total Expenses</td><td class="text-right amount text-red"><?= formatAmount($pnl['total_expenses']) ?></td></tr>

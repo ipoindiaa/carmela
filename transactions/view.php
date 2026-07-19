@@ -78,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'delete_voucher'
 
 $lines = $db->fetchAll(
     "SELECT jl.*, a.name as account_name, a.code as account_code FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id WHERE jl.journal_entry_id = ? ORDER BY jl.entry_type DESC, jl.amount DESC", [$id]);
+$canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
 $vouchers = fetchEntityAttachments($businessId, 'JOURNAL_ENTRY', $id, 'VOUCHER');
 
 $totalDr = $totalCr = 0;
@@ -139,7 +140,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                                 <?php elseif (!empty($allocation['car_reg'])): ?>
                                     <?= clean(formatRegistrationNo($allocation['car_reg'])) ?> &mdash;
                                 <?php endif; ?>
-                                <?= clean($allocation['account_name']) ?>
+                                <?php if ($canViewLedger): ?><a href="<?= clean(accountLedgerUrl($allocation['account_id'], getCurrentFY($entry['entry_date']) . '-04-01', $entry['entry_date'])) ?>"><?= clean($allocation['account_name']) ?></a><?php else: ?><?= clean($allocation['account_name']) ?><?php endif; ?>
                             </td>
                             <td class="text-muted"><?= clean($allocation['group_name'] . (!empty($allocation['sub_group']) ? ' / ' . $allocation['sub_group'] : '')) ?></td>
                             <td><?= clean($allocation['narration'] ?: '-') ?></td>
@@ -173,8 +174,8 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                     <tr><td class="text-muted" style="padding: 8px 0;">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']))) ?></td></tr>
                     <?php if (!empty($tokenRecord['applied_sale_entry_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Adjusted In Sale</td><td><a href="view.php?id=<?= urlencode($tokenRecord['applied_sale_entry_id']) ?>"><?= clean($tokenRecord['sale_reference'] ?: 'View sale entry') ?></a></td></tr><?php endif; ?>
                 <?php endif; ?>
-                <?php if ($entry['partner_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Partner</td><td><?= clean($entry['partner_name']) ?></td></tr><?php endif; ?>
-                <?php if ($entry['employee_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Employee</td><td><?= clean($entry['employee_name']) ?></td></tr><?php endif; ?>
+                <?php if ($entry['partner_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Partner</td><td><a href="../partners/view.php?id=<?= urlencode($entry['partner_id']) ?>"><?= clean($entry['partner_name']) ?></a></td></tr><?php endif; ?>
+                <?php if ($entry['employee_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Employee</td><td><a href="../employees/view.php?id=<?= urlencode($entry['employee_id']) ?>"><?= clean($entry['employee_name']) ?></a></td></tr><?php endif; ?>
             </table>
         </div>
     </div>
@@ -190,7 +191,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                     <?php foreach ($lines as $line): ?>
                     <tr>
                         <td>
-                            <div class="text-bold"><?= clean($line['account_name']) ?></div>
+                            <div class="text-bold"><?php if ($canViewLedger): ?><a href="<?= clean(accountLedgerUrl($line['account_id'], getCurrentFY($entry['entry_date']) . '-04-01', $entry['entry_date'])) ?>"><?= clean($line['account_name']) ?></a><?php else: ?><?= clean($line['account_name']) ?><?php endif; ?></div>
                             <div class="text-muted" style="font-size: 11px;"><?= $line['account_code'] ?><?= $line['narration'] ? ' — ' . clean($line['narration']) : '' ?></div>
                         </td>
                         <td class="text-right amount debit-amount"><?= $line['entry_type'] === 'DR' ? formatAmount($line['amount']) : '' ?></td>

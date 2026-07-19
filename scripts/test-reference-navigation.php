@@ -49,4 +49,23 @@ foreach ($checks as $surface => $check) {
     assertReferenceNavigation(strpos($source, $check['link']) !== false, "$surface reference opens transaction detail");
 }
 
+$accountNavigationChecks = [
+    'Account ledger URL helper' => ['includes/functions.php', 'function accountLedgerUrl('],
+    'Trial Balance account links' => ['reports/trial_balance.php', "accountLedgerUrl(\$a['id'], \$ledgerFromDate, \$asOnDate)"],
+    'Profit and Loss account links' => ['reports/profit_loss.php', "accountLedgerUrl(\$item['id'], \$dateFrom, \$dateTo)"],
+    'Transaction journal-line account links' => ['transactions/view.php', "accountLedgerUrl(\$line['account_id']"],
+    'Split bill allocation account links' => ['transactions/view.php', "accountLedgerUrl(\$allocation['account_id']"],
+    'Large Bill main account links' => ['reports/jv_register.php', "accountLedgerUrl(\$voucher['primary_account_id'], \$dateFrom, \$dateTo)"],
+    'RTO transaction reference links' => ['rto/list.php', "clean(\$entry['reference_no'])"],
+    'Creditor account links' => ['reports/creditors.php', "../parties/view.php?id=<?= urlencode(\$creditor['id']) ?>"],
+    'Employee advance account links' => ['reports/employee_advances.php', "../employees/view.php?id=<?= urlencode(\$employee['id']) ?>"],
+    'Partner account links' => ['reports/partner_accounts.php', "../partners/view.php?id=<?= urlencode(\$partner['id']) ?>"],
+];
+
+foreach ($accountNavigationChecks as $surface => [$file, $needle]) {
+    $source = file_get_contents($root . '/' . $file);
+    assertReferenceNavigation($source !== false, "$surface source is readable");
+    assertReferenceNavigation(strpos($source, $needle) !== false, "$surface opens the matching account or entry detail");
+}
+
 echo "Reference navigation checks completed.\n";

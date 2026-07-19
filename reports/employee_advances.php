@@ -49,7 +49,7 @@ $employees = $db->fetchAll(
                 <?php foreach ($employees as $employee): ?>
                     <?php $advanceOutstanding = (($employee['current_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($employee['current_balance'] ?? 0)) : 0; ?>
                     <tr>
-                        <td class="text-bold"><?= clean($employee['name']) ?></td>
+                        <td><a class="text-bold" href="../employees/view.php?id=<?= urlencode($employee['id']) ?>"><?= clean($employee['name']) ?></a></td>
                         <td><?= clean($employee['role'] ?: '-') ?></td>
                         <td class="text-right amount flow-out"><?= formatAmount($employee['monthly_salary']) ?></td>
                         <td class="text-right amount <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></td>

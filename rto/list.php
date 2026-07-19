@@ -335,7 +335,7 @@ $rtoEntries = $db->fetchAll(
                     <th>Car</th>
                     <th>Type</th>
                     <th>Narration</th>
-                    <th>Open</th>
+                    <th>Ref</th>
                 </tr>
             </thead>
             <tbody>
@@ -356,7 +356,7 @@ $rtoEntries = $db->fetchAll(
                         </td>
                         <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span></td>
                         <td><?= clean($entry['narration'] ?: '-') ?></td>
-                        <td><a href="../transactions/view.php?id=<?= clean($entry['id']) ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> View</a></td>
+                        <td><a href="../transactions/view.php?id=<?= urlencode($entry['id']) ?>" class="text-bold"><?= clean($entry['reference_no']) ?></a></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>

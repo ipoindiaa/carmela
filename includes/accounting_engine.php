@@ -4404,22 +4404,22 @@ class AccountingEngine {
 
     public function getProfitAndLoss($fromDate, $toDate) {
         $income = $this->db->fetchAll(
-            "SELECT a.name, SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END) - SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END) as amount
+            "SELECT a.id, a.code, a.name, SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END) - SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END) as amount
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
              WHERE a.business_id = ? AND a.group_name = 'INCOME' AND je.entry_date BETWEEN ? AND ?
-             GROUP BY a.id, a.name HAVING amount > 0 ORDER BY amount DESC",
+             GROUP BY a.id, a.code, a.name HAVING amount > 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
 
         $expenses = $this->db->fetchAll(
-            "SELECT a.name, SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END) - SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END) as amount
+            "SELECT a.id, a.code, a.name, SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END) - SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END) as amount
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
              WHERE a.business_id = ? AND a.group_name = 'EXPENSE' AND je.entry_date BETWEEN ? AND ?
-             GROUP BY a.id, a.name HAVING amount > 0 ORDER BY amount DESC",
+             GROUP BY a.id, a.code, a.name HAVING amount > 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
 

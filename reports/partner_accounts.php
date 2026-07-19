@@ -51,7 +51,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                         $currentBalance = floatval($position['current_balance'] ?? 0);
                     ?>
                     <tr>
-                        <td class="text-bold"><?= clean($partner['name']) ?></td>
+                        <td><a class="text-bold" href="../partners/view.php?id=<?= urlencode($partner['id']) ?>"><?= clean($partner['name']) ?></a></td>
                         <td class="text-right amount <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></td>
                         <td class="text-right amount <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></td>
                         <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
@@ -80,7 +80,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                         $currentBalance = floatval($position['current_balance'] ?? 0);
                     ?>
                     <tr>
-                        <td class="text-bold"><?= clean($partner['name']) ?></td>
+                        <td><a class="text-bold" href="../partners/view.php?id=<?= urlencode($partner['id']) ?>"><?= clean($partner['name']) ?></a></td>
                         <td class="text-right amount <?= signedAmountColorClass($capitalBalance, 'in') ?>"><?= formatAmount($capitalBalance, true) ?></td>
                         <td class="text-right amount <?= signedAmountColorClass($currentBalance, 'out') ?>"><?= formatAmount($currentBalance, true) ?></td>
                         <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>

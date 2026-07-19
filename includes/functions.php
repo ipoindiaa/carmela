@@ -28,6 +28,17 @@ function formatPlainNumber($value) {
     return number_format(round((float) $value), 0, '.', ',');
 }
 
+function accountLedgerUrl($accountId, $fromDate = null, $toDate = null) {
+    $accountId = trim((string) $accountId);
+    if ($accountId === '') return null;
+
+    $query = ['account_id' => $accountId];
+    if ($fromDate) $query['from'] = $fromDate;
+    if ($toDate) $query['to'] = $toDate;
+
+    return APP_URL . 'reports/ledger.php?' . http_build_query($query);
+}
+
 function transactionTypeLabel($transactionType, array $context = []) {
     $transactionType = strtoupper((string) $transactionType);
     $entryTypeId = trim((string) ($context['entry_type_id'] ?? ''));
