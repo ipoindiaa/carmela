@@ -191,7 +191,7 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Type *</label>
-                            <select name="line_type[]" class="form-control" required data-searchable="false">
+                            <select name="line_type[]" class="form-control" required>
                                 <option value="DR" <?= $line['type'] === 'DR' ? 'selected' : '' ?>>Debit</option>
                                 <option value="CR" <?= $line['type'] === 'CR' ? 'selected' : '' ?>>Credit</option>
                             </select>
@@ -252,7 +252,7 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
                 <?php renderCorrectionAccountOptions($accounts); ?>
             </select>
         </div>
-        <div class="form-group"><label class="form-label">Type *</label><select name="line_type[]" class="form-control" required data-searchable="false"><option value="DR">Debit</option><option value="CR">Credit</option></select></div>
+        <div class="form-group"><label class="form-label">Type *</label><select name="line_type[]" class="form-control" required><option value="DR">Debit</option><option value="CR">Credit</option></select></div>
         <div class="form-group"><label class="form-label">Amount *</label><input type="number" name="line_amount[]" class="form-control correction-line-amount" min="0.01" step="0.01" required></div>
         <div class="form-group"><label class="form-label">Line Note</label><input type="text" name="line_narration[]" class="form-control" maxlength="500"></div>
         <button type="button" class="btn btn-icon btn-outline correction-remove-line" title="Remove line" aria-label="Remove journal line"><i class="ri-delete-bin-line"></i></button>

@@ -16,8 +16,8 @@ date_default_timezone_set(APP_TIMEZONE);
 define('APP_ROOT', dirname(__DIR__));
 define('APP_URL', '/');
 
-// Session
-define('SESSION_LIFETIME', 3600 * 8); // 8 hours
+// Session: keep users signed in for 30 days after their latest activity.
+define('SESSION_LIFETIME', 60 * 60 * 24 * 30);
 
 // Roles
 define('ROLE_ADMIN', 'ADMIN');
@@ -83,6 +83,10 @@ define('BOOK_PERMISSIONS', [
         'label' => 'RTO Book',
         'description' => 'Manage car-wise RTO work, expenses, and recoveries',
     ],
+    'outside_cars' => [
+        'label' => 'Outside Cars',
+        'description' => 'Manage outside vehicles, Source Entities, settlements, agreements, and delivery',
+    ],
 ]);
 
 define('PRIMARY_BOOK_ACCOUNT_TYPES', [
@@ -98,6 +102,20 @@ define('ENTRY_TYPE_META', [
     'CAR_TOKEN_RECEIVED' => ['label' => 'Car Token Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Advance money received for a specific car.', 'selectable' => true, 'summary' => true],
     'CAR_SALE' => ['label' => 'Sold a Car', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-money-rupee-circle-line', 'description' => 'Owned cars sold to buyers.', 'selectable' => true, 'summary' => true],
     'COMMISSION_CAR_SALE' => ['label' => 'Commission Car Sale', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-percent-line', 'description' => 'Commission earned by selling a customer-owned car.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_ENTITY_BASE_ADVANCE' => ['label' => 'Outside Car Base Advance', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Base advance paid to an Outside Car Source Entity.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_ENTITY_ADVANCE_RECEIVED' => ['label' => 'Source Entity Advance Received', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-refund-line', 'description' => 'Money received from an Outside Car Source Entity.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_CAR_EXPENSE' => ['label' => 'Outside Car Expense', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-tools-line', 'description' => 'Classified spending linked to an Outside Car.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_EXPENSE_RECLASS' => ['label' => 'Outside Expense Reclassification', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-git-merge-line', 'description' => 'Approved reclassification of a non-recoverable Outside Car cost.', 'selectable' => false, 'summary' => false],
+    'OUTSIDE_CAR_SALE' => ['label' => 'Outside Car Sale', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-car-line', 'description' => 'Buyer sale posted through Outside Car clearing, not ordinary car sales revenue.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_BUYER_PAYMENT' => ['label' => 'Outside Car Buyer Payment', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-money-rupee-circle-line', 'description' => 'Buyer installment received against an Outside Car.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_BUYER_REFUND' => ['label' => 'Outside Car Buyer Refund', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-refund-line', 'description' => 'Money refunded to an Outside Car buyer with outstanding restored.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_CAR_SETTLEMENT' => ['label' => 'Outside Car Settlement', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-scales-3-line', 'description' => 'Approved A/B/C/K settlement allocation.', 'selectable' => false, 'summary' => false],
+    'OUTSIDE_ENTITY_SETTLEMENT_PAYMENT' => ['label' => 'Source Entity Settlement Payment', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-secure-payment-line', 'description' => 'Payment of an approved Source Entity entitlement.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_RTO_RECEIPT' => ['label' => 'Outside Car RTO Receipt', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO money received into the Outside Car clearing account.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_RTO_PAYMENT' => ['label' => 'Outside Car RTO Payment', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO money paid from the Outside Car clearing account.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_RTO_ADJUSTMENT' => ['label' => 'Outside Car RTO Shortfall Allocation', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-scales-3-line', 'description' => 'Approved allocation of an RTO clearing shortfall to Tiranga or the Source Entity.', 'selectable' => false, 'summary' => false],
+    'CAR_LOAN_COMMISSION_EARNED' => ['label' => 'Car Loan Commission Earned', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-bank-card-line', 'description' => 'Commission earned from a finance company for a customer car loan.', 'selectable' => false, 'summary' => true],
+    'CAR_LOAN_COMMISSION_RECEIPT' => ['label' => 'Car Loan Commission Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-bank-line', 'description' => 'Cash or bank receipt against car-wise loan commission receivable.', 'selectable' => false, 'summary' => true],
     'RTO_EXPENSE' => ['label' => 'RTO Expense', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO fees paid for a specific car.', 'selectable' => true, 'summary' => true],
     'RTO_RECOVERY' => ['label' => 'RTO Recovery Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-refund-2-line', 'description' => 'RTO money recovered from a buyer or party.', 'selectable' => true, 'summary' => true],
     'CAR_EXPENSE' => ['label' => 'Car Repair / Service', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-tools-line', 'description' => 'Repair and service spending assigned to cars.', 'selectable' => true, 'summary' => true],
@@ -107,6 +125,7 @@ define('ENTRY_TYPE_META', [
     'PARTNER_WITHDRAW' => ['label' => 'Partner Took Money', 'flow' => 'out', 'category' => 'Partners', 'icon' => 'ri-user-unfollow-line', 'description' => 'Money withdrawn from the business by a partner.', 'selectable' => true, 'summary' => true],
     'PARTNER_SETTLEMENT' => ['label' => 'Partner Settlement', 'flow' => 'out', 'category' => 'Partners', 'icon' => 'ri-scales-3-line', 'description' => 'Settlement paid to or recovered from a partner.', 'selectable' => true, 'summary' => true],
     'SALARY_PAYMENT' => ['label' => 'Paid Salary', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-user-star-line', 'description' => 'Salary paid to employees.', 'selectable' => true, 'summary' => true],
+    'EMPLOYEE_COMMISSION' => ['label' => 'Paid Employee Commission', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-medal-line', 'description' => 'Commission or incentive paid separately from salary and advances.', 'selectable' => true, 'summary' => true],
     'EMPLOYEE_ADVANCE' => ['label' => 'Employee Took Advance', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-cash-line', 'description' => 'Salary advance paid to an employee.', 'selectable' => true, 'summary' => true],
     'EMPLOYEE_ADVANCE_WRITEOFF' => ['label' => 'Employee Advance Write-Off', 'flow' => 'out', 'category' => 'Employees', 'icon' => 'ri-delete-back-2-line', 'description' => 'Unrecoverable employee advance written off.', 'selectable' => true, 'summary' => true],
     'LOAN_GIVEN' => ['label' => 'Lent Money to Someone', 'flow' => 'out', 'category' => 'Parties', 'icon' => 'ri-arrow-right-up-line', 'description' => 'Money given to a person or company and recoverable later.', 'selectable' => true, 'summary' => true],

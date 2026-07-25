@@ -86,7 +86,7 @@ CREATE TABLE `journal_entries` (
     `entry_date` DATE NOT NULL,
     `reference_no` VARCHAR(50) NOT NULL,
     `narration` TEXT DEFAULT NULL,
-    `transaction_type` ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
+    `transaction_type` ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
     `entry_type_id` VARCHAR(80) DEFAULT NULL,
     `entry_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `is_reversal` TINYINT(1) NOT NULL DEFAULT 0,
@@ -148,7 +148,7 @@ CREATE TABLE `cars` (
     `purchase_date` DATE NOT NULL,
     `purchase_price` DECIMAL(15,2) NOT NULL,
     `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED',
+    `ownership_type` ENUM('OWNED','COMMISSION','OUTSIDE') NOT NULL DEFAULT 'OWNED',
     `commission_owner_party_id` CHAR(36) DEFAULT NULL,
     `expected_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `expected_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -660,6 +660,138 @@ CREATE TABLE `user_book_permissions` (
     KEY `idx_ubp_business` (`business_id`),
     CONSTRAINT `fk_ubp_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
     CONSTRAINT `fk_ubp_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- OUTSIDE CARS (entity-owned vehicles, A/B/C/K settlement)
+-- ============================================================
+CREATE TABLE `source_entities` (
+    `id` CHAR(36) NOT NULL, `business_id` CHAR(36) NOT NULL, `party_id` CHAR(36) NOT NULL,
+    `entity_kind` VARCHAR(30) NOT NULL DEFAULT 'OTHER_CAR_MELA', `display_name` VARCHAR(200) NOT NULL,
+    `notes` VARCHAR(500) DEFAULT NULL, `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by` CHAR(36) DEFAULT NULL, `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`), UNIQUE KEY `uk_source_entity_party` (`business_id`,`party_id`),
+    KEY `idx_source_entity_name` (`business_id`,`display_name`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_deals` (
+    `id` CHAR(36) NOT NULL, `business_id` CHAR(36) NOT NULL, `car_id` CHAR(36) NOT NULL, `source_entity_id` CHAR(36) NOT NULL,
+    `deal_type` VARCHAR(30) NOT NULL DEFAULT 'HYBRID', `source_base_value` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `expected_sale_value` DECIMAL(15,2) NOT NULL DEFAULT 0, `tiranga_profit_pct` DECIMAL(7,4) NOT NULL DEFAULT 50,
+    `entity_profit_pct` DECIMAL(7,4) NOT NULL DEFAULT 50, `tiranga_loss_pct` DECIMAL(7,4) NOT NULL DEFAULT 50,
+    `entity_loss_pct` DECIMAL(7,4) NOT NULL DEFAULT 50, `commission_type` VARCHAR(20) NOT NULL DEFAULT 'FIXED',
+    `commission_value` DECIMAL(15,4) NOT NULL DEFAULT 0, `commission_charged_to` VARCHAR(20) NOT NULL DEFAULT 'BUYER',
+    `chassis_no` VARCHAR(100) DEFAULT NULL, `engine_no` VARCHAR(100) DEFAULT NULL, `insurance_details` VARCHAR(500) DEFAULT NULL,
+    `hypothecation_details` VARCHAR(500) DEFAULT NULL, `second_key_details` VARCHAR(300) DEFAULT NULL,
+    `physical_status` VARCHAR(30) NOT NULL DEFAULT 'RECEIVED', `buyer_status` VARCHAR(30) NOT NULL DEFAULT 'NO_BUYER',
+    `rto_status` VARCHAR(30) NOT NULL DEFAULT 'NOT_STARTED', `settlement_status` VARCHAR(30) NOT NULL DEFAULT 'TERMS_PENDING',
+    `agreement_status` VARCHAR(30) NOT NULL DEFAULT 'DRAFT', `terms_version` INT NOT NULL DEFAULT 1,
+    `terms_locked_at` TIMESTAMP NULL DEFAULT NULL, `notes` TEXT DEFAULT NULL, `created_by` CHAR(36) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP, `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`), UNIQUE KEY `uk_outside_car_deal` (`business_id`,`car_id`),
+    KEY `idx_outside_source` (`business_id`,`source_entity_id`), KEY `idx_outside_status` (`business_id`,`physical_status`,`settlement_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_advances` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,
+    `direction` VARCHAR(30) NOT NULL,`entry_date` DATE NOT NULL,`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_advance_entry` (`journal_entry_id`),KEY `idx_outside_advance_car` (`business_id`,`car_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_expenses` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,
+    `expense_date` DATE NOT NULL,`category` VARCHAR(120) NOT NULL,`vendor_name` VARCHAR(200) DEFAULT NULL,`responsibility` VARCHAR(30) NOT NULL,
+    `actual_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`approved_recoverable_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `difference_bearer` VARCHAR(20) DEFAULT NULL,`journal_entry_id` CHAR(36) NOT NULL,`reclass_entry_id` CHAR(36) DEFAULT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',`narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_expense_entry` (`journal_entry_id`),KEY `idx_outside_expense_car` (`business_id`,`car_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_sales` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`buyer_party_id` CHAR(36) NOT NULL,
+    `sale_date` DATE NOT NULL,`vehicle_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0,`discount_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `net_vehicle_value` DECIMAL(15,2) NOT NULL DEFAULT 0,`separate_commission` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `buyer_rto_charge` DECIMAL(15,2) NOT NULL DEFAULT 0,`other_buyer_charges` DECIMAL(15,2) NOT NULL DEFAULT 0,`buyer_total` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `token_applied` DECIMAL(15,2) NOT NULL DEFAULT 0,`received_at_sale` DECIMAL(15,2) NOT NULL DEFAULT 0,`buyer_outstanding` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `sale_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_sale_entry` (`sale_entry_id`),
+    KEY `idx_outside_sale_car` (`business_id`,`car_id`,`status`),KEY `idx_outside_sale_buyer` (`business_id`,`buyer_party_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_buyer_payments` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`sale_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`buyer_party_id` CHAR(36) NOT NULL,
+    `payment_date` DATE NOT NULL,`payment_kind` VARCHAR(20) NOT NULL DEFAULT 'RECEIPT',`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_buyer_payment_entry` (`journal_entry_id`),
+    KEY `idx_outside_buyer_payment_sale` (`business_id`,`sale_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_settlements` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`sale_id` CHAR(36) NOT NULL,
+    `settlement_date` DATE NOT NULL,`actual_expenses` DECIMAL(15,2) NOT NULL DEFAULT 0,`approved_expenses` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `exact_margin` DECIMAL(15,2) NOT NULL DEFAULT 0,`approved_margin` DECIMAL(15,2) NOT NULL DEFAULT 0,`margin_difference` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `difference_target` VARCHAR(30) DEFAULT NULL,`tiranga_share` DECIMAL(15,2) NOT NULL DEFAULT 0,`entity_share` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `separate_commission` DECIMAL(15,2) NOT NULL DEFAULT 0,`tiranga_income` DECIMAL(15,2) NOT NULL DEFAULT 0,`tiranga_entitlement` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `entity_gross_entitlement` DECIMAL(15,2) NOT NULL DEFAULT 0,`advances_applied` DECIMAL(15,2) NOT NULL DEFAULT 0,`settled_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `remaining_entity_payable` DECIMAL(15,2) NOT NULL DEFAULT 0,`remaining_entity_receivable` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `allocation_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'APPROVED',`approval_reason` VARCHAR(500) NOT NULL,`approved_by` CHAR(36) NOT NULL,
+    `approved_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_settlement_entry` (`allocation_entry_id`),KEY `idx_outside_settlement_car` (`business_id`,`car_id`,`status`),
+    KEY `idx_outside_settlement_entity` (`business_id`,`source_entity_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_entity_payments` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`settlement_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,
+    `payment_date` DATE NOT NULL,`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_entity_payment_entry` (`journal_entry_id`),
+    KEY `idx_outside_entity_payment_settlement` (`business_id`,`settlement_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_rto_movements` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`movement_type` VARCHAR(20) NOT NULL,
+    `movement_date` DATE NOT NULL,`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`adjustment_bearer` VARCHAR(30) DEFAULT NULL,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_outside_rto_entry` (`journal_entry_id`),KEY `idx_outside_rto_car` (`business_id`,`car_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_agreement_clause_templates` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`version_code` VARCHAR(30) NOT NULL,`language` VARCHAR(20) NOT NULL DEFAULT 'BILINGUAL',
+    `title` VARCHAR(200) NOT NULL,`clauses_json` LONGTEXT NOT NULL,`is_active` TINYINT(1) NOT NULL DEFAULT 1,`created_by` CHAR(36) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_clause_version` (`business_id`,`version_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_agreements` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`sale_id` CHAR(36) NOT NULL,`version_no` INT NOT NULL DEFAULT 1,
+    `language` VARCHAR(20) NOT NULL DEFAULT 'BILINGUAL',`status` VARCHAR(20) NOT NULL DEFAULT 'GENERATED',`clause_version` VARCHAR(30) NOT NULL DEFAULT 'GUJ-EN-1',
+    `snapshot_json` LONGTEXT NOT NULL,`snapshot_hash` CHAR(64) NOT NULL,`html_path` VARCHAR(500) NOT NULL,`pdf_path` VARCHAR(500) DEFAULT NULL,
+    `created_by` CHAR(36) NOT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,`signed_at` TIMESTAMP NULL DEFAULT NULL,PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_outside_agreement_version` (`business_id`,`car_id`,`version_no`),KEY `idx_outside_agreement_status` (`business_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_car_deliveries` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`sale_id` CHAR(36) NOT NULL,`delivery_date` DATE NOT NULL,
+    `delivery_time` TIME DEFAULT NULL,`odometer` INT DEFAULT NULL,`fuel_level` VARCHAR(30) DEFAULT NULL,`keys_handed_over` INT NOT NULL DEFAULT 1,
+    `documents_handed_over` VARCHAR(500) DEFAULT NULL,`receiver_name` VARCHAR(200) NOT NULL,`override_used` TINYINT(1) NOT NULL DEFAULT 0,
+    `override_reason` VARCHAR(500) DEFAULT NULL,`promised_payment_date` DATE DEFAULT NULL,`buyer_balance_at_delivery` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `recorded_by` CHAR(36) NOT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_delivery_car` (`business_id`,`car_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `car_loan_commissions` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`buyer_party_id` CHAR(36) NOT NULL,`financier_party_id` CHAR(36) NOT NULL,
+    `loan_account_no` VARCHAR(100) DEFAULT NULL,`approval_date` DATE NOT NULL,`loan_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`commission_type` VARCHAR(20) NOT NULL DEFAULT 'FIXED',
+    `commission_value` DECIMAL(15,4) NOT NULL DEFAULT 0,`commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`received_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `accrual_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'PENDING',`notes` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_car_loan_accrual` (`accrual_entry_id`),KEY `idx_car_loan_car` (`business_id`,`car_id`,`status`),KEY `idx_car_loan_financier` (`business_id`,`financier_party_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `car_loan_commission_receipts` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`commission_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`receipt_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`receiving_account_id` CHAR(36) NOT NULL,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) NOT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_car_loan_receipt_entry` (`journal_entry_id`),KEY `idx_car_loan_receipt` (`business_id`,`commission_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 COMMIT;

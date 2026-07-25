@@ -255,11 +255,11 @@ foreach ($users as $user) {
                         <?= csrfField() ?>
                         <input type="hidden" name="action" value="toggle">
                         <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
-                        <button type="submit" class="btn btn-sm btn-outline" data-confirm="Toggle this user's status?">
+                        <button type="submit" class="btn btn-sm btn-outline" data-confirm="Toggle this user's status?" title="Toggle user status" aria-label="Toggle user status">
                             <?= $u['is_active'] ? '<i class="ri-forbid-line"></i>' : '<i class="ri-check-line"></i>' ?>
                         </button>
                     </form>
-                    <button class="btn btn-sm btn-outline" onclick="document.getElementById('reset-uid').value='<?= $u['id'] ?>';openModal('reset-password')">
+                    <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('reset-uid').value='<?= $u['id'] ?>';openModal('reset-password')" title="Reset password" aria-label="Reset password">
                         <i class="ri-lock-line"></i>
                     </button>
                     <?php if ($u['id'] !== Auth::user('user_id') && !empty($u['is_active'])): ?><a href="../delete_record.php?entity_type=user&amp;id=<?= clean($u['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete user"><i class="ri-delete-bin-line"></i></a><?php endif; ?>

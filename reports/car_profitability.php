@@ -6,6 +6,12 @@ Auth::requireBookAccess('car_profitability', 'read');
 $businessId = Auth::user('business_id');
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$search = trim((string) get('q',''));
+$statusFilter = strtoupper(trim((string) get('status','')));
+$carWhere = "c.business_id = ? AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED'";
+$carParams = [$businessId,$businessId];
+if ($search !== '') { $carWhere .= " AND (c.registration_no LIKE ? OR c.make LIKE ? OR c.model LIKE ? OR partner_rollup.partner_names LIKE ?)"; $like='%'.$search.'%'; array_push($carParams,$like,$like,$like,$like); }
+if (in_array($statusFilter,['IN_STOCK','PENDING_PAYMENT','SOLD','CANCELLED'],true)) { $carWhere .= " AND c.status=?"; $carParams[]=$statusFilter; }
 
 $cars = $db->fetchAll(
     "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names
@@ -17,9 +23,9 @@ $cars = $db->fetchAll(
         WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
         GROUP BY cp.car_id
      ) partner_rollup ON partner_rollup.car_id = c.id
-     WHERE c.business_id = ? AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED' ORDER BY c.created_at DESC", [$businessId, $businessId]);
+     WHERE {$carWhere} ORDER BY c.created_at DESC", $carParams);
 
-$grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
+$grandTotalCost = 0; $grandTotalSale = 0; $grandLoanCommission = 0; $grandProfit = 0;
 ?>
 
 <div class="page-header">
@@ -27,9 +33,11 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
     <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
+<div class="filter-bar"><form method="get"><div><label class="form-label">Car or Partner</label><input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Registration, make, model, partner"></div><div><label class="form-label">Status</label><select name="status" class="form-control"><option value="">All statuses</option><?php foreach(['IN_STOCK'=>'In Stock','PENDING_PAYMENT'=>'Payment Pending','SOLD'=>'Sold','CANCELLED'=>'Cancelled'] as $value=>$label): ?><option value="<?= $value ?>" <?= $statusFilter===$value?'selected':'' ?>><?= $label ?></option><?php endforeach; ?></select></div><button class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button><?php if($search!==''||$statusFilter!==''): ?><a href="car_profitability.php" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?></form></div>
+
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Partners</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Profit/Loss</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Partners</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">RTO Recovery</th><th class="text-right">Loan Commission</th><th class="text-right">Profit/Loss</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -41,7 +49,8 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
             $saleGstAmount = $carProfitability['sale_gst_amount'] ?? ($car['sale_gst_amount'] ?? 0);
             $totalSaleRealisation = $carProfitability['total_sale_realisation'] ?? ($grossSalePrice + $commissionAmount);
             $rtoRecovered = $carProfitability['rto_recovered'] ?? 0;
-            if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $totalSaleRealisation; $grandProfit += $profit; }
+            $loanCommissionIncome = $carProfitability['loan_commission_income'] ?? 0;
+            if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $totalSaleRealisation; $grandLoanCommission += $loanCommissionIncome; $grandProfit += $profit; }
         ?>
         <tr>
             <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
@@ -63,6 +72,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
                 <?php endif; ?>
             </td>
             <td class="text-right amount flow-in"><?= $rtoRecovered > 0 ? formatAmount($rtoRecovered) : '-' ?></td>
+            <td class="text-right amount flow-in"><?= $loanCommissionIncome > 0 ? formatAmount($loanCommissionIncome) : '-' ?></td>
             <td class="text-right amount <?= $profit !== null ? ($profit >= 0 ? 'positive' : 'negative') : '' ?>">
                 <?= $profit !== null ? formatAmount($profit, true) : '-' ?></td>
         </tr>
@@ -73,7 +83,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandProfit = 0;
                 <td colspan="7">Grand Total (Sold Cars)</td>
                 <td class="text-right amount"><?= formatAmount($grandTotalCost) ?></td>
                 <td class="text-right amount"><?= formatAmount($grandTotalSale) ?></td>
-                <td></td>
+                <td></td><td class="text-right amount flow-in"><?= formatAmount($grandLoanCommission) ?></td>
                 <td class="text-right amount <?= $grandProfit >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($grandProfit, true) ?></td>
             </tr>
         </tfoot>

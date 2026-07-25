@@ -1,0 +1,55 @@
+<?php
+if(PHP_SAPI!=='cli')exit("CLI only.\n");
+require_once __DIR__.'/../config/app.php';require_once __DIR__.'/../includes/db.php';require_once __DIR__.'/../includes/functions.php';require_once __DIR__.'/../includes/auth.php';require_once __DIR__.'/../includes/accounting_engine.php';
+if(!APP_IS_TESTING||stripos(DB_NAME,'test')===false)exit("Refusing non-testing database.\n");
+function outsideAssert($condition,$message){if(!$condition)throw new RuntimeException($message);echo "PASS: $message\n";}
+$db=Database::getInstance();$business=$db->fetch("SELECT * FROM businesses ORDER BY created_at LIMIT 1");$user=$db->fetch("SELECT * FROM users WHERE business_id=? ORDER BY created_at LIMIT 1",[$business['id']]);
+Auth::init();$_SESSION=['user_id'=>$user['id'],'business_id'=>$business['id'],'username'=>$user['username'],'full_name'=>$user['full_name'],'role'=>$user['role'],'business_name'=>$business['name']];
+$engine=new AccountingEngine($business['id'],$user['id']);$cash=$db->fetch("SELECT id FROM accounts WHERE business_id=? AND entity_type='CASH' AND is_active=1 ORDER BY created_at LIMIT 1",[$business['id']]);
+$suffix=strtoupper(substr(str_replace('-','',Database::uuid()),0,7));$reg='GJ05O'.substr(preg_replace('/\D/','',strval(abs(crc32($suffix)))),0,4);if(!isValidRegistrationNo($reg))$reg='GJ05OX'.substr('0000'.strval(abs(crc32($suffix))%10000),-4);
+$generatedFiles=[];$db->beginTransaction();
+try{
+    $carId=$engine->createOutsideCar(['registration_no'=>$reg,'received_date'=>date('Y-m-d'),'make'=>'Test','model'=>'Outside','source_name'=>'Test Mela '.$suffix,'source_phone'=>'9876501234','source_kind'=>'OTHER_CAR_MELA','source_base_value'=>1135000,'expected_sale_value'=>1240000,'deal_type'=>'PROFIT_SHARE','tiranga_profit_pct'=>75,'entity_profit_pct'=>25,'tiranga_loss_pct'=>75,'entity_loss_pct'=>25,'commission_type'=>'NONE','commission_value'=>0]);
+    $car=$db->fetch("SELECT * FROM cars WHERE id=?",[$carId]);outsideAssert($car['ownership_type']==='OUTSIDE'&&floatval($car['purchase_price'])===0.0,'Outside Car intake creates no inventory purchase value');
+    $advanceId=$engine->recordOutsideEntityAdvance($carId,100000,date('Y-m-d'),$cash['id'],'PAID_TO_ENTITY','Test base advance');
+    $expenseId=$engine->recordOutsideCarExpense($carId,['amount'=>41000,'approved_recoverable_amount'=>41000,'expense_date'=>date('Y-m-d'),'category'=>'Test recoverable work','responsibility'=>'RECOVERABLE','difference_bearer'=>'','payment_account'=>$cash['id'],'narration'=>'Test recoverable work']);
+    $saleId=$engine->recordOutsideCarSale($carId,['sale_date'=>date('Y-m-d'),'vehicle_sale_price'=>1240000,'discount_amount'=>0,'separate_commission'=>0,'buyer_rto_charge'=>0,'other_buyer_charges'=>0,'buyer_name'=>'Outside Buyer '.$suffix,'buyer_phone'=>'9876505678','amount_received_now'=>1240000,'receiving_account'=>$cash['id'],'narration'=>'Outside workflow test sale']);
+    $ordinaryRevenue=$db->fetch("SELECT COUNT(*) cnt FROM journal_lines jl JOIN accounts a ON a.id=jl.account_id WHERE jl.journal_entry_id=? AND a.code='CAR-REV'",[$saleId]);outsideAssert(($ordinaryRevenue['cnt']??0)===0,'Outside vehicle value never enters ordinary Car Sales Revenue');
+    $refundId=$engine->recordOutsideBuyerRefund($carId,10000,date('Y-m-d'),$cash['id'],'Test buyer refund');
+    $sale=$db->fetch("SELECT buyer_outstanding FROM outside_car_sales WHERE sale_entry_id=?",[$saleId]);outsideAssert(floatval($sale['buyer_outstanding'])===10000.0,'Buyer refund reopens the exact buyer outstanding');
+    $engine->reverseEntry($refundId,'Workflow refund reversal');$sale=$db->fetch("SELECT buyer_outstanding FROM outside_car_sales WHERE sale_entry_id=?",[$saleId]);outsideAssert(floatval($sale['buyer_outstanding'])===0.0,'Buyer refund reversal restores buyer payment state');
+    $agreement=$engine->generateOutsideCarAgreement($carId,['delivery_terms'=>'Testing agreement delivery terms','witness_1'=>'Test Witness One','witness_2'=>'Test Witness Two']);
+    $generatedFiles=[dirname(__DIR__).'/'.$agreement['html_path'],dirname(__DIR__).'/'.$agreement['pdf_path']];
+    outsideAssert(is_file($generatedFiles[1])&&str_starts_with((string)file_get_contents($generatedFiles[1],false,null,0,4),'%PDF'),'Gujarati/English agreement renders as a real PDF');
+    outsideAssert(hash('sha256',$agreement['snapshot_json'])===$agreement['snapshot_hash'],'Immutable agreement snapshot hash verifies');
+    $settlementEntry=$engine->approveOutsideCarSettlement($carId,['settlement_date'=>date('Y-m-d'),'approved_margin'=>'64000','difference_target'=>'','approval_reason'=>'Verified handwritten sample one']);
+    $settlement=$db->fetch("SELECT * FROM outside_car_settlements WHERE car_id=? AND status<>'REVERSED'",[$carId]);
+    outsideAssert(floatval($settlement['tiranga_entitlement'])===89000.0,'Sample 1 settlement entitlement posts as 89,000');
+    outsideAssert(floatval($settlement['tiranga_income'])===48000.0,'Expense reimbursement does not inflate Tiranga accounting income');
+    $advance=$db->fetch("SELECT applied_amount FROM outside_car_advances WHERE journal_entry_id=?",[$advanceId]);outsideAssert(floatval($advance['applied_amount'])===100000.0,'Base advance is applied inside settlement allocation');
+    $entityPayment=$engine->payOutsideEntity($carId,50000,date('Y-m-d'),$cash['id'],'Partial entity settlement');
+    $blocked=false;try{$engine->reverseEntry($settlementEntry,'Should be dependency blocked');}catch(Throwable $e){$blocked=str_contains($e->getMessage(),'Source Entity payments');}outsideAssert($blocked,'Settlement reversal is blocked until Source Entity payments are reversed');
+    $engine->reverseEntry($entityPayment,'Workflow test cleanup');$engine->reverseEntry($settlementEntry,'Workflow test cleanup');
+    $advance=$db->fetch("SELECT applied_amount FROM outside_car_advances WHERE journal_entry_id=?",[$advanceId]);outsideAssert(floatval($advance['applied_amount'])===0.0,'Settlement reversal restores advance application state');
+    $engine->reverseEntry($saleId,'Workflow test cleanup');$sale=$db->fetch("SELECT status FROM outside_car_sales WHERE sale_entry_id=?",[$saleId]);outsideAssert($sale['status']==='REVERSED','Sale reversal restores Outside Car operational state');
+    $engine->reverseEntry($expenseId,'Workflow test cleanup');$engine->reverseEntry($advanceId,'Workflow test cleanup');
+    $percentReg='GJ06PX'.substr('0000'.strval((abs(crc32($suffix.'percent'))%9000)+1000),-4);
+    $percentCarId=$engine->createOutsideCar(['registration_no'=>$percentReg,'received_date'=>date('Y-m-d'),'make'=>'Test','model'=>'Percentage K','source_name'=>'Percent Mela '.$suffix,'source_phone'=>'9876501235','source_kind'=>'OTHER_CAR_MELA','source_base_value'=>500000,'expected_sale_value'=>600000,'deal_type'=>'HYBRID','tiranga_profit_pct'=>50,'entity_profit_pct'=>50,'tiranga_loss_pct'=>50,'entity_loss_pct'=>50,'commission_type'=>'PERCENT','commission_value'=>2]);
+    $receivedAdvanceId=$engine->recordOutsideEntityAdvance($percentCarId,10000,date('Y-m-d'),$cash['id'],'RECEIVED_FROM_ENTITY','Source Entity funding received');
+    $entityCostId=$engine->recordOutsideCarExpense($percentCarId,['amount'=>5000,'approved_recoverable_amount'=>0,'expense_date'=>date('Y-m-d'),'category'=>'Source Entity cost','responsibility'=>'SOURCE_ENTITY','difference_bearer'=>'','payment_account'=>$cash['id'],'narration'=>'Source Entity borne expense']);
+    $percentSaleId=$engine->recordOutsideCarSale($percentCarId,['sale_date'=>date('Y-m-d'),'vehicle_sale_price'=>600000,'discount_amount'=>0,'separate_commission'=>'','buyer_rto_charge'=>0,'other_buyer_charges'=>0,'buyer_name'=>'Percent Buyer '.$suffix,'buyer_phone'=>'9876505679','amount_received_now'=>0,'receiving_account'=>'','narration'=>'Percentage commission workflow test']);
+    $percentSale=$db->fetch("SELECT separate_commission,buyer_total FROM outside_car_sales WHERE sale_entry_id=?",[$percentSaleId]);outsideAssert(floatval($percentSale['separate_commission'])===12000.0&&floatval($percentSale['buyer_total'])===612000.0,'Percentage K is calculated from C and added to buyer total');
+    $rtoAllocationId=$engine->recordOutsideRtoShortfall($percentCarId,200,'TIRANGA',date('Y-m-d'),'Approved test RTO shortfall');
+    $rtoPaymentId=$engine->recordOutsideRtoMovement($percentCarId,'PAY',200,date('Y-m-d'),$cash['id'],'Test RTO payment after allocation');
+    $rtoFinancials=$engine->getOutsideCarFinancials($percentCarId);outsideAssert(floatval($rtoFinancials['rto']['allocated'])===200.0&&floatval($rtoFinancials['rto']['paid'])===200.0,'Approved RTO shortfall funds clearing and pays without hidden imbalance');
+    $rtoBlocked=false;try{$engine->reverseEntry($percentSaleId,'Should be RTO dependency blocked');}catch(Throwable $e){$rtoBlocked=str_contains($e->getMessage(),'RTO movements');}outsideAssert($rtoBlocked,'Sale reversal is blocked until RTO payments and allocations are reversed');
+    $engine->reverseEntry($rtoPaymentId,'RTO workflow cleanup');$engine->reverseEntry($rtoAllocationId,'RTO workflow cleanup');
+    $percentSettlementId=$engine->approveOutsideCarSettlement($percentCarId,['settlement_date'=>date('Y-m-d'),'approved_margin'=>'100000','difference_target'=>'','approval_reason'=>'Verify Source Entity payable netting']);
+    $percentSettlement=$db->fetch("SELECT entity_gross_entitlement,remaining_entity_payable,tiranga_income FROM outside_car_settlements WHERE allocation_entry_id=?",[$percentSettlementId]);
+    outsideAssert(floatval($percentSettlement['entity_gross_entitlement'])===545000.0,'Source Entity gross entitlement deducts entity-borne costs');
+    outsideAssert(floatval($percentSettlement['remaining_entity_payable'])===555000.0,'Source Entity payable includes entity funding received and deducts borne costs');
+    outsideAssert(floatval($percentSettlement['tiranga_income'])===62000.0,'Tiranga accounting income combines profit share and percentage K');
+    $engine->reverseEntry($percentSettlementId,'Percentage workflow cleanup');$engine->reverseEntry($percentSaleId,'Percentage workflow cleanup');$engine->reverseEntry($entityCostId,'Percentage workflow cleanup');$engine->reverseEntry($receivedAdvanceId,'Percentage workflow cleanup');
+    $totals=$engine->getTrialBalance();$dr=0;$cr=0;foreach($totals as $row){if($row['balance_type']==='DR')$dr+=floatval($row['balance_amount']);else$cr+=floatval($row['balance_amount']);}outsideAssert(abs($dr-$cr)<0.01,'Trial Balance remains balanced after Outside Car postings and dependency-ordered reversals');
+    $db->rollBack();foreach($generatedFiles as $file)if(is_file($file))unlink($file);echo "Outside Car end-to-end workflow regression completed and rolled back.\n";
+}catch(Throwable $e){if($db->inTransaction())$db->rollBack();foreach($generatedFiles as $file)if(is_file($file))unlink($file);fwrite(STDERR,"FAIL: {$e->getMessage()}\n{$e->getTraceAsString()}\n");exit(1);}

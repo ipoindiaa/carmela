@@ -198,27 +198,25 @@ class BusinessDataResetService {
             return ['deleted_files' => 0, 'failed' => true];
         }
 
-        $root = dirname(__DIR__) . '/uploads/attachments';
-        $target = $root . '/' . $safeBusinessId;
-        if (!is_dir($target)) {
-            return ['deleted_files' => 0, 'failed' => false];
-        }
-
         $deletedFiles = 0;
         $failed = false;
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                if (!@rmdir($item->getPathname())) $failed = true;
-            } else {
-                if (@unlink($item->getPathname())) $deletedFiles++;
-                else $failed = true;
+        foreach (['attachments','agreements'] as $storageType) {
+            $target = dirname(__DIR__) . '/uploads/' . $storageType . '/' . $safeBusinessId;
+            if (!is_dir($target)) continue;
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    if (!@rmdir($item->getPathname())) $failed = true;
+                } else {
+                    if (@unlink($item->getPathname())) $deletedFiles++;
+                    else $failed = true;
+                }
             }
+            if (!@rmdir($target)) $failed = true;
         }
-        if (!@rmdir($target)) $failed = true;
 
         return ['deleted_files' => $deletedFiles, 'failed' => $failed];
     }

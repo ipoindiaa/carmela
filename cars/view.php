@@ -208,6 +208,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
+        <?php if (!empty($car['buyer_party_id'])): ?><a href="loan_commission.php?car_id=<?= urlencode($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-bank-card-line"></i> Loan Commission</a><?php endif; ?>
         <a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-shield-2-line"></i> RTO</a>
         <a href="list.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>

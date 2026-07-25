@@ -59,6 +59,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     All Entries
                 </a>
                 <?php endif; ?>
+                <?php if (Auth::hasBookAccess('outside_cars', 'read') || Auth::hasBookAccess('car_profitability', 'read')): ?>
+                <a href="<?= APP_URL ?>reports/action_center.php" class="nav-link <?= $currentPage === 'action_center' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-task-line"></i></span>
+                    Action Center
+                </a>
+                <?php endif; ?>
             </div>
 
             <div class="nav-section">
@@ -67,10 +73,16 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-car-line"></i></span>
                     Cars
                 </a>
-                <a href="<?= APP_URL ?>cars/commission.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'cars/commission') !== false ? 'active' : '' ?>">
+                <?php if (Auth::hasBookAccess('outside_cars', 'read')): ?>
+                <a href="<?= APP_URL ?>outside-cars/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'outside-cars/') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-hand-coin-line"></i></span>
-                    Commission Cars
+                    Outside Cars
                 </a>
+                <a href="<?= APP_URL ?>reports/outside_cars.php" class="nav-link <?= $currentPage === 'outside_cars' && strpos($_SERVER['PHP_SELF'], 'reports/') !== false ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-bar-chart-box-line"></i></span>
+                    Outside Cars Report
+                </a>
+                <?php endif; ?>
                 <?php if (Auth::hasBookAccess('rto_book', 'read')): ?>
                 <a href="<?= APP_URL ?>rto/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'rto/') !== false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-file-shield-2-line"></i></span>
@@ -137,6 +149,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 <a href="<?= APP_URL ?>reports/car_profitability.php" class="nav-link <?= $currentPage === 'car_profitability' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-car-washing-line"></i></span>
                     Car Profitability
+                </a>
+                <?php endif; ?>
+                <?php if (Auth::hasBookAccess('car_profitability', 'read') || Auth::hasBookAccess('outside_cars', 'read')): ?>
+                <a href="<?= APP_URL ?>reports/loan_commissions.php" class="nav-link <?= $currentPage === 'loan_commissions' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
+                    Loan Commissions
                 </a>
                 <?php endif; ?>
                 <?php if (!isClientHiddenBook('general_ledger') && Auth::hasBookAccess('general_ledger', 'read')): ?>

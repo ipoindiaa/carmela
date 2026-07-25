@@ -101,6 +101,11 @@ if (!is_dir($attachmentDir) && !mkdir($attachmentDir, 0755, true) && !is_dir($at
 }
 $attachmentPath = $attachmentDir . '/reset-test.txt';
 file_put_contents($attachmentPath, 'reset test');
+$agreementDir = dirname(__DIR__) . '/uploads/agreements/' . $businessFolder;
+if (!is_dir($agreementDir) && !mkdir($agreementDir, 0755, true) && !is_dir($agreementDir)) {
+    throw new RuntimeException('Could not create reset test agreement directory.');
+}
+file_put_contents($agreementDir . '/reset-test.pdf', '%PDF reset test');
 $db->insert('attachments', [
     'id' => $attachmentId,
     'business_id' => $business['id'],
@@ -140,9 +145,10 @@ assertResetTest(!$db->fetch("SELECT id FROM journal_entries WHERE business_id = 
 assertResetTest(!$db->fetch("SELECT id FROM journal_lines WHERE journal_entry_id = ? LIMIT 1", [$entryId]), 'Journal lines are cleared');
 assertResetTest(!$db->fetch("SELECT id FROM attachments WHERE business_id = ? LIMIT 1", [$business['id']]), 'Attachment records are cleared');
 assertResetTest(!is_dir($attachmentDir), 'Business attachment files are cleared');
+assertResetTest(!is_dir($agreementDir), 'Business agreement snapshots and PDFs are cleared');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM users WHERE business_id = ?", [$business['id']])['cnt'] === 2, 'Business users are preserved');
 $defaultAccountCount = (int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ?", [$business['id']])['cnt'];
-assertResetTest($defaultAccountCount === 15, 'Clean default accounts are recreated');
+assertResetTest($defaultAccountCount === 26, 'Clean default accounts, including Outside Car and loan commission accounts, are recreated');
 $canonicalExpenseCount = (int) $db->fetch(
     "SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ? AND code IN ('GEN-EXP', 'CAR-REPAIR', 'RTO-EXP')",
     [$business['id']]

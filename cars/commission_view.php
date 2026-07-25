@@ -109,6 +109,7 @@ $entries = $db->fetchAll(
         <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($id) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if ($settlement): ?><a href="../reports/change_history.php?entity_type=commission_car_settlement&amp;entity_id=<?= clean($settlement['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-history-line"></i> Settlement History</a><?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $id, 'narration' => 'Token received for commission car ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a><?php endif; ?>
+        <?php if (!empty($car['buyer_party_id'])): ?><a href="loan_commission.php?car_id=<?= urlencode($id) ?>" class="btn btn-outline btn-sm"><i class="ri-bank-card-line"></i> Loan Commission</a><?php endif; ?>
         <a href="commission.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>

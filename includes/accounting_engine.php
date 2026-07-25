@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/outside_car_accounting.php';
+require_once __DIR__ . '/car_loan_commission_accounting.php';
 
 /**
  * AccountingEngine - The heart of AutoBooks Pro
@@ -8,6 +10,7 @@ require_once __DIR__ . '/functions.php';
  * Users never need to understand Dr/Cr — the engine does it all.
  */
 class AccountingEngine {
+    use OutsideCarAccounting, CarLoanCommissionAccounting;
     private $db;
     private $businessId;
     private $userId;
@@ -38,9 +41,20 @@ class AccountingEngine {
             ['CAR-REV', 'Car Sales Revenue', 'INCOME', 'Direct Income', 'GENERAL'],
             ['SALE-COMM', 'Car Sale Commission Income', 'INCOME', 'Direct Income', 'GENERAL'],
             ['CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities', 'GENERAL'],
+            ['EMP-COMM', 'Employee Commission Expense', 'EXPENSE', 'Direct Expenses', 'GENERAL'],
             ['PNL', 'Profit & Loss Account', 'INCOME', 'P&L', 'GENERAL'],
             ['BAD-DEBT', 'Bad Debt Expense', 'EXPENSE', 'Direct Expenses', 'GENERAL'],
             ['ADV-WOFF', 'Employee Advance Write-Off Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
+            ['OUTCAR-ADV', 'Outside Car Entity Advances', 'ASSET', 'Current Assets', 'GENERAL'],
+            ['OUTCAR-COST', 'Outside Car Recoverable Costs', 'ASSET', 'Current Assets', 'GENERAL'],
+            ['OUTCAR-CLEAR', 'Outside Car Sale Clearing', 'LIABILITY', 'Outside Car Clearing', 'GENERAL'],
+            ['OUTCAR-PROFIT', 'Outside Car Deal Profit Income', 'INCOME', 'Direct Income', 'GENERAL'],
+            ['OUTCAR-COMM', 'Outside Car Commission / Service Income', 'INCOME', 'Direct Income', 'GENERAL'],
+            ['OUTCAR-EXP', 'Outside Car Business Expense / Adjustment', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
+            ['RTO-CLEAR', 'RTO Clearing', 'LIABILITY', 'Current Liabilities', 'GENERAL'],
+            ['SETTLE-RNDI', 'Outside Car Settlement Round Off Income', 'INCOME', 'Settlement Adjustments', 'GENERAL'],
+            ['SETTLE-RNDE', 'Outside Car Settlement Round Off Expense', 'EXPENSE', 'Settlement Adjustments', 'GENERAL'],
+            ['LOAN-COMM', 'Car Loan Commission Income', 'INCOME', 'Direct Income', 'GENERAL'],
         ];
 
         foreach ($defaults as $acc) {
@@ -319,6 +333,8 @@ class AccountingEngine {
             $this->ensureJournalEntryTypeEnum();
             $this->ensureCarStatusEnum();
             $this->ensureCarOperationsSchema();
+            $this->ensureOutsideCarSchema();
+            $this->ensureCarLoanCommissionSchema();
 
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_vouchers` (
@@ -628,7 +644,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION', 'RTO_EXPENSE', 'RTO_RECOVERY'];
+        $required = ['CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION', 'RTO_EXPENSE', 'RTO_RECOVERY'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -642,7 +658,7 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
+                 ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
                  NOT NULL"
             );
         }
@@ -1013,7 +1029,11 @@ class AccountingEngine {
                 $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
             }
 
-            Auth::auditCreate('journal_entry', $entryId, array_merge($entryData, ['lines' => $lines]), "Posted $type entry: $narration", 'transactions');
+            $auditEntryData = array_merge($entryData, ['lines' => $lines]);
+            if (isset($extras['audit_metadata']) && is_array($extras['audit_metadata'])) {
+                $auditEntryData['metadata'] = $extras['audit_metadata'];
+            }
+            Auth::auditCreate('journal_entry', $entryId, $auditEntryData, "Posted $type entry: $narration", 'transactions');
 
             // Check alerts after posting
             $this->checkAlerts();
@@ -2171,10 +2191,13 @@ class AccountingEngine {
     /**
      * PARTNER WITHDRAW
      */
-    public function partnerWithdraw($partnerId, $amount, $date, $paymentAccount, $narration) {
+    public function partnerWithdraw($partnerId, $amount, $date, $paymentAccount, $narration, $allowOverdraw = false) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
         if (!$partner) throw new Exception("Partner not found");
         if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can withdraw business capital.");
+
+        $amount = round(floatval($amount), 2);
+        $allowOverdraw = filter_var($allowOverdraw, FILTER_VALIDATE_BOOLEAN);
 
         // RULE 5: Cannot withdraw more than available partner funds after commitments
         [$capitalAmount, $capitalType] = $this->getAccountBalanceRow($partner['capital_account_id']);
@@ -2185,7 +2208,8 @@ class AccountingEngine {
         $pendingReceivable = $this->getPendingSettlementAmount($partnerId, 'RECEIVABLE');
         $availableBalance = max(0, $capitalBalance + $currentBalance - $committedFunding - $pendingReceivable);
 
-        if ($amount > $availableBalance) {
+        $excessAmount = max(0, round($amount - $availableBalance, 2));
+        if ($excessAmount > 0 && !$allowOverdraw) {
             throw new Exception(
                 "Withdrawal amount (" . formatAmount($amount) . ") exceeds available partner funds (" . formatAmount($availableBalance) . ")."
             );
@@ -2198,7 +2222,17 @@ class AccountingEngine {
             ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid to {$partner['name']}"],
         ];
 
-        return $this->postJournalEntry('PARTNER_WITHDRAW', $date, $narration, $lines, ['partner_id' => $partnerId]);
+        $extras = ['partner_id' => $partnerId];
+        if ($excessAmount > 0) {
+            $extras['audit_metadata'] = [
+                'partner_fund_override' => true,
+                'available_partner_funds' => round($availableBalance, 2),
+                'withdrawal_amount' => $amount,
+                'excess_amount' => $excessAmount,
+            ];
+        }
+
+        return $this->postJournalEntry('PARTNER_WITHDRAW', $date, $narration, $lines, $extras);
     }
 
     public function partnerSettlement($partnerId, $amount, $date, $accountId, $direction, $narration) {
@@ -2369,6 +2403,65 @@ class AccountingEngine {
         ];
 
         return $this->postJournalEntry('EMPLOYEE_ADVANCE', $date, $narration, $lines, ['employee_id' => $employeeId]);
+    }
+
+    /**
+     * EMPLOYEE COMMISSION / INCENTIVE
+     * Kept separate from salary records and the employee advance account.
+     */
+    public function employeeCommission($employeeId, $amount, $date, $paymentAccount, $narration, $carId = null) {
+        $employee = $this->db->fetch(
+            "SELECT * FROM employees WHERE id = ? AND business_id = ?",
+            [$employeeId, $this->businessId]
+        );
+        if (!$employee) throw new Exception("Employee not found");
+
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) {
+            throw new Exception("Commission amount must be greater than zero.");
+        }
+        $narration = trim((string) $narration);
+        if ($narration === '') {
+            throw new Exception("Commission reason / narration is required.");
+        }
+
+        $carId = trim((string) $carId) ?: null;
+        $car = null;
+        if ($carId !== null) {
+            $car = $this->db->fetch(
+                "SELECT id, registration_no, status FROM cars WHERE id = ? AND business_id = ?",
+                [$carId, $this->businessId]
+            );
+            if (!$car || $car['status'] === 'CANCELLED') {
+                throw new Exception("Select a valid car for this commission or leave the car blank.");
+            }
+        }
+
+        $this->validateCashAvailable($paymentAccount, $amount);
+        $expenseAccount = $this->db->fetch(
+            "SELECT id FROM accounts WHERE business_id = ? AND code = 'EMP-COMM' LIMIT 1",
+            [$this->businessId]
+        );
+        if (!$expenseAccount) {
+            $expenseAccount = ['id' => $this->createAccount(
+                'EMP-COMM',
+                'Employee Commission Expense',
+                'EXPENSE',
+                'Direct Expenses',
+                'GENERAL'
+            )];
+        }
+
+        $context = $car ? ' for ' . $car['registration_no'] : '';
+        $lines = [
+            ['account_id' => $expenseAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Commission to {$employee['name']}{$context}"],
+            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Commission paid to {$employee['name']}"],
+        ];
+
+        return $this->postJournalEntry('EMPLOYEE_COMMISSION', $date, $narration, $lines, [
+            'employee_id' => $employeeId,
+            'car_id' => $carId,
+        ]);
     }
 
     /**
@@ -2701,6 +2794,7 @@ class AccountingEngine {
             'PARTNER_SETTLEMENT',
             'PROFIT_DISTRIBUTION',
             'SALARY_PAYMENT',
+            'EMPLOYEE_COMMISSION',
             'EMPLOYEE_ADVANCE',
             'EMPLOYEE_ADVANCE_WRITEOFF',
             'BAD_DEBT',
@@ -3148,6 +3242,9 @@ class AccountingEngine {
             throw new Exception('A reversal entry is permanent correction history and cannot itself be reversed.');
         }
 
+        $this->assertOutsideCarEntryCanBeReversed($entry);
+        $this->assertCarLoanCommissionEntryCanBeReversed($entry);
+
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
             $token = $this->db->fetch(
                 "SELECT applied_amount FROM car_tokens WHERE business_id = ? AND journal_entry_id = ?",
@@ -3291,6 +3388,8 @@ class AccountingEngine {
     }
 
     private function applyReversalBusinessEffects($entry, $lines, $reversalId) {
+        $this->applyOutsideCarReversalEffects($entry, $reversalId);
+        $this->applyCarLoanCommissionReversalEffects($entry);
         switch ($entry['transaction_type']) {
             case 'JOURNAL_VOUCHER':
                 if (!empty($entry['journal_voucher_id'])) {
@@ -3786,7 +3885,17 @@ class AccountingEngine {
                AND je.is_reversal = 0",
             [$car['account_id'], $this->businessId]
         );
-        return floatval($total['total_cost'] ?? 0);
+        $employeeCommission = $this->db->fetch(
+            "SELECT COALESCE(SUM(entry_amount), 0) AS total
+             FROM journal_entries
+             WHERE business_id = ?
+               AND car_id = ?
+               AND transaction_type = 'EMPLOYEE_COMMISSION'
+               AND status = 'POSTED'
+               AND is_reversal = 0",
+            [$this->businessId, $carId]
+        );
+        return floatval($total['total_cost'] ?? 0) + floatval($employeeCommission['total'] ?? 0);
     }
 
     public function syncCarPartyLinks($carId) {
@@ -3877,7 +3986,9 @@ class AccountingEngine {
             [$this->businessId, $carId]
         );
         $rtoRecovered = floatval($rtoRecovery['total'] ?? 0);
-        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered;
+        $loanCommission = $this->db->fetch("SELECT COALESCE(SUM(commission_amount),0) total FROM car_loan_commissions WHERE business_id=? AND car_id=? AND status<>'REVERSED'",[$this->businessId,$carId]);
+        $loanCommissionIncome = floatval($loanCommission['total'] ?? 0);
+        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome;
         $profit = $netBusinessRevenue - $totalCost;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
@@ -3900,6 +4011,7 @@ class AccountingEngine {
             'net_sale_price' => $netSalePrice,
             'total_sale_realisation' => $totalSaleRealisation,
             'rto_recovered' => $rtoRecovered,
+            'loan_commission_income' => $loanCommissionIncome,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
             'status' => $car['status'],

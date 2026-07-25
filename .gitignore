@@ -10,3 +10,6 @@ tmp/
 uploads/attachments/*
 !uploads/attachments/.gitkeep
 !uploads/attachments/.htaccess
+uploads/agreements/*
+!uploads/agreements/.gitkeep
+!uploads/agreements/.htaccess

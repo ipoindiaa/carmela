@@ -111,8 +111,6 @@ if ($q !== '') {
     array_push($params, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 
-$stats = $engine->getRtoBookSummary();
-
 $records = $db->fetchAll(
     "SELECT r.*, c.registration_no, c.make, c.model, c.status AS car_status
      FROM rto_records r
@@ -121,6 +119,20 @@ $records = $db->fetchAll(
      ORDER BY r.created_at DESC",
     $params
 );
+
+$hasCaseFilter = $q !== '' || $selectedCarId !== '' || $showDeleted;
+if ($hasCaseFilter) {
+    $filteredRecovered = array_sum(array_map(static fn($record) => (float) ($record['recovered_amount'] ?? 0), $records));
+    $filteredSpent = array_sum(array_map(static fn($record) => (float) ($record['expense_amount'] ?? 0), $records));
+    $stats = [
+        'opening' => 0,
+        'recovered' => $filteredRecovered,
+        'spent' => $filteredSpent,
+        'net' => $filteredRecovered - $filteredSpent,
+    ];
+} else {
+    $stats = $engine->getRtoBookSummary();
+}
 
 $cars = $db->fetchAll(
     "SELECT id, registration_no, make, model, status
@@ -143,6 +155,16 @@ if ($selectedCarId === '' && !empty($rtoOpeningAccount['id'])) {
 if ($selectedCarId !== '') {
     $rtoEntryWhere .= ' AND je.car_id = ?';
     $rtoEntryParams[] = $selectedCarId;
+}
+if ($hasCaseFilter && $selectedCarId === '') {
+    $filteredCarIds = array_values(array_unique(array_filter(array_column($records, 'car_id'))));
+    if ($filteredCarIds) {
+        $filteredCarPlaceholders = implode(',', array_fill(0, count($filteredCarIds), '?'));
+        $rtoEntryWhere .= " AND je.car_id IN ($filteredCarPlaceholders)";
+        $rtoEntryParams = array_merge($rtoEntryParams, $filteredCarIds);
+    } else {
+        $rtoEntryWhere .= ' AND 1 = 0';
+    }
 }
 $rtoEntries = $db->fetchAll(
     "SELECT je.id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.entry_type_id, je.entry_amount, je.narration,
@@ -167,12 +189,13 @@ $rtoEntries = $db->fetchAll(
 </div>
 
 <div class="stats-grid compact-operational-grid">
-    <div class="stat-card"><div class="stat-value <?= ($stats['opening'] ?? 0) >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($stats['opening'] ?? 0, true) ?></div><div class="stat-label">Opening RTO Balance</div></div>
+    <div class="stat-card"><div class="stat-value <?= ($stats['opening'] ?? 0) >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($stats['opening'] ?? 0, true) ?></div><div class="stat-label"><?= $hasCaseFilter ? 'Opening Excluded From Filter' : 'Opening RTO Balance' ?></div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($stats['recovered'] ?? 0) ?></div><div class="stat-label">RTO Received From Buyer</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['spent'] ?? 0) ?></div><div class="stat-label">RTO Paid To Agent / Office</div></div>
     <?php $rtoNet = (float) ($stats['net'] ?? 0); ?>
     <div class="stat-card"><div class="stat-value <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($rtoNet, true) ?></div><div class="stat-label">Net RTO Balance</div></div>
 </div>
+<?php if ($hasCaseFilter): ?><div class="form-hint" style="margin:-8px 0 16px;">Summary and transaction history are limited to the matching RTO cases. Clear filters to see the complete RTO book.</div><?php endif; ?>
 
 <div class="entry-menu-legend page-helper-strip">
     <span><i class="ri-arrow-down-circle-line"></i> Buyer gives RTO money = income in that car</span>

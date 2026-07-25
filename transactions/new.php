@@ -61,16 +61,31 @@ if (get('account_id', '') !== '') {
         }
     }
 }
-$preselectedType = get('type', '');
+$isPostRequest = $_SERVER['REQUEST_METHOD'] === 'POST';
+if ($isPostRequest && post('payment_account') !== '') {
+    $postedAccountId = trim((string) post('payment_account'));
+    foreach ($writablePrimaryAccounts as $account) {
+        if (($account['id'] ?? '') === $postedAccountId) {
+            $preselectedAccountId = $postedAccountId;
+            break;
+        }
+    }
+}
+$preselectedType = $isPostRequest ? post('transaction_type') : get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
 $preselectedCarId = get('car_id', '');
 $preselectedCar = null;
 $preselectedPartyId = get('party_id', '');
 $preselectedParty = null;
+$preselectedPartnerId = $isPostRequest ? trim((string) post('partner_id')) : '';
+$preselectedPartner = null;
+$preselectedEmployeeId = get('employee_id', '');
+$preselectedEmployee = null;
 $preselectedTokenSummary = ['available' => 0, 'party_id' => null, 'party_name' => null];
-$preselectedAmount = get('amount', '');
-$preselectedNarration = get('narration', '');
-$entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
+$preselectedEntryDate = $isPostRequest ? post('entry_date', date('Y-m-d')) : date('Y-m-d');
+$preselectedAmount = $isPostRequest ? post('amount', '') : get('amount', '');
+$preselectedNarration = $isPostRequest ? post('narration', '') : get('narration', '');
+$entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP', 'EMP-COMM'];
 $entryCategories = $db->fetchAll(
     "SELECT id, code, name, group_name, sub_group
      FROM accounts
@@ -120,6 +135,26 @@ if ($preselectedPartyId !== '') {
     );
     if (!$preselectedParty) {
         $preselectedPartyId = '';
+    }
+}
+
+if ($preselectedPartnerId !== '') {
+    $preselectedPartner = $db->fetch(
+        "SELECT id, name FROM partners WHERE id = ? AND business_id = ? AND partner_type = 'MAIN' AND is_active = 1",
+        [$preselectedPartnerId, $businessId]
+    );
+    if (!$preselectedPartner) {
+        $preselectedPartnerId = '';
+    }
+}
+
+if ($preselectedEmployeeId !== '') {
+    $preselectedEmployee = $db->fetch(
+        "SELECT id, name, role FROM employees WHERE id = ? AND business_id = ? AND is_active = 1",
+        [$preselectedEmployeeId, $businessId]
+    );
+    if (!$preselectedEmployee) {
+        $preselectedEmployeeId = '';
     }
 }
 
@@ -324,7 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'PARTNER_WITHDRAW':
                 $partnerId = post('partner_id');
-                $entryId = $engine->partnerWithdraw($partnerId, $amount, $date, $paymentAccountId, $narration);
+                $allowPartnerOverdraw = post('allow_partner_overdraw') === '1';
+                $entryId = $engine->partnerWithdraw($partnerId, $amount, $date, $paymentAccountId, $narration, $allowPartnerOverdraw);
                 break;
 
             case 'PARTNER_SETTLEMENT':
@@ -337,6 +373,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $salMonth = intval(post('salary_month'));
                 $salYear = intval(post('salary_year'));
                 $entryId = $engine->salaryPayment($employeeId, $grossSalary, $advanceDeduct, $date, $paymentAccountId, $salMonth, $salYear);
+                break;
+
+            case 'EMPLOYEE_COMMISSION':
+                $employeeId = post('employee_id');
+                $entryId = $engine->employeeCommission($employeeId, $amount, $date, $paymentAccountId, $narration, post('commission_car_id'));
                 break;
 
             case 'EMPLOYEE_ADVANCE':
@@ -464,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ) : null;
         $postedEntryLabel = transactionTypeLabel($type, $postedEntry ?: [
             'business_id' => $businessId,
-            'car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select'),
+            'car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select') ?: post('commission_car_id'),
         ]);
         if ($entryId) {
             try {
@@ -556,6 +597,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </optgroup>
                         <optgroup label="Employees">
                             <option value="SALARY_PAYMENT" data-flow="out" data-icon="ri-wallet-3-line" data-title="Paid Salary" data-desc="Business paid salary to employee.">Paid Salary</option>
+                            <option value="EMPLOYEE_COMMISSION" data-flow="out" data-icon="ri-medal-line" data-title="Paid Employee Commission" data-desc="Commission or incentive paid separately from salary and advance.">Paid Employee Commission</option>
                             <option value="EMPLOYEE_ADVANCE" data-flow="out" data-icon="ri-user-received-line" data-title="Employee Took Advance" data-desc="Business gave advance to employee.">Employee Took Advance</option>
                         </optgroup>
                         <optgroup label="Loans & Debts">
@@ -585,7 +627,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-group">
                     <label class="form-label">Date *</label>
-                    <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                    <input type="date" name="entry_date" class="form-control" value="<?= clean($preselectedEntryDate) ?>" required>
                 </div>
                 <div class="form-group" id="payment-account-group">
                     <label class="form-label" id="payment-account-label">Payment Account *</label>
@@ -816,12 +858,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="partner-section" style="display:none;">
                 <div class="form-group">
                     <label class="form-label">Partner *</label>
-                    <input type="hidden" name="partner_id" id="partner_id">
+                    <input type="hidden" name="partner_id" id="partner_id" value="<?= clean($preselectedPartnerId) ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('main_partner', this)">
-                        <span>Select partner</span>
+                        <span><?= $preselectedPartner ? clean($preselectedPartner['name']) : 'Select partner' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
                 </div>
+            </div>
+
+            <div class="txn-section" id="partner-withdraw-override-section" style="display:none;">
+                <label class="partner-overdraw-option" for="allow_partner_overdraw">
+                    <input type="checkbox" name="allow_partner_overdraw" id="allow_partner_overdraw" value="1" <?= post('allow_partner_overdraw') === '1' ? 'checked' : '' ?>>
+                    <span>
+                        <strong>Allow withdrawal without available partner funds</strong>
+                        <small>The partner account can become negative. Use the narration to record why this withdrawal is approved.</small>
+                    </span>
+                </label>
             </div>
 
 
@@ -829,11 +881,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="txn-section" id="employee-section" style="display:none;">
                 <div class="form-group">
                     <label class="form-label">Employee *</label>
-                    <input type="hidden" name="employee_id" id="employee_id">
+                    <input type="hidden" name="employee_id" id="employee_id" value="<?= clean($preselectedEmployeeId) ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="employee-picker-trigger" onclick="openEntityPicker('employee', this)">
-                        <span>Select employee</span>
+                        <span><?= $preselectedEmployee ? clean($preselectedEmployee['name']) : 'Select employee' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
+                </div>
+            </div>
+
+            <!-- EMPLOYEE COMMISSION SECTION -->
+            <div class="txn-section" id="employee-commission-section" style="display:none;">
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong>Related Car <span class="text-muted">(Optional)</span></strong><span>Select a car for sale-related commission, or leave blank for a general incentive.</span></div>
+                    </div>
+                    <input type="hidden" name="commission_car_id" id="commission_car_id" value="<?= clean($preselectedType === 'EMPLOYEE_COMMISSION' ? $preselectedCarId : '') ?>">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="commission-car-picker-trigger" onclick="openEntityPicker('commission_car', this)">
+                        <span><?= $preselectedType === 'EMPLOYEE_COMMISSION' && $preselectedCar ? clean($preselectedCar['registration_no']) : 'No car — general commission' ?></span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-hint">When linked, this commission appears in the car timeline and reduces reported car profit. It remains separate from employee salary and advance.</div>
                 </div>
             </div>
 
@@ -1239,6 +1306,13 @@ const entityPickerConfig = {
         inputId: 'employee_id',
         triggerId: 'employee-picker-trigger',
         emptyLabel: 'Select employee',
+    },
+    commission_car: {
+        title: 'Select Related Car',
+        subtitle: 'Choose any active or sold car connected to this employee commission.',
+        inputId: 'commission_car_id',
+        triggerId: 'commission-car-picker-trigger',
+        emptyLabel: 'No car — general commission',
     },
     debtor: {
         title: 'Search Debtors / Buyers',
@@ -1850,7 +1924,7 @@ async function renderEntityPickerResults(query) {
     const kind = activeEntityPicker.kind;
     const searchQuery = (query || '').trim();
     const txnType = document.getElementById('transaction_type')?.value || '';
-    const contextParam = (kind === 'car' || kind === 'payment_car' || kind === 'rto_car') ? `&context=${encodeURIComponent(txnType)}` : '';
+    const contextParam = (kind === 'car' || kind === 'payment_car' || kind === 'rto_car' || kind === 'commission_car') ? `&context=${encodeURIComponent(txnType)}` : '';
     results.innerHTML = '<div class="picker-empty">Searching...</div>';
 
     try {

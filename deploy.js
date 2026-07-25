@@ -179,6 +179,7 @@ function buildRemoteDeployCommand() {
     '  fi',
     `  GIT_SSH_COMMAND='${remoteGitSsh}' git clone "${REMOTE_REPO}" .`,
     'fi',
+    'if command -v composer >/dev/null 2>&1; then composer install --no-dev --optimize-autoloader --no-interaction; else echo "Composer is required for agreement PDFs" >&2; exit 1; fi',
     buildRemoteEnvironmentConfigCommand(),
     buildRemoteDatabaseConfigCommand(),
   ].join('\n');

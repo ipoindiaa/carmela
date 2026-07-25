@@ -47,6 +47,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
 $advanceOutstanding = (($emp['advance_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($emp['advance_balance'] ?? 0)) : 0;
 
 $salaryHistory = $db->fetchAll("SELECT * FROM salary_records WHERE employee_id = ? ORDER BY processed_date DESC, created_at DESC", [$id]);
+$commissionHistory = $db->fetchAll(
+    "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration,
+            je.entry_amount, je.status, c.id AS car_id, c.registration_no,
+            payment_account.name AS payment_account_name, payment_account.entity_type AS payment_mode
+     FROM journal_entries je
+     LEFT JOIN cars c ON c.id = je.car_id AND c.business_id = je.business_id
+     LEFT JOIN journal_lines payment_line
+       ON payment_line.journal_entry_id = je.id
+      AND payment_line.entry_type = 'CR'
+     LEFT JOIN accounts payment_account
+       ON payment_account.id = payment_line.account_id
+      AND payment_account.entity_type IN ('CASH','BANK')
+     WHERE je.business_id = ?
+       AND je.employee_id = ?
+       AND je.transaction_type = 'EMPLOYEE_COMMISSION'
+       AND je.status IN ('POSTED','REVERSED')
+     ORDER BY je.entry_date DESC, je.created_at DESC",
+    [$businessId, $id]
+);
+$commissionPaid = (float) ($db->fetch(
+    "SELECT COALESCE(SUM(entry_amount), 0) AS total
+     FROM journal_entries
+     WHERE business_id = ?
+       AND employee_id = ?
+       AND transaction_type = 'EMPLOYEE_COMMISSION'
+       AND status = 'POSTED'
+       AND is_reversal = 0",
+    [$businessId, $id]
+)['total'] ?? 0);
 $advanceLedger = $db->fetchAll(
     "SELECT je.id AS entry_id, je.entry_date, je.created_at, je.reference_no, je.narration, jl.amount, jl.entry_type
      FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
@@ -60,8 +89,9 @@ $advanceLedger = $db->fetchAll(
         <a href="../reports/change_history.php?entity_type=employee&amp;entity_id=<?= $emp['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (!empty($emp['is_active']) && Auth::hasEntityAccess('employee', 'delete')): ?><a href="../delete_record.php?entity_type=employee&amp;id=<?= clean($emp['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if (!empty($emp['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $emp['advance_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Advance</a><?php endif; ?>
-        <?php if (!empty($emp['is_active'])): ?><a href="../transactions/new.php?type=SALARY_PAYMENT" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
-        <a href="../transactions/new.php?type=EMPLOYEE_ADVANCE" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a><?php endif; ?>
+        <?php if (!empty($emp['is_active'])): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'SALARY_PAYMENT', 'employee_id' => $emp['id']]) ?>" class="btn btn-primary btn-sm"><i class="ri-money-rupee-circle-line"></i> Pay Salary</a>
+        <a href="../transactions/new.php?<?= http_build_query(['type' => 'EMPLOYEE_COMMISSION', 'employee_id' => $emp['id'], 'narration' => 'Employee commission - ' . $emp['name']]) ?>" class="btn btn-outline btn-sm"><i class="ri-medal-line"></i> Pay Commission</a>
+        <a href="../transactions/new.php?<?= http_build_query(['type' => 'EMPLOYEE_ADVANCE', 'employee_id' => $emp['id']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Give Advance</a><?php endif; ?>
         <?php if (!empty($emp['is_active']) && Auth::isAdmin() && $advanceOutstanding > 0): ?>
             <a href="write_off.php?id=<?= $emp['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-close-circle-line"></i> Write Off Advance</a>
         <?php endif; ?>
@@ -116,6 +146,7 @@ $advanceLedger = $db->fetchAll(
 
 <div class="stats-grid">
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($emp['monthly_salary']) ?></div><div class="stat-label">Monthly Salary</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($commissionPaid) ?></div><div class="stat-label">Commission Paid</div></div>
     <div class="stat-card"><div class="stat-value <?= $advanceOutstanding > 0 ? 'flow-in' : 'flow-neutral' ?>"><?= formatAmount($advanceOutstanding) ?></div><div class="stat-label">Advance Outstanding</div></div>
     <div class="stat-card"><div class="stat-value"><?= clean($emp['role'] ?: 'N/A') ?></div><div class="stat-label">Role</div></div>
 </div>
@@ -137,18 +168,39 @@ $advanceLedger = $db->fetchAll(
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><h3>Advance Ledger</h3></div>
+        <div class="card-header"><h3><i class="ri-medal-line"></i> Commission History</h3></div>
         <div class="card-body card-body-flush table-container">
-            <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
+            <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Reason</th><th>Car</th><th>Paid From</th><th class="text-right">Amount</th><th>Status</th></tr></thead>
             <tbody>
-            <?php foreach ($advanceLedger as $l): ?>
-            <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
-                <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
-                <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+            <?php foreach ($commissionHistory as $commission): ?>
+            <tr>
+                <td><?= renderDateTimeStack($commission['entry_date'], $commission['created_at']) ?></td>
+                <td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($commission['entry_id']) ?>"><?= clean($commission['reference_no']) ?></a></td>
+                <td><?= clean(mb_strimwidth($commission['narration'] ?? '', 0, 44, '…')) ?></td>
+                <td><?php if (!empty($commission['car_id'])): ?><a href="../cars/view.php?id=<?= urlencode($commission['car_id']) ?>"><?= clean(formatRegistrationNo($commission['registration_no'])) ?></a><?php else: ?>General<?php endif; ?></td>
+                <td><?= clean($commission['payment_account_name'] ?: ($commission['payment_mode'] ?: '-')) ?></td>
+                <td class="text-right amount flow-out"><?= formatAmount($commission['entry_amount']) ?></td>
+                <td><span class="badge <?= $commission['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= clean($commission['status']) ?></span></td>
+            </tr>
             <?php endforeach; ?>
-            <?php if (empty($advanceLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No advance entries</td></tr><?php endif; ?>
+            <?php if (empty($commissionHistory)): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No commission records</td></tr><?php endif; ?>
             </tbody></table>
         </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h3>Advance Ledger</h3></div>
+    <div class="card-body card-body-flush table-container">
+        <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>
+        <tbody>
+        <?php foreach ($advanceLedger as $l): ?>
+        <tr><td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td><td><?= clean(mb_substr($l['narration']??'',0,40)) ?></td>
+            <td class="text-right amount debit-amount"><?= $l['entry_type']==='DR' ? formatAmount($l['amount']) : '' ?></td>
+            <td class="text-right amount credit-amount"><?= $l['entry_type']==='CR' ? formatAmount($l['amount']) : '' ?></td></tr>
+        <?php endforeach; ?>
+        <?php if (empty($advanceLedger)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No advance entries</td></tr><?php endif; ?>
+        </tbody></table>
     </div>
 </div>
 

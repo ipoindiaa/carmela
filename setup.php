@@ -229,5 +229,7 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         <?php endif; ?>
     </div>
 </div>
+<?php $jsVersion = @filemtime(__DIR__ . '/assets/js/app.js') ?: APP_VERSION; ?>
+<script src="assets/js/app.js?v=<?= $jsVersion ?>"></script>
 </body>
 </html>

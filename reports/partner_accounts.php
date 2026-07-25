@@ -57,7 +57,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                         <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
                         <td class="text-right amount flow-out"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
                         <td class="text-right amount flow-in"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
-                        <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+                        <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline" title="View partner" aria-label="View partner"><i class="ri-eye-line"></i></a></td>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -86,7 +86,7 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
                         <td class="text-right amount flow-in"><?= formatAmount($position['committed_funding'] ?? 0) ?></td>
                         <td class="text-right amount flow-out"><?= formatAmount($position['pending_payable'] ?? 0) ?></td>
                         <td class="text-right amount flow-in"><?= formatAmount($position['pending_receivable'] ?? 0) ?></td>
-                        <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a></td>
+                        <td class="text-center"><a href="../partners/view.php?id=<?= $partner['id'] ?>" class="btn btn-sm btn-outline" title="View partner" aria-label="View partner"><i class="ri-eye-line"></i></a></td>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

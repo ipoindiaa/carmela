@@ -28,19 +28,35 @@ $filterEntryTypeId = get('entry_type_id', '');
 if ($filterEntryTypeId === '' && get('type', '') !== '') {
     $filterEntryTypeId = systemEntryTypeId(get('type'));
 }
-$filterDate = get('date', '');
+$filterQuery = trim((string) get('q', ''));
+$filterFromDate = get('from_date', get('date', ''));
+$filterToDate = get('to_date', '');
 $filterStatus = get('status', '');
+$filterUserId = get('user_id', '');
+$filterMinAmount = trim((string) get('min_amount', ''));
+$filterMaxAmount = trim((string) get('max_amount', ''));
 $page = max(1, intval(get('page', 1)));
 $perPage = 30;
 
-function transactionsListUrl($page, $filterEntryTypeId, $filterDate, $filterStatus, $lazy = false) {
+function transactionsListUrl($page, array $filters, $lazy = false) {
     $query = ['page' => $page];
-    if ($filterEntryTypeId !== '') $query['entry_type_id'] = $filterEntryTypeId;
-    if ($filterDate !== '') $query['date'] = $filterDate;
-    if ($filterStatus !== '') $query['status'] = $filterStatus;
+    foreach ($filters as $key => $value) {
+        if ($value !== '' && $value !== null) $query[$key] = $value;
+    }
     if ($lazy) $query['lazy'] = 1;
     return 'list.php?' . http_build_query($query);
 }
+
+$transactionFilters = [
+    'q' => $filterQuery,
+    'entry_type_id' => $filterEntryTypeId,
+    'from_date' => $filterFromDate,
+    'to_date' => $filterToDate,
+    'status' => $filterStatus,
+    'user_id' => $filterUserId,
+    'min_amount' => $filterMinAmount,
+    'max_amount' => $filterMaxAmount,
+];
 
 function transactionContextLabel($type, array $entry = []) {
     return match (transactionBusinessFlow($type, $entry)) {
@@ -103,24 +119,42 @@ function renderTransactionRows($entries) {
 $where = "WHERE je.business_id = ?";
 $params = [$businessId];
 
+$accessScopes = [];
 if (!empty($accessibleAccountIds)) {
-    $where .= " AND EXISTS (
+    $accessScopes[] = "EXISTS (
         SELECT 1
         FROM journal_lines jl_filter
         WHERE jl_filter.journal_entry_id = je.id
           AND jl_filter.account_id IN ($accountPlaceholders)
     )";
     $params = array_merge($params, $accessibleAccountIds);
-} else {
-    $where .= " AND 1 = 0";
 }
+if ($canReadJV) {
+    $accessScopes[] = "je.transaction_type = 'JOURNAL_VOUCHER'";
+}
+$where .= ' AND (' . implode(' OR ', $accessScopes) . ')';
 
 if ($filterEntryTypeId) {
     $where .= " AND COALESCE(NULLIF(je.entry_type_id, ''), CONCAT('SYSTEM:', je.transaction_type)) = ?";
     $params[] = $filterEntryTypeId;
 }
-if ($filterDate) { $where .= " AND je.entry_date = ?"; $params[] = $filterDate; }
+if ($filterQuery !== '') {
+    $needle = '%' . $filterQuery . '%';
+    $where .= " AND (
+        je.reference_no LIKE ? OR je.narration LIKE ?
+        OR EXISTS (SELECT 1 FROM cars search_car WHERE search_car.id = je.car_id AND search_car.business_id = je.business_id AND (search_car.registration_no LIKE ? OR search_car.make LIKE ? OR search_car.model LIKE ?))
+        OR EXISTS (SELECT 1 FROM partners search_partner WHERE search_partner.id = je.partner_id AND search_partner.business_id = je.business_id AND search_partner.name LIKE ?)
+        OR EXISTS (SELECT 1 FROM employees search_employee WHERE search_employee.id = je.employee_id AND search_employee.business_id = je.business_id AND search_employee.name LIKE ?)
+        OR EXISTS (SELECT 1 FROM users search_user WHERE search_user.id = je.created_by AND search_user.business_id = je.business_id AND search_user.full_name LIKE ?)
+    )";
+    array_push($params, $needle, $needle, $needle, $needle, $needle, $needle, $needle, $needle);
+}
+if ($filterFromDate) { $where .= " AND je.entry_date >= ?"; $params[] = $filterFromDate; }
+if ($filterToDate) { $where .= " AND je.entry_date <= ?"; $params[] = $filterToDate; }
 if ($filterStatus) { $where .= " AND je.status = ?"; $params[] = $filterStatus; }
+if ($filterUserId) { $where .= " AND je.created_by = ?"; $params[] = $filterUserId; }
+if ($filterMinAmount !== '' && is_numeric($filterMinAmount)) { $where .= " AND je.entry_amount >= ?"; $params[] = (float) $filterMinAmount; }
+if ($filterMaxAmount !== '' && is_numeric($filterMaxAmount)) { $where .= " AND je.entry_amount <= ?"; $params[] = (float) $filterMaxAmount; }
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM journal_entries je $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
@@ -146,14 +180,23 @@ if ($isLazyRequest) {
     $nextPage = $page < $pagination['total_pages'] ? $page + 1 : null;
     echo json_encode([
         'html' => renderTransactionRows($entries),
-        'next_url' => $nextPage ? transactionsListUrl($nextPage, $filterEntryTypeId, $filterDate, $filterStatus, true) : '',
+        'next_url' => $nextPage ? transactionsListUrl($nextPage, $transactionFilters, true) : '',
     ]);
     exit;
 }
 
 $nextUrl = $page < $pagination['total_pages']
-    ? transactionsListUrl($page + 1, $filterEntryTypeId, $filterDate, $filterStatus, true)
+    ? transactionsListUrl($page + 1, $transactionFilters, true)
     : '';
+
+$transactionUsers = $db->fetchAll(
+    "SELECT DISTINCT u.id, u.full_name
+     FROM journal_entries je
+     JOIN users u ON u.id = je.created_by AND u.business_id = je.business_id
+     WHERE je.business_id = ?
+     ORDER BY u.full_name",
+    [$businessId]
+);
 
 $customEntryTypes = $db->fetchAll(
     "SELECT id, code, name, group_name, is_active
@@ -190,6 +233,10 @@ $customEntryTypes = $db->fetchAll(
 
 <div class="filter-bar entries-filter-bar">
     <form method="GET" class="entries-filter-form">
+        <div class="entries-filter-field entries-filter-search">
+            <label class="form-label">Search</label>
+            <input type="search" name="q" class="form-control" value="<?= clean($filterQuery) ?>" placeholder="Ref, narration, car, partner, employee">
+        </div>
         <div class="entries-filter-field entries-filter-type">
             <label class="form-label">Entry Type</label>
             <select name="entry_type_id" class="form-control" data-searchable="true">
@@ -210,8 +257,12 @@ $customEntryTypes = $db->fetchAll(
             </select>
         </div>
         <div class="entries-filter-field entries-filter-date">
-            <label class="form-label">Date</label>
-            <input type="date" name="date" class="form-control" value="<?= clean($filterDate) ?>">
+            <label class="form-label">From</label>
+            <input type="date" name="from_date" class="form-control" value="<?= clean($filterFromDate) ?>">
+        </div>
+        <div class="entries-filter-field entries-filter-date">
+            <label class="form-label">To</label>
+            <input type="date" name="to_date" class="form-control" value="<?= clean($filterToDate) ?>">
         </div>
         <div class="entries-filter-field entries-filter-status">
             <label class="form-label">Status</label>
@@ -220,6 +271,23 @@ $customEntryTypes = $db->fetchAll(
                 <option value="POSTED" <?= $filterStatus === 'POSTED' ? 'selected' : '' ?>>Posted</option>
                 <option value="REVERSED" <?= $filterStatus === 'REVERSED' ? 'selected' : '' ?>>Reversed</option>
             </select>
+        </div>
+        <div class="entries-filter-field entries-filter-user">
+            <label class="form-label">Entered By</label>
+            <select name="user_id" class="form-control" data-searchable="true">
+                <option value="">All Users</option>
+                <?php foreach ($transactionUsers as $transactionUser): ?>
+                    <option value="<?= clean($transactionUser['id']) ?>" <?= $filterUserId === $transactionUser['id'] ? 'selected' : '' ?>><?= clean($transactionUser['full_name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="entries-filter-field entries-filter-amount">
+            <label class="form-label">Amount From</label>
+            <input type="number" min="0" step="0.01" name="min_amount" class="form-control" value="<?= clean($filterMinAmount) ?>" placeholder="0">
+        </div>
+        <div class="entries-filter-field entries-filter-amount">
+            <label class="form-label">Amount To</label>
+            <input type="number" min="0" step="0.01" name="max_amount" class="form-control" value="<?= clean($filterMaxAmount) ?>" placeholder="Any">
         </div>
         <div class="entries-filter-actions">
             <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Filter</button>
@@ -256,13 +324,13 @@ $customEntryTypes = $db->fetchAll(
 <?php if ($pagination['total_pages'] > 1): ?>
 <div class="pagination no-js-pagination">
     <?php if ($page > 1): ?>
-        <a href="<?= clean(transactionsListUrl($page - 1, $filterEntryTypeId, $filterDate, $filterStatus)) ?>">← Prev</a>
+        <a href="<?= clean(transactionsListUrl($page - 1, $transactionFilters)) ?>">← Prev</a>
     <?php endif; ?>
     <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-        <a href="<?= clean(transactionsListUrl($i, $filterEntryTypeId, $filterDate, $filterStatus)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="<?= clean(transactionsListUrl($i, $transactionFilters)) ?>" class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
     <?php endfor; ?>
     <?php if ($page < $pagination['total_pages']): ?>
-        <a href="<?= clean(transactionsListUrl($page + 1, $filterEntryTypeId, $filterDate, $filterStatus)) ?>">Next →</a>
+        <a href="<?= clean(transactionsListUrl($page + 1, $transactionFilters)) ?>">Next →</a>
     <?php endif; ?>
 </div>
 <?php endif; ?>

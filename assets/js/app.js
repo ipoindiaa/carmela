@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initBreadcrumbs();
     initAccessibleControls();
     initFloatingTooltips();
+    initQuickTableFilters();
 
     // Only transient flash messages dismiss themselves. Contextual warnings
     // inside forms must remain visible while the user makes a decision.
@@ -103,8 +104,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 'GENERAL_EXPENSE': [],
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
-                'PARTNER_WITHDRAW': ['partner-section'],
+                'PARTNER_WITHDRAW': ['partner-section', 'partner-withdraw-override-section'],
                 'SALARY_PAYMENT': ['employee-section', 'salary-section'],
+                'EMPLOYEE_COMMISSION': ['employee-section', 'employee-commission-section'],
                 'EMPLOYEE_ADVANCE': ['employee-section'],
                 'LOAN_GIVEN': ['counterparty-section'],
                 'LOAN_RECEIVED': ['party-select-section'],
@@ -843,33 +845,29 @@ function buildCustomSelectMenu(instance) {
     const { select, popover } = instance;
     popover.replaceChildren();
     const available = Array.from(select.options).filter((option) => !option.hidden);
-    const searchableCount = available.filter((option) => option.value !== '' && !option.disabled).length;
-    const searchable = select.dataset.searchable === 'true' || (select.dataset.searchable !== 'false' && searchableCount >= 8);
 
     instance.search = null;
-    if (searchable) {
-        const searchWrap = document.createElement('div');
-        searchWrap.className = 'custom-select-search-wrap';
-        searchWrap.innerHTML = '<i class="ri-search-line" aria-hidden="true"></i>';
-        const search = document.createElement('input');
-        search.type = 'search';
-        search.className = 'custom-select-search';
-        search.placeholder = select.dataset.searchPlaceholder || 'Search options';
-        search.setAttribute('aria-label', 'Search options');
-        searchWrap.appendChild(search);
-        popover.appendChild(searchWrap);
-        instance.search = search;
-        search.addEventListener('input', () => filterCustomSelect(instance, search.value));
-        search.addEventListener('keydown', (event) => {
-            if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                focusCustomSelectOption(instance, 1);
-            } else if (event.key === 'Escape') {
-                event.preventDefault();
-                closeCustomSelect(instance, true);
-            }
-        });
-    }
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'custom-select-search-wrap';
+    searchWrap.innerHTML = '<i class="ri-search-line" aria-hidden="true"></i>';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'custom-select-search';
+    search.placeholder = select.dataset.searchPlaceholder || 'Search options';
+    search.setAttribute('aria-label', `Search ${instance.trigger.dataset.fieldLabel || 'options'}`);
+    searchWrap.appendChild(search);
+    popover.appendChild(searchWrap);
+    instance.search = search;
+    search.addEventListener('input', () => filterCustomSelect(instance, search.value));
+    search.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusCustomSelectOption(instance, 1);
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            closeCustomSelect(instance, true);
+        }
+    });
 
     const list = document.createElement('div');
     list.className = 'custom-select-list';
@@ -1225,4 +1223,72 @@ function initAccessibleControls(scope = document) {
         const label = control.getAttribute('title');
         if (label) control.setAttribute('aria-label', label);
     });
+}
+
+function initQuickTableFilters(scope = document) {
+    scope.querySelectorAll('.table-container table:not([data-static-table]):not([data-no-quick-filter])').forEach((table, tableIndex) => {
+        if (table.dataset.quickFilterReady === '1') return;
+        // Lazy lists append rows after this initializer runs. Their server-side
+        // filters must remain authoritative instead of filtering a stale row set.
+        if (table.closest('[data-lazy-list]')) return;
+        const body = table.tBodies[0];
+        if (!body) return;
+        const rows = Array.from(body.rows).filter((row) => !row.classList.contains('quick-filter-empty') && row.cells.length > 1);
+        if (rows.length < 4) return;
+        table.dataset.quickFilterReady = '1';
+
+        const headings = Array.from(table.tHead?.rows[0]?.cells || []).map((cell) => cell.textContent.trim());
+        const statusIndex = headings.findIndex((heading) => /^(status|state|stage)$/i.test(heading));
+        const statusValues = statusIndex >= 0
+            ? [...new Set(rows.map((row) => row.cells[statusIndex]?.textContent.trim()).filter(Boolean))].sort()
+            : [];
+        const controlId = `quick-table-filter-${tableIndex}-${Math.random().toString(36).slice(2, 7)}`;
+        const bar = document.createElement('div');
+        bar.className = 'table-quick-filter';
+        bar.innerHTML = `
+            <div class="table-quick-search">
+                <label for="${controlId}">Filter visible rows</label>
+                <div class="table-quick-search-control"><i class="ri-search-line" aria-hidden="true"></i><input id="${controlId}" type="search" class="form-control" placeholder="Search ${headings.filter(Boolean).slice(0, 4).join(', ').toLowerCase() || 'this table'}" autocomplete="off"><button type="button" class="table-filter-clear" aria-label="Clear table filter" title="Clear filter"><i class="ri-close-line"></i></button></div>
+            </div>
+            ${statusValues.length > 1 && statusValues.length <= 12 ? `<div class="table-quick-status"><label>Status</label><select class="form-control"><option value="">All statuses</option>${statusValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}</select></div>` : ''}
+            <div class="table-filter-result" role="status" aria-live="polite"></div>`;
+
+        const container = table.closest('.table-container');
+        if (!container?.parentNode) return;
+        container.parentNode.insertBefore(bar, container);
+        const search = bar.querySelector('input[type="search"]');
+        const status = bar.querySelector('select');
+        const result = bar.querySelector('.table-filter-result');
+        const clear = bar.querySelector('.table-filter-clear');
+        const empty = document.createElement('tr');
+        empty.className = 'quick-filter-empty';
+        empty.hidden = true;
+        empty.innerHTML = `<td colspan="${Math.max(1, headings.length)}"><div class="table-filter-empty-state"><i class="ri-filter-off-line"></i><strong>No matching rows</strong><span>Change or clear the table filters.</span></div></td>`;
+        body.appendChild(empty);
+
+        const apply = () => {
+            const query = search.value.trim().toLocaleLowerCase();
+            const selectedStatus = status?.value || '';
+            let visible = 0;
+            rows.forEach((row) => {
+                const matchesSearch = !query || row.textContent.toLocaleLowerCase().includes(query);
+                const matchesStatus = !selectedStatus || row.cells[statusIndex]?.textContent.trim() === selectedStatus;
+                row.hidden = !(matchesSearch && matchesStatus);
+                if (!row.hidden) visible += 1;
+            });
+            empty.hidden = visible !== 0;
+            clear.hidden = !query && !selectedStatus;
+            result.textContent = `${visible} of ${rows.length} rows`;
+        };
+        search.addEventListener('input', apply);
+        status?.addEventListener('change', apply);
+        clear.addEventListener('click', () => { search.value = ''; if (status) status.value = ''; apply(); search.focus(); });
+        apply();
+    });
+}
+
+function escapeHtml(value) {
+    const node = document.createElement('span');
+    node.textContent = value;
+    return node.innerHTML;
 }

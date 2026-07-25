@@ -19,7 +19,7 @@ class RecordDeletionService {
             case 'car':
                 $record = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$entityId, $this->businessId]);
                 return $this->description($record, 'Car', $record ? formatRegistrationNo($record['registration_no']) : '',
-                    ($record['ownership_type'] ?? 'OWNED') === 'COMMISSION' ? 'cars/commission.php' : 'cars/list.php',
+                    in_array(($record['ownership_type'] ?? 'OWNED'), ['COMMISSION','OUTSIDE'], true) ? 'outside-cars/index.php' : 'cars/list.php',
                     'Financial entries will be reversed where safe. The car will remain in History as cancelled.');
             case 'partner':
                 $record = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$entityId, $this->businessId]);
@@ -134,7 +134,7 @@ class RecordDeletionService {
             }
         } else {
             if (!empty($activeEntries)) {
-                throw new Exception('Reverse the commission sale, owner payments, tokens, and other active entries first.');
+                throw new Exception('Reverse the sale, settlements, entity payments, tokens, and other active entries in dependency order first.');
             }
             $this->archiveCarWithoutEntry($car, $reason);
         }

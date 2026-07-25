@@ -79,7 +79,7 @@ function renderCarRows($cars, $engine) {
             </td>
             <td class="text-center">
                 <div class="table-action-stack">
-                    <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i></a>
+                    <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="View car" aria-label="View car"><i class="ri-eye-line"></i></a>
                     <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
                     <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
                     <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?>
@@ -131,38 +131,6 @@ if ($search !== '') {
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
-
-$cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names,
-            COALESCE(rto.rto_pending, 0) AS rto_pending
-     FROM cars c
-     LEFT JOIN accounts a ON a.id = c.account_id
-     LEFT JOIN (
-        SELECT cp.car_id, GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ') AS partner_names
-        FROM car_partnerships cp
-        JOIN partners p ON p.id = cp.partner_id
-        WHERE cp.business_id = ? AND cp.status = 'ACTIVE'
-        GROUP BY cp.car_id
-     ) partner_rollup ON partner_rollup.car_id = c.id
-     LEFT JOIN (
-        SELECT car_id, SUM(GREATEST(expense_amount - recovered_amount, 0)) AS rto_pending
-        FROM rto_records
-        WHERE business_id = ? AND is_recoverable = 1 AND status <> 'CANCELLED'
-        GROUP BY car_id
-     ) rto ON rto.car_id = c.id
-     $where ORDER BY c.created_at DESC
-     LIMIT ? OFFSET ?",
-    array_merge([$businessId, $businessId], $params, [$perPage, $pagination['offset']])
-);
-
-foreach ($cars as $carRow) {
-    if (
-        (empty($carRow['buyer_party_id']) && !empty($carRow['buyer_name']))
-        || empty($carRow['seller_party_id'])
-    ) {
-        $engine->syncCarPartyLinks($carRow['id']);
-    }
-}
 
 $cars = $db->fetchAll(
     "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names,
