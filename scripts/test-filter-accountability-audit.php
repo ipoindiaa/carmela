@@ -25,6 +25,7 @@ foreach (['name="q"','name="from_date"','name="to_date"','name="status"','name="
 foreach (['buyer_status','settlement_status','rto_status','physical_status'] as $control) {
     $assertContains('outside-cars/index.php', 'name="' . $control . '"', "Outside Cars is missing $control filter.");
 }
+$assertContains('outside-cars/index.php', '<table data-no-quick-filter>', 'Outside Cars must use only its server-side filter panel.');
 $assertContains('rto/list.php', '$hasCaseFilter', 'RTO totals must respond to case filters.');
 $assertContains('reports/audit_log.php', 'name="from_date"', 'Audit Log needs a date-range filter.');
 $assertContains('reports/audit_log.php', 'name="user_id"', 'Audit Log needs a user filter.');

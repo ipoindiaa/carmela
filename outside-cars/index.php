@@ -80,7 +80,7 @@ $outsideFilterQuery = ['view' => $view, 'q' => $search, 'buyer_status' => $buyer
     <div class="filter-chip-row"><?php foreach (['ACTIVE'=>'Active','SETTLED'=>'Settled','LEGACY'=>'Legacy','ALL'=>'All'] as $key=>$label): $viewQuery=$outsideFilterQuery;$viewQuery['view']=$key; ?><a class="btn btn-sm <?= $view===$key?'btn-primary':'btn-outline' ?>" href="?<?= clean(http_build_query(array_filter($viewQuery,static fn($value)=>$value!==''))) ?>"><?= clean($label) ?></a><?php endforeach; ?></div>
 </div>
 
-<div class="table-container table-container-fill"><table><thead><tr><th>Vehicle</th><th>Source Entity</th><th>A: Base</th><th>Buyer</th><th class="text-right">Buyer Due</th><th class="text-right">Entity Due</th><th>Workflow</th><th></th></tr></thead><tbody>
+<div class="table-container table-container-fill"><table data-no-quick-filter><thead><tr><th>Vehicle</th><th>Source Entity</th><th>A: Base</th><th>Buyer</th><th class="text-right">Buyer Due</th><th class="text-right">Entity Due</th><th>Workflow</th><th></th></tr></thead><tbody>
 <?php if (!$cars): ?><tr><td colspan="8" class="text-center text-muted" style="padding:40px">No Outside Cars found.</td></tr><?php endif; ?>
 <?php foreach ($cars as $car): $legacy=$car['ownership_type']==='COMMISSION'; ?>
 <tr>
