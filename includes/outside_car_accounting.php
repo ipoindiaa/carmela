@@ -413,6 +413,16 @@ trait OutsideCarAccounting {
         if ($base < 0 || $expectedSale < 0) throw new Exception('Base and expected sale values cannot be negative.');
         if (!in_array($dealType, ['PROFIT_SHARE','FIXED_COMMISSION','HYBRID'], true)) throw new Exception('Select a valid Outside Car deal type.');
         if (!in_array($commissionType, ['NONE','FIXED','PERCENT'], true)) throw new Exception('Select a valid commission type.');
+        if ($dealType === 'PROFIT_SHARE') {
+            $commissionType = 'NONE';
+            $commissionValue = 0;
+        } elseif ($dealType === 'FIXED_COMMISSION') {
+            // Fixed-commission deals have no Tiranga margin share. The entity bears the remaining margin or loss.
+            $tirangaProfit = 0; $entityProfit = 100;
+            $tirangaLoss = 0; $entityLoss = 100;
+        }
+        if ($dealType !== 'PROFIT_SHARE' && $commissionType === 'NONE') throw new Exception('Select the agreed K commission type for this deal.');
+        if ($dealType !== 'PROFIT_SHARE' && $commissionValue <= 0) throw new Exception('K commission value must be greater than zero for this deal.');
         if ($commissionValue < 0 || ($commissionType === 'PERCENT' && $commissionValue > 100)) throw new Exception('Commission must be non-negative and percentage commission cannot exceed 100%.');
         if ($commissionType === 'NONE') $commissionValue = 0;
         if (abs(($tirangaProfit + $entityProfit) - 100) > 0.0001) throw new Exception('Profit shares must total exactly 100%.');

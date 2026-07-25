@@ -36,10 +36,38 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 </div></div>
 <div class="outside-step card"><div class="card-header"><h3><span class="outside-step-number">2</span> Deal Terms</h3></div><div class="card-body">
 <div class="alert alert-info"><i class="ri-calculator-line"></i> A is Source Base Value. K is separate Tiranga commission and is excluded from profit sharing.</div>
-<div class="form-row-3"><div class="form-group"><label class="form-label">A: Source Base Value *</label><input name="source_base_value" class="form-control currency-input" value="<?= clean(post('source_base_value')) ?>" required></div><div class="form-group"><label class="form-label">Expected Selling Value</label><input name="expected_sale_value" class="form-control currency-input" value="<?= clean(post('expected_sale_value')) ?>"></div><div class="form-group"><label class="form-label">Deal Type</label><select name="deal_type" class="form-control"><option value="PROFIT_SHARE">Profit Share</option><option value="FIXED_COMMISSION">Fixed Commission</option><option value="HYBRID" selected>Hybrid</option></select></div></div>
-<div class="form-row"><div class="form-group"><label class="form-label">Profit Share: Tiranga % / Entity %</label><div style="display:flex;gap:8px"><input name="tiranga_profit_pct" class="form-control" value="<?= clean(post('tiranga_profit_pct','50')) ?>" required><input name="entity_profit_pct" class="form-control" value="<?= clean(post('entity_profit_pct','50')) ?>" required></div></div><div class="form-group"><label class="form-label">Loss Share: Tiranga % / Entity %</label><div style="display:flex;gap:8px"><input name="tiranga_loss_pct" class="form-control" value="<?= clean(post('tiranga_loss_pct','50')) ?>" required><input name="entity_loss_pct" class="form-control" value="<?= clean(post('entity_loss_pct','50')) ?>" required></div></div></div>
-<div class="form-row"><div class="form-group"><label class="form-label">K Commission Type</label><select name="commission_type" class="form-control"><option value="FIXED">Fixed amount</option><option value="PERCENT">Percentage reference</option><option value="NONE">None</option></select></div><div class="form-group"><label class="form-label">K Commission Value</label><input name="commission_value" class="form-control currency-input" value="<?= clean(post('commission_value','0')) ?>"></div></div>
+<?php $dealType=post('deal_type','HYBRID'); ?>
+<div class="form-row-3"><div class="form-group"><label class="form-label">A: Source Base Value *</label><input name="source_base_value" class="form-control currency-input" value="<?= clean(post('source_base_value')) ?>" required></div><div class="form-group"><label class="form-label">Expected Selling Value</label><input name="expected_sale_value" class="form-control currency-input" value="<?= clean(post('expected_sale_value')) ?>"></div><div class="form-group"><label class="form-label">Deal Type</label><select name="deal_type" class="form-control" id="outside-deal-type"><option value="PROFIT_SHARE" <?= $dealType==='PROFIT_SHARE'?'selected':'' ?>>Profit Share</option><option value="FIXED_COMMISSION" <?= $dealType==='FIXED_COMMISSION'?'selected':'' ?>>Fixed Commission</option><option value="HYBRID" <?= $dealType==='HYBRID'?'selected':'' ?>>Hybrid</option></select><div class="form-hint" id="outside-deal-type-hint"></div></div></div>
+<div data-deal-section="share" <?= $dealType==='FIXED_COMMISSION'?'hidden':'' ?>><div class="form-row"><div class="form-group"><label class="form-label">Profit Share: Tiranga % / Entity %</label><div style="display:flex;gap:8px"><input name="tiranga_profit_pct" class="form-control" value="<?= clean(post('tiranga_profit_pct','50')) ?>" data-deal-required="share"><input name="entity_profit_pct" class="form-control" value="<?= clean(post('entity_profit_pct','50')) ?>" data-deal-required="share"></div></div><div class="form-group"><label class="form-label">Loss Share: Tiranga % / Entity %</label><div style="display:flex;gap:8px"><input name="tiranga_loss_pct" class="form-control" value="<?= clean(post('tiranga_loss_pct','50')) ?>" data-deal-required="share"><input name="entity_loss_pct" class="form-control" value="<?= clean(post('entity_loss_pct','50')) ?>" data-deal-required="share"></div></div></div></div>
+<div data-deal-section="commission" <?= $dealType==='PROFIT_SHARE'?'hidden':'' ?>><div class="form-row"><div class="form-group"><label class="form-label">K Commission Type</label><select name="commission_type" class="form-control" data-deal-required="commission"><option value="FIXED" <?= post('commission_type','FIXED')==='FIXED'?'selected':'' ?>>Fixed amount</option><option value="PERCENT" <?= post('commission_type')==='PERCENT'?'selected':'' ?>>Percentage of vehicle selling price</option></select></div><div class="form-group"><label class="form-label">K Commission Value</label><input name="commission_value" class="form-control currency-input" value="<?= clean(post('commission_value','0')) ?>" min="0.01" data-deal-required="commission"><div class="form-hint">This is Tiranga's separate service fee, outside the profit share.</div></div></div></div>
 </div></div>
 <div class="form-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Create Outside Car</button><a href="index.php" class="btn btn-outline">Cancel</a></div>
 </form>
+<script>
+(() => {
+    const dealType = document.getElementById('outside-deal-type');
+    if (!dealType) return;
+    const sections = { share: document.querySelector('[data-deal-section="share"]'), commission: document.querySelector('[data-deal-section="commission"]') };
+    const hint = document.getElementById('outside-deal-type-hint');
+    const applyDealType = () => {
+        const isShare = dealType.value !== 'FIXED_COMMISSION';
+        const isCommission = dealType.value !== 'PROFIT_SHARE';
+        [['share', isShare], ['commission', isCommission]].forEach(([name, visible]) => {
+            const section = sections[name];
+            section.hidden = !visible;
+            section.querySelectorAll('input, select').forEach((field) => {
+                field.disabled = !visible;
+                if (field.dataset.dealRequired) field.required = visible;
+            });
+        });
+        hint.textContent = dealType.value === 'PROFIT_SHARE'
+            ? 'Only profit and loss sharing applies.'
+            : dealType.value === 'FIXED_COMMISSION'
+                ? 'Only the agreed K commission applies; the Source Entity receives the remaining margin and loss.'
+                : 'Profit/loss sharing and a separate K commission both apply.';
+    };
+    dealType.addEventListener('change', applyDealType);
+    applyDealType();
+})();
+</script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
