@@ -32,6 +32,10 @@ $assertContains('reports/audit_log.php', 'name="user_id"', 'Audit Log needs a us
 $assertContains('reports/action_center.php', 'Accountable Desk', 'Action Center must identify accountable desks.');
 $assertContains('reports/action_center.php', 'Money To Collect', 'Action Center must expose collection exposure.');
 $assertContains('includes/header.php', 'reports/action_center.php', 'Action Center must be discoverable from navigation.');
+$assertNotContains('outside-cars/create.php', 'Initial Advance', 'Outside Car intake must not offer an initial advance.');
+$assertNotContains('outside-cars/create.php', 'Documents &amp; Vehicle Identifiers', 'Outside Car intake must not require documents or vehicle identifiers.');
+$assertNotContains('outside-cars/create.php', 'uploadEntityAttachments(', 'Outside Car intake must not upload intake documents.');
+$assertNotContains('outside-cars/view.php', "'documents'=>'Documents'", 'Outside Car workspace must not show an intake Documents section.');
 
 if ($failures) {
     fwrite(STDERR, "Filter/accountability audit failed:\n- " . implode("\n- ", $failures) . "\n");
