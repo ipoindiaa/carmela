@@ -677,7 +677,8 @@ CREATE TABLE `source_entities` (
 
 CREATE TABLE `outside_car_deals` (
     `id` CHAR(36) NOT NULL, `business_id` CHAR(36) NOT NULL, `car_id` CHAR(36) NOT NULL, `source_entity_id` CHAR(36) NOT NULL,
-    `deal_type` VARCHAR(30) NOT NULL DEFAULT 'HYBRID', `source_base_value` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `accounting_model` VARCHAR(30) NOT NULL DEFAULT 'COMMISSION_AGENCY',
+    `deal_type` VARCHAR(30) NOT NULL DEFAULT 'COMMISSION_AGENCY', `source_base_value` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `expected_sale_value` DECIMAL(15,2) NOT NULL DEFAULT 0, `tiranga_profit_pct` DECIMAL(7,4) NOT NULL DEFAULT 50,
     `entity_profit_pct` DECIMAL(7,4) NOT NULL DEFAULT 50, `tiranga_loss_pct` DECIMAL(7,4) NOT NULL DEFAULT 50,
     `entity_loss_pct` DECIMAL(7,4) NOT NULL DEFAULT 50, `commission_type` VARCHAR(20) NOT NULL DEFAULT 'FIXED',
@@ -704,7 +705,9 @@ CREATE TABLE `outside_car_advances` (
 CREATE TABLE `outside_car_expenses` (
     `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,
     `expense_date` DATE NOT NULL,`category` VARCHAR(120) NOT NULL,`vendor_name` VARCHAR(200) DEFAULT NULL,`responsibility` VARCHAR(30) NOT NULL,
-    `actual_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`approved_recoverable_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `actual_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`expense_account_id` CHAR(36) DEFAULT NULL,`payment_account_id` CHAR(36) DEFAULT NULL,
+    `gst_input_account_id` CHAR(36) DEFAULT NULL,`gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`voucher_no` VARCHAR(100) DEFAULT NULL,
+    `approved_recoverable_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `difference_bearer` VARCHAR(20) DEFAULT NULL,`journal_entry_id` CHAR(36) NOT NULL,`reclass_entry_id` CHAR(36) DEFAULT NULL,
     `status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',`narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_expense_entry` (`journal_entry_id`),KEY `idx_outside_expense_car` (`business_id`,`car_id`,`status`)
@@ -714,6 +717,7 @@ CREATE TABLE `outside_car_sales` (
     `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`car_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`buyer_party_id` CHAR(36) NOT NULL,
     `sale_date` DATE NOT NULL,`vehicle_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0,`discount_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `net_vehicle_value` DECIMAL(15,2) NOT NULL DEFAULT 0,`separate_commission` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `source_entity_entitlement` DECIMAL(15,2) NOT NULL DEFAULT 0,`source_advance_applied` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `buyer_rto_charge` DECIMAL(15,2) NOT NULL DEFAULT 0,`other_buyer_charges` DECIMAL(15,2) NOT NULL DEFAULT 0,`buyer_total` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `token_applied` DECIMAL(15,2) NOT NULL DEFAULT 0,`received_at_sale` DECIMAL(15,2) NOT NULL DEFAULT 0,`buyer_outstanding` DECIMAL(15,2) NOT NULL DEFAULT 0,
     `sale_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -726,6 +730,30 @@ CREATE TABLE `outside_car_buyer_payments` (
     `payment_date` DATE NOT NULL,`payment_kind` VARCHAR(20) NOT NULL DEFAULT 'RECEIPT',`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
     `created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_buyer_payment_entry` (`journal_entry_id`),
     KEY `idx_outside_buyer_payment_sale` (`business_id`,`sale_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_source_movements` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`origin_car_id` CHAR(36) NOT NULL,
+    `movement_date` DATE NOT NULL,`movement_kind` VARCHAR(30) NOT NULL,`amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `payable_applied` DECIMAL(15,2) NOT NULL DEFAULT 0,`advance_created` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `advance_refunded` DECIMAL(15,2) NOT NULL DEFAULT 0,`allocated_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `gateway_account_id` CHAR(36) NOT NULL,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),UNIQUE KEY `uk_outside_source_movement_entry` (`journal_entry_id`),
+    KEY `idx_outside_source_movement_entity` (`business_id`,`source_entity_id`,`status`,`movement_date`),
+    KEY `idx_outside_source_movement_car` (`business_id`,`origin_car_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `outside_source_allocations` (
+    `id` CHAR(36) NOT NULL,`business_id` CHAR(36) NOT NULL,`source_entity_id` CHAR(36) NOT NULL,`source_movement_id` CHAR(36) NOT NULL,
+    `trigger_movement_id` CHAR(36) DEFAULT NULL,
+    `origin_car_id` CHAR(36) NOT NULL,`target_car_id` CHAR(36) NOT NULL,`sale_id` CHAR(36) DEFAULT NULL,
+    `allocation_kind` VARCHAR(30) NOT NULL DEFAULT 'ADVANCE_TO_PAYABLE',`allocation_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+    `created_by` CHAR(36) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),
+    KEY `idx_outside_source_allocation_entry` (`journal_entry_id`),
+    KEY `idx_outside_source_allocation_entity` (`business_id`,`source_entity_id`,`status`,`allocation_date`),
+    KEY `idx_outside_source_allocation_target` (`business_id`,`target_car_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `outside_car_settlements` (

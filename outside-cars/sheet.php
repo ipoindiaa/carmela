@@ -7,6 +7,11 @@ $businessId=Auth::user('business_id');Auth::requireBookAccess('outside_cars','re
 $engine=new AccountingEngine($businessId,Auth::user('user_id'));$carId=get('id');
 try{$f=$engine->getOutsideCarFinancials($carId);}catch(Throwable $e){setFlash('error',$e->getMessage());redirect('index.php');}
 $car=$f['car'];$sale=$f['sale'];$s=$f['settlement'];
+if(($car['accounting_model']??'LEGACY_ABCK')==='COMMISSION_AGENCY'){
+    require __DIR__.'/agency_sheet.php';
+    require_once __DIR__.'/../includes/footer.php';
+    exit;
+}
 $expenses=$db->fetchAll("SELECT expense_date,category,responsibility,actual_amount,approved_recoverable_amount FROM outside_car_expenses WHERE business_id=? AND car_id=? AND status='POSTED' ORDER BY expense_date,created_at",[$businessId,$carId]);
 $payments=$db->fetchAll("SELECT payment_date,amount FROM outside_car_buyer_payments WHERE business_id=? AND car_id=? AND status='POSTED' ORDER BY payment_date,created_at",[$businessId,$carId]);
 $exact=$sale?round($sale['net_vehicle_value']-$car['source_base_value']-($f['expense']['approved']??0),2):0;

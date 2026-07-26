@@ -14,9 +14,15 @@ if($ownership['ownership_type']==='COMMISSION')redirect('../cars/commission_view
 if($ownership['ownership_type']!=='OUTSIDE'){setFlash('error','This is not an Outside Car.');redirect('../cars/view.php?id='.urlencode($carId));}
 $canWrite=Auth::hasBookAccess('outside_cars','write');
 $groups=Auth::getAccessiblePrimaryAccountList($businessId,'write');
-$accounts=array_merge($groups['cash_book']??[],$groups['bank_book']??[]);
+$accounts=array_merge($groups['cash_book']??[],$groups['bank_book']??[],$groups['gst_book']??[]);
 $accountIds=array_column($accounts,'id');
 $buyers=$db->fetchAll("SELECT id,name,phone FROM debtors_creditors WHERE business_id=? AND is_active=1 AND type IN ('BUYER','DEBTOR') ORDER BY name",[$businessId]);
+$dealModel=$db->fetch("SELECT accounting_model FROM outside_car_deals WHERE business_id=? AND car_id=?",[$businessId,$carId]);
+if(($dealModel['accounting_model']??'LEGACY_ABCK')==='COMMISSION_AGENCY'){
+    require __DIR__.'/agency_workspace.php';
+    require_once __DIR__.'/../includes/footer.php';
+    exit;
+}
 $actionError='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
     verifyCsrf();

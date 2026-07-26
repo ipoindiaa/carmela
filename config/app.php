@@ -35,6 +35,10 @@ define('BOOK_PERMISSIONS', [
         'label' => 'Bank Book',
         'description' => 'View bank activity and post bank-based entries',
     ],
+    'gst_book' => [
+        'label' => 'GST Bank',
+        'description' => 'Use the GST-designated bank account for authorized tax and Outside Car payments',
+    ],
     'general_ledger' => [
         'label' => 'General Ledger',
         'description' => 'View full account ledgers and account balances',
@@ -85,13 +89,14 @@ define('BOOK_PERMISSIONS', [
     ],
     'outside_cars' => [
         'label' => 'Outside Cars',
-        'description' => 'Manage outside vehicles, Source Entities, settlements, agreements, and delivery',
+        'description' => 'Manage commission-agency vehicles, Source Entity accounts, buyer money, RTO, agreements, and delivery',
     ],
 ]);
 
 define('PRIMARY_BOOK_ACCOUNT_TYPES', [
     'cash_book' => 'CASH',
     'bank_book' => 'BANK',
+    'gst_book' => 'GST',
 ]);
 
 define('CLIENT_DEMO_HIDDEN_BOOKS', []);
@@ -104,16 +109,25 @@ define('ENTRY_TYPE_META', [
     'COMMISSION_CAR_SALE' => ['label' => 'Commission Car Sale', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-percent-line', 'description' => 'Commission earned by selling a customer-owned car.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_ENTITY_BASE_ADVANCE' => ['label' => 'Outside Car Base Advance', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Base advance paid to an Outside Car Source Entity.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_ENTITY_ADVANCE_RECEIVED' => ['label' => 'Source Entity Advance Received', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-refund-line', 'description' => 'Money received from an Outside Car Source Entity.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_SOURCE_PAYMENT' => ['label' => 'Outside Car Source Entity Payment', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-secure-payment-line', 'description' => 'Payment applied to Source Entity commission-agency entitlement.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_SOURCE_PAYMENT_ADVANCE' => ['label' => 'Outside Car Source Payment / Advance', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Source Entity payment split between payable and recoverable advance.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_SOURCE_REFUND' => ['label' => 'Outside Car Source Advance Refund', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-refund-line', 'description' => 'Refund received against a recoverable Source Advance.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_SOURCE_ADVANCE_ALLOCATION' => ['label' => 'Outside Car Source Advance Allocation', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-git-merge-line', 'description' => 'FIFO application of a recoverable Source Advance to an entity entitlement.', 'selectable' => false, 'summary' => false],
     'OUTSIDE_CAR_EXPENSE' => ['label' => 'Outside Car Expense', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-tools-line', 'description' => 'Classified spending linked to an Outside Car.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_CAR_AGENCY_EXPENSE' => ['label' => 'Outside Car Agency Expense', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-tools-line', 'description' => 'Outside Car expense posted to the selected bearer, ledger, GST, and payment account.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_EXPENSE_RECLASS' => ['label' => 'Outside Expense Reclassification', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-git-merge-line', 'description' => 'Approved reclassification of a non-recoverable Outside Car cost.', 'selectable' => false, 'summary' => false],
     'OUTSIDE_CAR_SALE' => ['label' => 'Outside Car Sale', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-car-line', 'description' => 'Buyer sale posted through Outside Car clearing, not ordinary car sales revenue.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_CAR_AGENCY_SALE' => ['label' => 'Outside Car Commission Sale', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-percent-line', 'description' => 'Commission-inclusive buyer sale with vehicle principal credited to the Source Entity.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_SALE_CANCEL_SOURCE_RECLASS' => ['label' => 'Outside Car Cancellation Source Reclassification', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-arrow-go-back-line', 'description' => 'Converts owner money applied to a cancelled sale into recoverable Source Advance.', 'selectable' => false, 'summary' => false],
     'OUTSIDE_BUYER_PAYMENT' => ['label' => 'Outside Car Buyer Payment', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-money-rupee-circle-line', 'description' => 'Buyer installment received against an Outside Car.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_BUYER_REFUND' => ['label' => 'Outside Car Buyer Refund', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-refund-line', 'description' => 'Money refunded to an Outside Car buyer with outstanding restored.', 'selectable' => false, 'summary' => true],
+    'OUTSIDE_BUYER_BAD_DEBT' => ['label' => 'Outside Car Buyer Bad Debt', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-file-damage-line', 'description' => 'Authorized car-wise write-off of an unrecoverable Outside Car buyer balance.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_CAR_SETTLEMENT' => ['label' => 'Outside Car Settlement', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-scales-3-line', 'description' => 'Approved A/B/C/K settlement allocation.', 'selectable' => false, 'summary' => false],
     'OUTSIDE_ENTITY_SETTLEMENT_PAYMENT' => ['label' => 'Source Entity Settlement Payment', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-secure-payment-line', 'description' => 'Payment of an approved Source Entity entitlement.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_RTO_RECEIPT' => ['label' => 'Outside Car RTO Receipt', 'flow' => 'in', 'category' => 'Outside Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO money received into the Outside Car clearing account.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_RTO_PAYMENT' => ['label' => 'Outside Car RTO Payment', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO money paid from the Outside Car clearing account.', 'selectable' => false, 'summary' => true],
     'OUTSIDE_RTO_ADJUSTMENT' => ['label' => 'Outside Car RTO Shortfall Allocation', 'flow' => 'neutral', 'category' => 'Outside Cars', 'icon' => 'ri-scales-3-line', 'description' => 'Approved allocation of an RTO clearing shortfall to Tiranga or the Source Entity.', 'selectable' => false, 'summary' => false],
+    'OUTSIDE_RTO_AGENCY_EXPENSE' => ['label' => 'Outside Car RTO Expense', 'flow' => 'out', 'category' => 'Outside Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO expense paid for a commission-agency Outside Car.', 'selectable' => false, 'summary' => true],
     'CAR_LOAN_COMMISSION_EARNED' => ['label' => 'Car Loan Commission Earned', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-bank-card-line', 'description' => 'Commission earned from a finance company for a customer car loan.', 'selectable' => false, 'summary' => true],
     'CAR_LOAN_COMMISSION_RECEIPT' => ['label' => 'Car Loan Commission Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-bank-line', 'description' => 'Cash or bank receipt against car-wise loan commission receivable.', 'selectable' => false, 'summary' => true],
     'RTO_EXPENSE' => ['label' => 'RTO Expense', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-file-shield-2-line', 'description' => 'RTO fees paid for a specific car.', 'selectable' => true, 'summary' => true],

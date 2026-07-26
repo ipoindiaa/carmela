@@ -44,6 +44,7 @@ trait OutsideCarAccounting {
                 `business_id` CHAR(36) NOT NULL,
                 `car_id` CHAR(36) NOT NULL,
                 `source_entity_id` CHAR(36) NOT NULL,
+                `accounting_model` VARCHAR(30) NOT NULL DEFAULT 'COMMISSION_AGENCY',
                 `deal_type` VARCHAR(30) NOT NULL DEFAULT 'HYBRID',
                 `source_base_value` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `expected_sale_value` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -76,6 +77,12 @@ trait OutsideCarAccounting {
                 KEY `idx_outside_status` (`business_id`,`physical_status`,`settlement_status`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        if (!$this->columnExists('outside_car_deals', 'accounting_model')) {
+            $this->db->query(
+                "ALTER TABLE `outside_car_deals`
+                 ADD COLUMN `accounting_model` VARCHAR(30) NOT NULL DEFAULT 'LEGACY_ABCK' AFTER `source_entity_id`"
+            );
+        }
         foreach ([
             'chassis_no' => "VARCHAR(100) DEFAULT NULL AFTER `commission_charged_to`",
             'engine_no' => "VARCHAR(100) DEFAULT NULL AFTER `chassis_no`",
@@ -120,6 +127,11 @@ trait OutsideCarAccounting {
                 `vendor_name` VARCHAR(200) DEFAULT NULL,
                 `responsibility` VARCHAR(30) NOT NULL,
                 `actual_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `expense_account_id` CHAR(36) DEFAULT NULL,
+                `payment_account_id` CHAR(36) DEFAULT NULL,
+                `gst_input_account_id` CHAR(36) DEFAULT NULL,
+                `gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `voucher_no` VARCHAR(100) DEFAULT NULL,
                 `approved_recoverable_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `difference_bearer` VARCHAR(20) DEFAULT NULL,
                 `journal_entry_id` CHAR(36) NOT NULL,
@@ -133,6 +145,17 @@ trait OutsideCarAccounting {
                 KEY `idx_outside_expense_car` (`business_id`,`car_id`,`status`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        foreach ([
+            'expense_account_id' => "CHAR(36) DEFAULT NULL AFTER `actual_amount`",
+            'payment_account_id' => "CHAR(36) DEFAULT NULL AFTER `expense_account_id`",
+            'gst_input_account_id' => "CHAR(36) DEFAULT NULL AFTER `payment_account_id`",
+            'gst_amount' => "DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `gst_input_account_id`",
+            'voucher_no' => "VARCHAR(100) DEFAULT NULL AFTER `gst_amount`",
+        ] as $column => $definition) {
+            if (!$this->columnExists('outside_car_expenses', $column)) {
+                $this->db->query("ALTER TABLE `outside_car_expenses` ADD COLUMN `$column` $definition");
+            }
+        }
 
         $this->db->query(
             "CREATE TABLE IF NOT EXISTS `outside_car_sales` (
@@ -146,6 +169,8 @@ trait OutsideCarAccounting {
                 `discount_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `net_vehicle_value` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `separate_commission` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `source_entity_entitlement` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `source_advance_applied` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `buyer_rto_charge` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `other_buyer_charges` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                 `buyer_total` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -163,6 +188,14 @@ trait OutsideCarAccounting {
                 KEY `idx_outside_sale_buyer` (`business_id`,`buyer_party_id`,`status`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        foreach ([
+            'source_entity_entitlement' => "DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `separate_commission`",
+            'source_advance_applied' => "DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `source_entity_entitlement`",
+        ] as $column => $definition) {
+            if (!$this->columnExists('outside_car_sales', $column)) {
+                $this->db->query("ALTER TABLE `outside_car_sales` ADD COLUMN `$column` $definition");
+            }
+        }
 
         $this->db->query(
             "CREATE TABLE IF NOT EXISTS `outside_car_buyer_payments` (
@@ -185,6 +218,62 @@ trait OutsideCarAccounting {
         );
         if (!$this->columnExists('outside_car_buyer_payments', 'payment_kind')) {
             $this->db->query("ALTER TABLE `outside_car_buyer_payments` ADD COLUMN `payment_kind` VARCHAR(20) NOT NULL DEFAULT 'RECEIPT' AFTER `payment_date`");
+        }
+
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `outside_source_movements` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `source_entity_id` CHAR(36) NOT NULL,
+                `origin_car_id` CHAR(36) NOT NULL,
+                `movement_date` DATE NOT NULL,
+                `movement_kind` VARCHAR(30) NOT NULL,
+                `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `payable_applied` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `advance_created` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `advance_refunded` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `allocated_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `gateway_account_id` CHAR(36) NOT NULL,
+                `journal_entry_id` CHAR(36) NOT NULL,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+                `narration` VARCHAR(500) DEFAULT NULL,
+                `created_by` CHAR(36) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_outside_source_movement_entry` (`journal_entry_id`),
+                KEY `idx_outside_source_movement_entity` (`business_id`,`source_entity_id`,`status`,`movement_date`),
+                KEY `idx_outside_source_movement_car` (`business_id`,`origin_car_id`,`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `outside_source_allocations` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `source_entity_id` CHAR(36) NOT NULL,
+                `source_movement_id` CHAR(36) NOT NULL,
+                `trigger_movement_id` CHAR(36) DEFAULT NULL,
+                `origin_car_id` CHAR(36) NOT NULL,
+                `target_car_id` CHAR(36) NOT NULL,
+                `sale_id` CHAR(36) DEFAULT NULL,
+                `allocation_kind` VARCHAR(30) NOT NULL DEFAULT 'ADVANCE_TO_PAYABLE',
+                `allocation_date` DATE NOT NULL,
+                `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `journal_entry_id` CHAR(36) NOT NULL,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
+                `created_by` CHAR(36) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_outside_source_allocation_entry` (`journal_entry_id`),
+                KEY `idx_outside_source_allocation_entity` (`business_id`,`source_entity_id`,`status`,`allocation_date`),
+                KEY `idx_outside_source_allocation_target` (`business_id`,`target_car_id`,`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        if (!$this->columnExists('outside_source_allocations', 'allocation_kind')) {
+            $this->db->query("ALTER TABLE `outside_source_allocations` ADD COLUMN `allocation_kind` VARCHAR(30) NOT NULL DEFAULT 'ADVANCE_TO_PAYABLE' AFTER `sale_id`");
+        }
+        if (!$this->columnExists('outside_source_allocations', 'trigger_movement_id')) {
+            $this->db->query("ALTER TABLE `outside_source_allocations` ADD COLUMN `trigger_movement_id` CHAR(36) DEFAULT NULL AFTER `source_movement_id`");
         }
 
         $this->db->query(
@@ -351,7 +440,7 @@ trait OutsideCarAccounting {
     private function outsideContext($carId, $lock = false) {
         $suffix = $lock ? ' FOR UPDATE' : '';
         $row = $this->db->fetch(
-            "SELECT c.*, ocd.id AS deal_id, ocd.source_entity_id, ocd.deal_type,
+            "SELECT c.*, ocd.id AS deal_id, ocd.source_entity_id, ocd.accounting_model, ocd.deal_type,
                     ocd.source_base_value, ocd.expected_sale_value,
                     ocd.tiranga_profit_pct, ocd.entity_profit_pct,
                     ocd.tiranga_loss_pct, ocd.entity_loss_pct,
@@ -401,33 +490,13 @@ trait OutsideCarAccounting {
         $date = DateTime::createFromFormat('!Y-m-d', $receivedDate);
         if (!$date || $date->format('Y-m-d') !== $receivedDate) throw new Exception('A valid received date is required.');
 
-        $base = round(floatval($data['source_base_value'] ?? 0), 2);
         $expectedSale = round(floatval($data['expected_sale_value'] ?? 0), 2);
-        $tirangaProfit = round(floatval($data['tiranga_profit_pct'] ?? 0), 4);
-        $entityProfit = round(floatval($data['entity_profit_pct'] ?? 0), 4);
-        $tirangaLoss = round(floatval($data['tiranga_loss_pct'] ?? $tirangaProfit), 4);
-        $entityLoss = round(floatval($data['entity_loss_pct'] ?? $entityProfit), 4);
-        $dealType = strtoupper(trim((string) ($data['deal_type'] ?? 'HYBRID')));
         $commissionType = strtoupper(trim((string) ($data['commission_type'] ?? 'FIXED')));
         $commissionValue = round(floatval($data['commission_value'] ?? 0), 4);
-        if ($base < 0 || $expectedSale < 0) throw new Exception('Base and expected sale values cannot be negative.');
-        if (!in_array($dealType, ['PROFIT_SHARE','FIXED_COMMISSION','HYBRID'], true)) throw new Exception('Select a valid Outside Car deal type.');
-        if (!in_array($commissionType, ['NONE','FIXED','PERCENT'], true)) throw new Exception('Select a valid commission type.');
-        if ($dealType === 'PROFIT_SHARE') {
-            $commissionType = 'NONE';
-            $commissionValue = 0;
-        } elseif ($dealType === 'FIXED_COMMISSION') {
-            // Fixed-commission deals have no Tiranga margin share. The entity bears the remaining margin or loss.
-            $tirangaProfit = 0; $entityProfit = 100;
-            $tirangaLoss = 0; $entityLoss = 100;
-        }
-        if ($dealType !== 'PROFIT_SHARE' && $commissionType === 'NONE') throw new Exception('Select the agreed K commission type for this deal.');
-        if ($dealType !== 'PROFIT_SHARE' && $commissionValue <= 0) throw new Exception('K commission value must be greater than zero for this deal.');
-        if ($commissionValue < 0 || ($commissionType === 'PERCENT' && $commissionValue > 100)) throw new Exception('Commission must be non-negative and percentage commission cannot exceed 100%.');
-        if ($commissionType === 'NONE') $commissionValue = 0;
-        if (abs(($tirangaProfit + $entityProfit) - 100) > 0.0001) throw new Exception('Profit shares must total exactly 100%.');
-        if (abs(($tirangaLoss + $entityLoss) - 100) > 0.0001) throw new Exception('Loss shares must total exactly 100%.');
-        foreach ([$tirangaProfit,$entityProfit,$tirangaLoss,$entityLoss] as $pct) if ($pct < 0 || $pct > 100) throw new Exception('Profit and loss shares must be between 0% and 100%.');
+        if ($expectedSale < 0) throw new Exception('Expected sale value cannot be negative.');
+        if (!in_array($commissionType, ['FIXED','PERCENT'], true)) throw new Exception('Select fixed or percentage commission.');
+        if ($commissionValue <= 0) throw new Exception('Commission value must be greater than zero.');
+        if ($commissionType === 'PERCENT' && $commissionValue > 100) throw new Exception('Percentage commission cannot exceed 100%.');
 
         $owns = !$this->db->inTransaction();
         if ($owns) $this->db->beginTransaction();
@@ -452,10 +521,11 @@ trait OutsideCarAccounting {
             $dealId = Database::uuid();
             $deal = [
                 'id' => $dealId, 'business_id' => $this->businessId, 'car_id' => $carId,
-                'source_entity_id' => $source['id'], 'deal_type' => $dealType,
-                'source_base_value' => $base, 'expected_sale_value' => $expectedSale,
-                'tiranga_profit_pct' => $tirangaProfit, 'entity_profit_pct' => $entityProfit,
-                'tiranga_loss_pct' => $tirangaLoss, 'entity_loss_pct' => $entityLoss,
+                'source_entity_id' => $source['id'], 'accounting_model' => 'COMMISSION_AGENCY',
+                'deal_type' => 'COMMISSION_AGENCY', 'source_base_value' => 0,
+                'expected_sale_value' => $expectedSale,
+                'tiranga_profit_pct' => 0, 'entity_profit_pct' => 100,
+                'tiranga_loss_pct' => 0, 'entity_loss_pct' => 100,
                 'commission_type' => $commissionType,
                 'commission_value' => $commissionValue,
                 'chassis_no' => trim((string) ($data['chassis_no'] ?? '')),
@@ -463,7 +533,7 @@ trait OutsideCarAccounting {
                 'insurance_details' => trim((string) ($data['insurance_details'] ?? '')),
                 'hypothecation_details' => trim((string) ($data['hypothecation_details'] ?? '')),
                 'second_key_details' => trim((string) ($data['second_key_details'] ?? '')),
-                'settlement_status' => 'CALCULATION_PENDING', 'notes' => trim((string) ($data['notes'] ?? '')),
+                'settlement_status' => 'NOT_APPLICABLE', 'notes' => trim((string) ($data['notes'] ?? '')),
                 'created_by' => $this->userId,
             ];
             $this->db->insert('outside_car_deals', $deal);
@@ -476,8 +546,337 @@ trait OutsideCarAccounting {
         }
     }
 
+    private function isOutsideCommissionAgency(array $car) {
+        return ($car['accounting_model'] ?? 'LEGACY_ABCK') === 'COMMISSION_AGENCY';
+    }
+
+    private function outsideSourceAdvanceAccount() {
+        return $this->outsideSystemAccount(
+            'OUTCAR-SADV',
+            'Outside Car Source Advances Recoverable',
+            'ASSET',
+            'Current Assets'
+        );
+    }
+
+    private function outsideSourceOpenPayables($sourceEntityId, $lock = false) {
+        $rows = $this->db->fetchAll(
+            "SELECT s.id AS sale_id,s.car_id,s.sale_date,s.source_entity_entitlement,
+                    COALESCE(SUM(CASE WHEN a.status='POSTED' AND a.allocation_kind IN ('ADVANCE_TO_PAYABLE','PAYMENT_TO_PAYABLE','SOURCE_EXPENSE_TO_PAYABLE') THEN a.amount ELSE 0 END),0) AS applied_amount
+             FROM outside_car_sales s
+             JOIN outside_car_deals d ON d.business_id=s.business_id AND d.car_id=s.car_id
+             LEFT JOIN outside_source_allocations a
+                    ON a.business_id=s.business_id AND a.sale_id=s.id
+             WHERE s.business_id=? AND s.source_entity_id=? AND s.status='POSTED'
+               AND d.accounting_model='COMMISSION_AGENCY'
+             GROUP BY s.id,s.car_id,s.sale_date,s.source_entity_entitlement,s.created_at
+             HAVING s.source_entity_entitlement-applied_amount > 0.009
+             ORDER BY s.sale_date ASC,s.created_at ASC,s.id ASC" . ($lock ? ' FOR UPDATE' : ''),
+            [$this->businessId,$sourceEntityId]
+        );
+        foreach ($rows as &$row) {
+            $row['remaining_amount'] = round(
+                floatval($row['source_entity_entitlement']) - floatval($row['applied_amount']),
+                2
+            );
+        }
+        unset($row);
+        return $rows;
+    }
+
+    private function outsideSourceAdvanceRows($sourceEntityId, $lock = false) {
+        $rows = $this->db->fetchAll(
+            "SELECT *,(advance_created-advance_refunded-allocated_amount) AS available_amount
+             FROM outside_source_movements
+             WHERE business_id=? AND source_entity_id=? AND status='POSTED'
+               AND advance_created-advance_refunded-allocated_amount > 0.009
+             ORDER BY movement_date ASC,created_at ASC,id ASC" . ($lock ? ' FOR UPDATE' : ''),
+            [$this->businessId,$sourceEntityId]
+        );
+        return $rows;
+    }
+
+    private function insertOutsideSourceAllocation(
+        array $movement,
+        array $payable,
+        $amount,
+        $date,
+        $journalEntryId,
+        $kind
+    ) {
+        $this->db->insert('outside_source_allocations', [
+            'id' => Database::uuid(),
+            'business_id' => $this->businessId,
+            'source_entity_id' => $movement['source_entity_id'],
+            'source_movement_id' => $movement['id'],
+            'trigger_movement_id' => $movement['id'],
+            'origin_car_id' => $movement['origin_car_id'],
+            'target_car_id' => $payable['car_id'],
+            'sale_id' => $payable['sale_id'],
+            'allocation_kind' => $kind,
+            'allocation_date' => $date,
+            'amount' => $amount,
+            'journal_entry_id' => $journalEntryId,
+            'created_by' => $this->userId,
+        ]);
+    }
+
+    private function allocateSourceMovementToPayables(array $movement, $amount, $date, $journalEntryId, $kind) {
+        $remaining = round(floatval($amount), 2);
+        $allocated = 0.0;
+        foreach ($this->outsideSourceOpenPayables($movement['source_entity_id'], true) as $payable) {
+            if ($remaining <= 0.009) break;
+            $part = round(min($remaining, floatval($payable['remaining_amount'])), 2);
+            if ($part <= 0) continue;
+            $this->insertOutsideSourceAllocation($movement, $payable, $part, $date, $journalEntryId, $kind);
+            $remaining = round($remaining - $part, 2);
+            $allocated = round($allocated + $part, 2);
+        }
+        return $allocated;
+    }
+
+    private function allocateOutsideSourceRefund(array $refundMovement, $amount, $date, $journalEntryId) {
+        $remaining = round(floatval($amount), 2);
+        foreach ($this->outsideSourceAdvanceRows($refundMovement['source_entity_id'], true) as $advance) {
+            if ($remaining <= 0.009) break;
+            $part = round(min($remaining, floatval($advance['available_amount'])), 2);
+            if ($part <= 0) continue;
+            $this->db->insert('outside_source_allocations', [
+                'id'=>Database::uuid(),
+                'business_id'=>$this->businessId,
+                'source_entity_id'=>$refundMovement['source_entity_id'],
+                'source_movement_id'=>$advance['id'],
+                'trigger_movement_id'=>$refundMovement['id'],
+                'origin_car_id'=>$advance['origin_car_id'],
+                'target_car_id'=>$refundMovement['origin_car_id'],
+                'sale_id'=>null,
+                'allocation_kind'=>'REFUND_FROM_ADVANCE',
+                'allocation_date'=>$date,
+                'amount'=>$part,
+                'journal_entry_id'=>$journalEntryId,
+                'created_by'=>$this->userId,
+            ]);
+            $this->db->query(
+                "UPDATE outside_source_movements SET advance_refunded=advance_refunded+? WHERE id=?",
+                [$part,$advance['id']]
+            );
+            $remaining = round($remaining - $part, 2);
+        }
+        if ($remaining > 0.009) throw new Exception('Source Entity refund allocation did not balance.');
+    }
+
+    private function applyOutsideSourceAdvances($sourceEntityId, $date) {
+        $advanceAccount = $this->outsideSourceAdvanceAccount();
+        foreach ($this->outsideSourceAdvanceRows($sourceEntityId, true) as $movement) {
+            $available = round(floatval($movement['available_amount']), 2);
+            if ($available <= 0.009) continue;
+            foreach ($this->outsideSourceOpenPayables($sourceEntityId, true) as $payable) {
+                if ($available <= 0.009) break;
+                $part = round(min($available, floatval($payable['remaining_amount'])), 2);
+                if ($part <= 0) continue;
+                $target = $this->outsideContext($payable['car_id']);
+                $entryId = $this->postJournalEntry(
+                    'JOURNAL_VOUCHER',
+                    $date,
+                    "Source advance auto-applied to {$target['registration_no']}",
+                    [
+                        ['account_id'=>$target['source_account_id'],'amount'=>$part,'type'=>'DR','narration'=>'Source Entity entitlement settled from advance'],
+                        ['account_id'=>$advanceAccount['id'],'amount'=>$part,'type'=>'CR','narration'=>'Recoverable Source Advance applied'],
+                    ],
+                    [
+                        'car_id'=>$payable['car_id'],
+                        'party_id'=>$target['source_party_id'],
+                        'entry_type_id'=>systemEntryTypeId('OUTSIDE_SOURCE_ADVANCE_ALLOCATION'),
+                        'entry_amount'=>$part,
+                        'audit_metadata'=>[
+                            'source_movement_id'=>$movement['id'],
+                            'origin_car_id'=>$movement['origin_car_id'],
+                            'target_car_id'=>$payable['car_id'],
+                        ],
+                    ]
+                );
+                $this->insertOutsideSourceAllocation(
+                    $movement,
+                    $payable,
+                    $part,
+                    $date,
+                    $entryId,
+                    'ADVANCE_TO_PAYABLE'
+                );
+                $this->db->query(
+                    "UPDATE outside_source_movements SET allocated_amount=allocated_amount+? WHERE id=?",
+                    [$part,$movement['id']]
+                );
+                $this->db->query(
+                    "UPDATE outside_car_sales SET source_advance_applied=source_advance_applied+? WHERE id=?",
+                    [$part,$payable['sale_id']]
+                );
+                $available = round($available - $part, 2);
+            }
+        }
+    }
+
+    public function getOutsideSourcePosition($sourceEntityId, $carId = null) {
+        $whereCar = $carId ? ' AND s.car_id=?' : '';
+        $params = [$this->businessId,$sourceEntityId];
+        if ($carId) $params[] = $carId;
+        $entitlement = $this->db->fetch(
+            "SELECT COALESCE(SUM(s.source_entity_entitlement),0) AS total
+             FROM outside_car_sales s
+             JOIN outside_car_deals d ON d.business_id=s.business_id AND d.car_id=s.car_id
+             WHERE s.business_id=? AND s.source_entity_id=? AND s.status='POSTED'
+               AND d.accounting_model='COMMISSION_AGENCY'$whereCar",
+            $params
+        );
+        $allocationWhere = $carId ? ' AND a.target_car_id=?' : '';
+        $allocationParams = [$this->businessId,$sourceEntityId];
+        if ($carId) $allocationParams[] = $carId;
+        $allocated = $this->db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN a.allocation_kind IN ('ADVANCE_TO_PAYABLE','PAYMENT_TO_PAYABLE','SOURCE_EXPENSE_TO_PAYABLE') THEN a.amount ELSE 0 END),0) AS total
+             FROM outside_source_allocations a
+             WHERE a.business_id=? AND a.source_entity_id=? AND a.status='POSTED'$allocationWhere",
+            $allocationParams
+        );
+        $movementWhere = $carId ? ' AND origin_car_id=?' : '';
+        $movementParams = [$this->businessId,$sourceEntityId];
+        if ($carId) $movementParams[] = $carId;
+        $movement = $this->db->fetch(
+            "SELECT COALESCE(SUM(amount),0) AS paid_or_spent,
+                    COALESCE(SUM(advance_created),0) AS advance_created,
+                    COALESCE(SUM(advance_refunded),0) AS advance_refunded,
+                    COALESCE(SUM(allocated_amount),0) AS advance_allocated
+             FROM outside_source_movements
+             WHERE business_id=? AND source_entity_id=? AND status='POSTED'$movementWhere",
+            $movementParams
+        );
+        $entitlementTotal = round(floatval($entitlement['total'] ?? 0), 2);
+        $allocatedTotal = round(floatval($allocated['total'] ?? 0), 2);
+        $advance = round(
+            floatval($movement['advance_created'] ?? 0)
+            - floatval($movement['advance_refunded'] ?? 0)
+            - floatval($movement['advance_allocated'] ?? 0),
+            2
+        );
+        return [
+            'entitlement' => $entitlementTotal,
+            'paid_or_spent' => round(floatval($movement['paid_or_spent'] ?? 0), 2),
+            'payable' => round(max(0, $entitlementTotal - $allocatedTotal), 2),
+            'advance' => round(max(0, $advance), 2),
+            'allocated' => $allocatedTotal,
+        ];
+    }
+
+    public function recordOutsideSourceMovement($carId, $amount, $date, $accountId, $kind, $narration = '') {
+        $car = $this->outsideContext($carId, true);
+        if (!$this->isOutsideCommissionAgency($car)) {
+            throw new Exception('Use the legacy settlement controls for this Outside Car.');
+        }
+        $amount = round(floatval($amount), 2);
+        $kind = strtoupper(trim((string) $kind));
+        if ($amount <= 0) throw new Exception('Amount must be greater than zero.');
+        if (!in_array($kind, ['PAY_OR_ADVANCE','SOURCE_REFUND'], true)) {
+            throw new Exception('Select Pay / Advance or Source Entity Refund.');
+        }
+        $owns = !$this->db->inTransaction();
+        if ($owns) $this->db->beginTransaction();
+        try {
+            $advanceAccount = $this->outsideSourceAdvanceAccount();
+            if ($kind === 'SOURCE_REFUND') {
+                $position = $this->getOutsideSourcePosition($car['source_entity_id']);
+                if ($amount - $position['advance'] > 0.01) {
+                    throw new Exception('Refund cannot exceed the Source Entity recoverable advance.');
+                }
+                $lines = [
+                    ['account_id'=>$accountId,'amount'=>$amount,'type'=>'DR','narration'=>'Source Entity refund received'],
+                    ['account_id'=>$advanceAccount['id'],'amount'=>$amount,'type'=>'CR','narration'=>'Recoverable Source Advance refunded'],
+                ];
+                $payablePart = 0.0;
+                $advancePart = 0.0;
+                $refundPart = $amount;
+                $transactionType = 'LOAN_RECEIVED';
+                $entryType = 'OUTSIDE_SOURCE_REFUND';
+            } else {
+                $this->validateCashAvailable($accountId, $amount);
+                $position = $this->getOutsideSourcePosition($car['source_entity_id']);
+                $payablePart = round(min($amount, $position['payable']), 2);
+                $advancePart = round($amount - $payablePart, 2);
+                $refundPart = 0.0;
+                $lines = [];
+                if ($payablePart > 0) {
+                    $lines[] = ['account_id'=>$car['source_account_id'],'amount'=>$payablePart,'type'=>'DR','narration'=>'Source Entity payable settled'];
+                }
+                if ($advancePart > 0) {
+                    $lines[] = ['account_id'=>$advanceAccount['id'],'amount'=>$advancePart,'type'=>'DR','narration'=>'Recoverable Source Advance created'];
+                }
+                $lines[] = ['account_id'=>$accountId,'amount'=>$amount,'type'=>'CR','narration'=>"Paid to {$car['source_entity_name']}"];
+                $transactionType = 'LOAN_GIVEN';
+                $entryType = $advancePart > 0 ? 'OUTSIDE_SOURCE_PAYMENT_ADVANCE' : 'OUTSIDE_SOURCE_PAYMENT';
+            }
+            $entryId = $this->postJournalEntry(
+                $transactionType,
+                $date,
+                $narration ?: (($kind === 'SOURCE_REFUND' ? 'Source Entity refund' : 'Source Entity payment') . " - {$car['registration_no']}"),
+                $lines,
+                [
+                    'car_id'=>$carId,
+                    'party_id'=>$car['source_party_id'],
+                    'entry_type_id'=>systemEntryTypeId($entryType),
+                    'entry_amount'=>$amount,
+                    'audit_metadata'=>[
+                        'payable_applied'=>$payablePart,
+                        'advance_created'=>$advancePart,
+                        'advance_refunded'=>$refundPart,
+                    ],
+                ]
+            );
+            $movement = [
+                'id'=>Database::uuid(),
+                'business_id'=>$this->businessId,
+                'source_entity_id'=>$car['source_entity_id'],
+                'origin_car_id'=>$carId,
+                'movement_date'=>$date,
+                'movement_kind'=>$kind,
+                'amount'=>$amount,
+                'payable_applied'=>$payablePart,
+                'advance_created'=>$advancePart,
+                'advance_refunded'=>0,
+                'gateway_account_id'=>$accountId,
+                'journal_entry_id'=>$entryId,
+                'narration'=>$narration,
+                'created_by'=>$this->userId,
+            ];
+            $this->db->insert('outside_source_movements', $movement);
+            if ($refundPart > 0) {
+                $this->allocateOutsideSourceRefund($movement, $refundPart, $date, $entryId);
+            }
+            if ($payablePart > 0) {
+                $allocated = $this->allocateSourceMovementToPayables(
+                    $movement,
+                    $payablePart,
+                    $date,
+                    $entryId,
+                    'PAYMENT_TO_PAYABLE'
+                );
+                if (abs($allocated - $payablePart) > 0.01) {
+                    throw new Exception('Source Entity payable allocation did not balance.');
+                }
+            }
+            if ($owns) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($owns && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     public function recordOutsideEntityAdvance($carId, $amount, $date, $accountId, $direction, $narration = '') {
         $car = $this->outsideContext($carId);
+        if ($this->isOutsideCommissionAgency($car)) {
+            $kind = strtoupper(trim((string) $direction)) === 'RECEIVED_FROM_ENTITY'
+                ? 'SOURCE_REFUND'
+                : 'PAY_OR_ADVANCE';
+            return $this->recordOutsideSourceMovement($carId, $amount, $date, $accountId, $kind, $narration);
+        }
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) throw new Exception('Advance amount must be greater than zero.');
         $direction = strtoupper(trim((string) $direction));
@@ -535,6 +934,9 @@ trait OutsideCarAccounting {
 
     public function recordOutsideCarExpense($carId, array $data) {
         $car = $this->outsideContext($carId);
+        if ($this->isOutsideCommissionAgency($car)) {
+            return $this->recordOutsideAgencyExpense($carId, $data, $car);
+        }
         $amount = round(floatval($data['amount'] ?? 0), 2);
         $approved = round(floatval($data['approved_recoverable_amount'] ?? 0), 2);
         if ($amount <= 0) throw new Exception('Expense amount must be greater than zero.');
@@ -578,6 +980,203 @@ trait OutsideCarAccounting {
         return $entryId;
     }
 
+    private function recordOutsideAgencyExpense($carId, array $data, array $car) {
+        $amount = round(floatval($data['amount'] ?? 0), 2);
+        $gstRequested = round(floatval($data['gst_amount'] ?? 0), 2);
+        $bearer = strtoupper(trim((string) ($data['responsibility'] ?? '')));
+        $accountId = trim((string) ($data['payment_account'] ?? ''));
+        $category = trim((string) ($data['category'] ?? ''));
+        $date = trim((string) ($data['expense_date'] ?? ''));
+        if ($amount <= 0) throw new Exception('Expense amount must be greater than zero.');
+        if ($category === '') throw new Exception('Expense category is required.');
+        if (!in_array($bearer, ['SOURCE_ENTITY','BUYER','TIRANGA'], true)) {
+            throw new Exception('Select Source Entity, Buyer, or Tiranga as the expense bearer.');
+        }
+        $this->validateCashAvailable($accountId, $amount);
+        [$grossAmount,$gstAmount,$baseAmount] = $this->normalizeGstComponent(
+            $amount,
+            $bearer === 'TIRANGA' ? $gstRequested : 0
+        );
+        $lines = [];
+        $expenseAccountId = null;
+        $gstAccountId = null;
+        $sourcePayablePart = 0.0;
+        $sourceAdvancePart = 0.0;
+        $sale = null;
+        if ($bearer === 'TIRANGA') {
+            $expenseAccountId = trim((string) ($data['expense_account_id'] ?? ''));
+            $expenseAccount = $this->db->fetch(
+                "SELECT * FROM accounts
+                 WHERE id=? AND business_id=? AND group_name='EXPENSE' AND is_active=1",
+                [$expenseAccountId,$this->businessId]
+            );
+            if (!$expenseAccount) throw new Exception('Select an accessible expense ledger.');
+            if ($baseAmount > 0) {
+                $lines[] = [
+                    'account_id'=>$expenseAccountId,
+                    'amount'=>$baseAmount,
+                    'type'=>'DR',
+                    'narration'=>$category,
+                ];
+            }
+            if ($gstAmount > 0) {
+                $gstAccount = $this->outsideSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets');
+                $gstAccountId = $gstAccount['id'];
+                $lines[] = [
+                    'account_id'=>$gstAccountId,
+                    'amount'=>$gstAmount,
+                    'type'=>'DR',
+                    'narration'=>"GST input for $category",
+                ];
+            }
+        } elseif ($bearer === 'BUYER') {
+            $sale = $this->getOutsideSale($carId, true);
+            if (!$sale) throw new Exception('Record the buyer sale before assigning an expense to the Buyer.');
+            $lines[] = [
+                'account_id'=>$sale['buyer_account_id'],
+                'amount'=>$grossAmount,
+                'type'=>'DR',
+                'narration'=>"Buyer-borne expense: $category",
+            ];
+        } else {
+            $position = $this->getOutsideSourcePosition($car['source_entity_id']);
+            $sourcePayablePart = round(min($grossAmount, $position['payable']), 2);
+            $sourceAdvancePart = round($grossAmount - $sourcePayablePart, 2);
+            if ($sourcePayablePart > 0) {
+                $lines[] = [
+                    'account_id'=>$car['source_account_id'],
+                    'amount'=>$sourcePayablePart,
+                    'type'=>'DR',
+                    'narration'=>"Source Entity-borne expense: $category",
+                ];
+            }
+            if ($sourceAdvancePart > 0) {
+                $advance = $this->outsideSourceAdvanceAccount();
+                $lines[] = [
+                    'account_id'=>$advance['id'],
+                    'amount'=>$sourceAdvancePart,
+                    'type'=>'DR',
+                    'narration'=>"Source Entity expense recoverable: $category",
+                ];
+            }
+        }
+        $lines[] = [
+            'account_id'=>$accountId,
+            'amount'=>$grossAmount,
+            'type'=>'CR',
+            'narration'=>'Outside Car expense paid',
+        ];
+        $owns = !$this->db->inTransaction();
+        if ($owns) $this->db->beginTransaction();
+        try {
+            $entryId = $this->postJournalEntry(
+                'CAR_EXPENSE',
+                $date,
+                trim((string) ($data['narration'] ?? '')) ?: "$category - {$car['registration_no']}",
+                $lines,
+                [
+                    'car_id'=>$carId,
+                    'party_id'=>$bearer === 'SOURCE_ENTITY'
+                        ? $car['source_party_id']
+                        : ($bearer === 'BUYER' ? $sale['buyer_party_id'] : null),
+                    'entry_type_id'=>systemEntryTypeId('OUTSIDE_CAR_AGENCY_EXPENSE'),
+                    'entry_amount'=>$grossAmount,
+                    'audit_metadata'=>[
+                        'bearer'=>$bearer,
+                        'gst_amount'=>$gstAmount,
+                        'voucher_no'=>trim((string) ($data['voucher_no'] ?? '')),
+                        'source_payable_applied'=>$sourcePayablePart,
+                        'source_advance_created'=>$sourceAdvancePart,
+                    ],
+                ]
+            );
+            $expenseId = Database::uuid();
+            $this->db->insert('outside_car_expenses', [
+                'id'=>$expenseId,
+                'business_id'=>$this->businessId,
+                'car_id'=>$carId,
+                'source_entity_id'=>$car['source_entity_id'],
+                'expense_date'=>$date,
+                'category'=>$category,
+                'vendor_name'=>trim((string) ($data['vendor_name'] ?? '')),
+                'responsibility'=>$bearer,
+                'actual_amount'=>$grossAmount,
+                'expense_account_id'=>$expenseAccountId,
+                'payment_account_id'=>$accountId,
+                'gst_input_account_id'=>$gstAccountId,
+                'gst_amount'=>$gstAmount,
+                'voucher_no'=>trim((string) ($data['voucher_no'] ?? '')),
+                'approved_recoverable_amount'=>0,
+                'journal_entry_id'=>$entryId,
+                'narration'=>trim((string) ($data['narration'] ?? '')),
+                'created_by'=>$this->userId,
+            ]);
+            if ($bearer === 'BUYER') {
+                $this->db->query(
+                    "UPDATE outside_car_sales
+                     SET other_buyer_charges=other_buyer_charges+?,buyer_total=buyer_total+?,buyer_outstanding=buyer_outstanding+?
+                     WHERE id=?",
+                    [$grossAmount,$grossAmount,$grossAmount,$sale['id']]
+                );
+                $this->db->query(
+                    "UPDATE outside_car_deals SET buyer_status='PARTLY_PAID' WHERE id=?",
+                    [$car['deal_id']]
+                );
+                $this->db->query(
+                    "UPDATE cars SET status='PENDING_PAYMENT' WHERE id=? AND business_id=?",
+                    [$carId,$this->businessId]
+                );
+            } elseif ($bearer === 'SOURCE_ENTITY') {
+                $movement = [
+                    'id'=>Database::uuid(),
+                    'business_id'=>$this->businessId,
+                    'source_entity_id'=>$car['source_entity_id'],
+                    'origin_car_id'=>$carId,
+                    'movement_date'=>$date,
+                    'movement_kind'=>'SOURCE_EXPENSE',
+                    'amount'=>$grossAmount,
+                    'payable_applied'=>$sourcePayablePart,
+                    'advance_created'=>$sourceAdvancePart,
+                    'gateway_account_id'=>$accountId,
+                    'journal_entry_id'=>$entryId,
+                    'narration'=>trim((string) ($data['narration'] ?? '')),
+                    'created_by'=>$this->userId,
+                ];
+                $this->db->insert('outside_source_movements', $movement);
+                if ($sourcePayablePart > 0) {
+                    $allocated = $this->allocateSourceMovementToPayables(
+                        $movement,
+                        $sourcePayablePart,
+                        $date,
+                        $entryId,
+                        'SOURCE_EXPENSE_TO_PAYABLE'
+                    );
+                    if (abs($allocated - $sourcePayablePart) > 0.01) {
+                        throw new Exception('Source Entity expense allocation did not balance.');
+                    }
+                }
+            }
+            Auth::auditCreate(
+                'outside_car_expense',
+                $expenseId,
+                [
+                    'car_id'=>$carId,
+                    'bearer'=>$bearer,
+                    'amount'=>$grossAmount,
+                    'gst_amount'=>$gstAmount,
+                    'journal_entry_id'=>$entryId,
+                ],
+                "Outside Car expense recorded for {$car['registration_no']}",
+                'outside_cars'
+            );
+            if ($owns) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($owns && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     private function getOutsideSale($carId, $lock = false) {
         return $this->db->fetch(
             "SELECT ocs.*, dc.name AS buyer_name, dc.phone AS buyer_phone, dc.account_id AS buyer_account_id
@@ -588,8 +1187,194 @@ trait OutsideCarAccounting {
         );
     }
 
+    private function recordOutsideAgencySale($carId, array $data, array $car) {
+        if ($this->getOutsideSale($carId)) throw new Exception('This Outside Car already has an active sale.');
+        $vehicle = round(floatval($data['vehicle_sale_price'] ?? 0), 2);
+        $discount = round(floatval($data['discount_amount'] ?? 0), 2);
+        $rto = round(floatval($data['buyer_rto_charge'] ?? 0), 2);
+        if ($vehicle <= 0 || min($discount,$rto) < 0 || $discount - $vehicle > 0.01) {
+            throw new Exception('Enter valid vehicle price, discount, and RTO amounts.');
+        }
+        $customerVehiclePrice = round($vehicle - $discount, 2);
+        $commission = $car['commission_type'] === 'PERCENT'
+            ? round($customerVehiclePrice * floatval($car['commission_value']) / 100, 2)
+            : round(floatval($car['commission_value']), 2);
+        if ($commission <= 0 || $commission - $customerVehiclePrice > 0.01) {
+            throw new Exception('Commission must be greater than zero and cannot exceed the final vehicle price.');
+        }
+        $sourceEntitlement = round($customerVehiclePrice - $commission, 2);
+        $buyerTotal = round($customerVehiclePrice + $rto, 2);
+        $buyer = $this->resolveParty(
+            $data['buyer_party_id'] ?? '',
+            $data['buyer_name'] ?? '',
+            $data['buyer_phone'] ?? '',
+            'BUYER',
+            ['BUYER','DEBTOR']
+        );
+        $token = $this->getCarTokenSummary($carId);
+        if ($token['available'] > 0.009 && $token['party_id'] !== $buyer['id']) {
+            throw new Exception("This car has an open token from {$token['party_name']}. Select that buyer or reverse the token first.");
+        }
+        $tokenApplied = round(min($token['available'], $buyerTotal), 2);
+        $remaining = round($buyerTotal - $tokenApplied, 2);
+        $received = trim((string) ($data['amount_received_now'] ?? '')) === ''
+            ? 0
+            : round(floatval($data['amount_received_now']), 2);
+        if ($received < 0 || $received - $remaining > 0.01) {
+            throw new Exception('Amount received now cannot exceed the amount due after token.');
+        }
+        if ($received > 0 && empty($data['receiving_account'])) {
+            throw new Exception('Select an accessible Cash, Bank, or GST Bank account.');
+        }
+        $outstanding = round($remaining - $received, 2);
+        $owns = !$this->db->inTransaction();
+        if ($owns) $this->db->beginTransaction();
+        try {
+            $lines = [];
+            if ($received > 0) {
+                $lines[] = [
+                    'account_id'=>$data['receiving_account'],
+                    'amount'=>$received,
+                    'type'=>'DR',
+                    'narration'=>'Buyer money received',
+                ];
+            }
+            if ($tokenApplied > 0) {
+                $advance = $this->outsideSystemAccount('CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities');
+                $lines[] = [
+                    'account_id'=>$advance['id'],
+                    'amount'=>$tokenApplied,
+                    'type'=>'DR',
+                    'narration'=>'Buyer token applied',
+                ];
+            }
+            if ($outstanding > 0) {
+                $lines[] = [
+                    'account_id'=>$buyer['account_id'],
+                    'amount'=>$outstanding,
+                    'type'=>'DR',
+                    'narration'=>'Buyer outstanding',
+                ];
+            }
+            if ($sourceEntitlement > 0) {
+                $lines[] = [
+                    'account_id'=>$car['source_account_id'],
+                    'amount'=>$sourceEntitlement,
+                    'type'=>'CR',
+                    'narration'=>'Source Entity vehicle entitlement',
+                ];
+            }
+            $commissionIncome = $this->outsideSystemAccount(
+                'OUTCAR-COMM',
+                'Outside Car Commission Income',
+                'INCOME',
+                'Direct Income'
+            );
+            $lines[] = [
+                'account_id'=>$commissionIncome['id'],
+                'amount'=>$commission,
+                'type'=>'CR',
+                'narration'=>'Tiranga commission included in vehicle price',
+            ];
+            if ($rto > 0) {
+                $rtoIncome = $this->outsideSystemAccount('RTO-REC', 'RTO Recovery Income', 'INCOME', 'Direct Income');
+                $lines[] = [
+                    'account_id'=>$rtoIncome['id'],
+                    'amount'=>$rto,
+                    'type'=>'CR',
+                    'narration'=>'Outside Car RTO income',
+                ];
+            }
+            $entryId = $this->postJournalEntry(
+                'CAR_SALE',
+                $data['sale_date'],
+                trim((string) ($data['narration'] ?? '')) ?: "Outside Car commission sale - {$car['registration_no']}",
+                $lines,
+                [
+                    'car_id'=>$carId,
+                    'party_id'=>$buyer['id'],
+                    'entry_type_id'=>systemEntryTypeId('OUTSIDE_CAR_AGENCY_SALE'),
+                    'entry_amount'=>$buyerTotal,
+                    'audit_metadata'=>[
+                        'customer_vehicle_price'=>$customerVehiclePrice,
+                        'commission_included'=>$commission,
+                        'source_entity_entitlement'=>$sourceEntitlement,
+                        'rto_income'=>$rto,
+                    ],
+                ]
+            );
+            if ($tokenApplied > 0) {
+                $this->applyCarTokensToSale($carId, $buyer['id'], $tokenApplied, $entryId);
+            }
+            $saleId = Database::uuid();
+            $this->db->insert('outside_car_sales', [
+                'id'=>$saleId,
+                'business_id'=>$this->businessId,
+                'car_id'=>$carId,
+                'source_entity_id'=>$car['source_entity_id'],
+                'buyer_party_id'=>$buyer['id'],
+                'sale_date'=>$data['sale_date'],
+                'vehicle_sale_price'=>$vehicle,
+                'discount_amount'=>$discount,
+                'net_vehicle_value'=>$customerVehiclePrice,
+                'separate_commission'=>$commission,
+                'source_entity_entitlement'=>$sourceEntitlement,
+                'buyer_rto_charge'=>$rto,
+                'other_buyer_charges'=>0,
+                'buyer_total'=>$buyerTotal,
+                'token_applied'=>$tokenApplied,
+                'received_at_sale'=>$received,
+                'buyer_outstanding'=>$outstanding,
+                'sale_entry_id'=>$entryId,
+                'created_by'=>$this->userId,
+            ]);
+            $carStatus = $outstanding > 0.009 ? 'PENDING_PAYMENT' : 'SOLD';
+            $this->db->query(
+                "UPDATE cars
+                 SET status=?,sold_date=?,sale_price=?,sale_commission_amount=?,buyer_name=?,buyer_party_id=?
+                 WHERE id=? AND business_id=?",
+                [
+                    $carStatus,$data['sale_date'],$customerVehiclePrice,$commission,
+                    $buyer['name'],$buyer['id'],$carId,$this->businessId,
+                ]
+            );
+            $this->db->query(
+                "UPDATE outside_car_deals
+                 SET physical_status='RESERVED',buyer_status=?,rto_status=?,settlement_status='NOT_APPLICABLE',terms_locked_at=NOW()
+                 WHERE id=?",
+                [
+                    $outstanding > 0.009 ? 'PARTLY_PAID' : 'FULLY_PAID',
+                    $rto > 0 ? 'IN_PROGRESS' : 'NOT_STARTED',
+                    $car['deal_id'],
+                ]
+            );
+            $this->applyOutsideSourceAdvances($car['source_entity_id'], $data['sale_date']);
+            Auth::auditCreate(
+                'outside_car_sale',
+                $saleId,
+                [
+                    'car_id'=>$carId,
+                    'buyer_total'=>$buyerTotal,
+                    'source_entitlement'=>$sourceEntitlement,
+                    'commission'=>$commission,
+                    'journal_entry_id'=>$entryId,
+                ],
+                "Outside Car commission sale recorded for {$car['registration_no']}",
+                'outside_cars'
+            );
+            if ($owns) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($owns && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     public function recordOutsideCarSale($carId, array $data) {
         $car = $this->outsideContext($carId);
+        if ($this->isOutsideCommissionAgency($car)) {
+            return $this->recordOutsideAgencySale($carId, $data, $car);
+        }
         if ($this->getOutsideSale($carId)) throw new Exception('This Outside Car already has an active sale.');
         $vehicle = round(floatval($data['vehicle_sale_price'] ?? 0), 2);
         $discount = round(floatval($data['discount_amount'] ?? 0), 2);
@@ -651,6 +1436,117 @@ trait OutsideCarAccounting {
         return $entryId;
     }
 
+    public function cancelOutsideAgencySale($carId, $reason) {
+        $car = $this->outsideContext($carId, true);
+        if (!$this->isOutsideCommissionAgency($car)) {
+            throw new Exception('Use the legacy reversal workflow for this Outside Car.');
+        }
+        $sale = $this->getOutsideSale($carId, true);
+        if (!$sale) throw new Exception('No active Outside Car sale is available to cancel.');
+        $reason = trim((string) $reason);
+        if (strlen($reason) < 10) throw new Exception('A detailed sale cancellation reason is required.');
+        foreach ([
+            ['outside_car_buyer_payments','sale_id',$sale['id'],'Reverse buyer installments, refunds, or bad-debt entries before cancelling the sale.'],
+            ['outside_car_rto_movements','car_id',$carId,'Reverse RTO expenses before cancelling the sale.'],
+            ['car_loan_commissions','car_id',$carId,'Reverse loan commission entries before cancelling the sale.'],
+        ] as [$table,$column,$value,$message]) {
+            $row = $this->db->fetch("SELECT COUNT(*) cnt FROM `$table` WHERE business_id=? AND `$column`=? AND status<>'REVERSED'",[$this->businessId,$value]);
+            if (($row['cnt']??0)>0) throw new Exception($message);
+        }
+        if ($this->db->fetch("SELECT id FROM outside_car_agreements WHERE business_id=? AND sale_id=? LIMIT 1",[$this->businessId,$sale['id']])) {
+            throw new Exception('Resolve the immutable agreement record before cancelling this sale.');
+        }
+        if ($this->db->fetch("SELECT id FROM outside_car_deliveries WHERE business_id=? AND sale_id=? LIMIT 1",[$this->businessId,$sale['id']])) {
+            throw new Exception('A delivered Outside Car sale cannot be cancelled through this control.');
+        }
+        $owns = !$this->db->inTransaction();
+        if ($owns) $this->db->beginTransaction();
+        try {
+            $advanceAllocations = $this->db->fetchAll(
+                "SELECT DISTINCT journal_entry_id FROM outside_source_allocations
+                 WHERE business_id=? AND sale_id=? AND allocation_kind='ADVANCE_TO_PAYABLE' AND status='POSTED'",
+                [$this->businessId,$sale['id']]
+            );
+            foreach ($advanceAllocations as $allocation) {
+                $this->reverseEntry($allocation['journal_entry_id'], 'Restore Source Advance for sale cancellation: ' . $reason);
+            }
+            $directAllocations = $this->db->fetchAll(
+                "SELECT a.source_movement_id,SUM(a.amount) amount,m.origin_car_id,m.source_entity_id
+                 FROM outside_source_allocations a
+                 JOIN outside_source_movements m ON m.id=a.source_movement_id AND m.business_id=a.business_id
+                 WHERE a.business_id=? AND a.sale_id=? AND a.status='POSTED'
+                   AND a.allocation_kind IN ('PAYMENT_TO_PAYABLE','SOURCE_EXPENSE_TO_PAYABLE')
+                 GROUP BY a.source_movement_id,m.origin_car_id,m.source_entity_id",
+                [$this->businessId,$sale['id']]
+            );
+            $advanceAccount = $this->outsideSourceAdvanceAccount();
+            foreach ($directAllocations as $allocation) {
+                $amount = round(floatval($allocation['amount']), 2);
+                if ($amount <= 0) continue;
+                $entryId = $this->postJournalEntry(
+                    'JOURNAL_VOUCHER',
+                    date('Y-m-d'),
+                    "Cancelled sale owner-payment reclassification - {$car['registration_no']}: $reason",
+                    [
+                        ['account_id'=>$advanceAccount['id'],'amount'=>$amount,'type'=>'DR','narration'=>'Owner money now recoverable after sale cancellation'],
+                        ['account_id'=>$car['source_account_id'],'amount'=>$amount,'type'=>'CR','narration'=>'Clear debit Source Entity current balance'],
+                    ],
+                    [
+                        'car_id'=>$carId,
+                        'party_id'=>$car['source_party_id'],
+                        'entry_type_id'=>systemEntryTypeId('OUTSIDE_SALE_CANCEL_SOURCE_RECLASS'),
+                        'entry_amount'=>$amount,
+                        'audit_metadata'=>[
+                            'sale_id'=>$sale['id'],
+                            'source_movement_id'=>$allocation['source_movement_id'],
+                            'reason'=>$reason,
+                        ],
+                    ]
+                );
+                $this->db->query(
+                    "UPDATE outside_source_allocations SET status='REVERSED'
+                     WHERE business_id=? AND sale_id=? AND source_movement_id=? AND status='POSTED'
+                       AND allocation_kind IN ('PAYMENT_TO_PAYABLE','SOURCE_EXPENSE_TO_PAYABLE')",
+                    [$this->businessId,$sale['id'],$allocation['source_movement_id']]
+                );
+                $this->db->query(
+                    "UPDATE outside_source_movements
+                     SET payable_applied=GREATEST(0,payable_applied-?),advance_created=advance_created+?
+                     WHERE id=?",
+                    [$amount,$amount,$allocation['source_movement_id']]
+                );
+                $this->db->insert('outside_source_allocations', [
+                    'id'=>Database::uuid(),
+                    'business_id'=>$this->businessId,
+                    'source_entity_id'=>$allocation['source_entity_id'],
+                    'source_movement_id'=>$allocation['source_movement_id'],
+                    'trigger_movement_id'=>$allocation['source_movement_id'],
+                    'origin_car_id'=>$allocation['origin_car_id'],
+                    'target_car_id'=>$carId,
+                    'sale_id'=>null,
+                    'allocation_kind'=>'SALE_CANCEL_TO_ADVANCE',
+                    'allocation_date'=>date('Y-m-d'),
+                    'amount'=>$amount,
+                    'journal_entry_id'=>$entryId,
+                    'created_by'=>$this->userId,
+                ]);
+            }
+            $this->reverseEntry($sale['sale_entry_id'], 'Outside Car sale cancelled: ' . $reason);
+            Auth::auditUpdate(
+                'outside_car_sale',
+                $sale['id'],
+                ['status'=>'POSTED','buyer_outstanding'=>$sale['buyer_outstanding']],
+                ['status'=>'REVERSED','cancellation_reason'=>$reason],
+                'Outside Car commission sale cancelled; paid owner money retained as recoverable Source Advance',
+                'outside_cars'
+            );
+            if ($owns) $this->db->commit();
+        } catch (Throwable $e) {
+            if ($owns && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     public function recordOutsideBuyerPayment($carId, $amount, $date, $receivingAccount, $narration = '') {
         $car = $this->outsideContext($carId);
         $sale = $this->getOutsideSale($carId, true);
@@ -674,8 +1570,60 @@ trait OutsideCarAccounting {
         return $entryId;
     }
 
+    public function recordOutsideBuyerBadDebt($carId, $amount, $date, $reason) {
+        $car = $this->outsideContext($carId);
+        if (!$this->isOutsideCommissionAgency($car)) {
+            throw new Exception('Use the legacy correction workflow for this Outside Car.');
+        }
+        $sale = $this->getOutsideSale($carId, true);
+        if (!$sale) throw new Exception('Record the buyer sale before writing off a balance.');
+        $amount = round(floatval($amount), 2);
+        $reason = trim((string) $reason);
+        if ($amount <= 0 || $amount - floatval($sale['buyer_outstanding']) > 0.01) {
+            throw new Exception('Write-off cannot exceed this car’s buyer outstanding.');
+        }
+        if (strlen($reason) < 10) throw new Exception('A detailed bad-debt reason is required.');
+        $badDebt = $this->outsideSystemAccount('BAD-DEBT', 'Bad Debt Expense', 'EXPENSE', 'Indirect Expenses');
+        $entryId = $this->postJournalEntry(
+            'BAD_DEBT',
+            $date,
+            "Outside Car bad debt - {$car['registration_no']}: $reason",
+            [
+                ['account_id'=>$badDebt['id'],'amount'=>$amount,'type'=>'DR','narration'=>'Outside Car buyer bad debt'],
+                ['account_id'=>$sale['buyer_account_id'],'amount'=>$amount,'type'=>'CR','narration'=>'Buyer receivable written off'],
+            ],
+            [
+                'car_id'=>$carId,
+                'party_id'=>$sale['buyer_party_id'],
+                'entry_type_id'=>systemEntryTypeId('OUTSIDE_BUYER_BAD_DEBT'),
+                'entry_amount'=>$amount,
+                'audit_metadata'=>['reason'=>$reason],
+            ]
+        );
+        $this->db->insert('outside_car_buyer_payments', [
+            'id'=>Database::uuid(),
+            'business_id'=>$this->businessId,
+            'sale_id'=>$sale['id'],
+            'car_id'=>$carId,
+            'buyer_party_id'=>$sale['buyer_party_id'],
+            'payment_date'=>$date,
+            'payment_kind'=>'BAD_DEBT',
+            'amount'=>$amount,
+            'journal_entry_id'=>$entryId,
+            'created_by'=>$this->userId,
+        ]);
+        $remaining = round(floatval($sale['buyer_outstanding']) - $amount, 2);
+        $this->db->query("UPDATE outside_car_sales SET buyer_outstanding=? WHERE id=?",[$remaining,$sale['id']]);
+        $this->db->query("UPDATE outside_car_deals SET buyer_status=? WHERE id=?",[$remaining<=0.009?'WRITTEN_OFF':'PARTLY_PAID',$car['deal_id']]);
+        Auth::auditCreate('outside_car_bad_debt',$entryId,['car_id'=>$carId,'amount'=>$amount,'reason'=>$reason],'Outside Car buyer bad debt authorized','outside_cars');
+        return $entryId;
+    }
+
     public function approveOutsideCarSettlement($carId, array $data) {
         $car = $this->outsideContext($carId, true);
+        if ($this->isOutsideCommissionAgency($car)) {
+            throw new Exception('Commission-agency Outside Cars do not require settlement approval.');
+        }
         $sale = $this->getOutsideSale($carId, true);
         if (!$sale) throw new Exception('Record the sale before approving settlement.');
         $active = $this->db->fetch("SELECT id FROM outside_car_settlements WHERE business_id = ? AND car_id = ? AND status <> 'REVERSED'", [$this->businessId,$carId]);
@@ -793,6 +1741,16 @@ trait OutsideCarAccounting {
 
     public function payOutsideEntity($carId, $amount, $date, $paymentAccount, $narration = '') {
         $car = $this->outsideContext($carId);
+        if ($this->isOutsideCommissionAgency($car)) {
+            return $this->recordOutsideSourceMovement(
+                $carId,
+                $amount,
+                $date,
+                $paymentAccount,
+                'PAY_OR_ADVANCE',
+                $narration
+            );
+        }
         $settlement = $this->db->fetch("SELECT * FROM outside_car_settlements WHERE business_id = ? AND car_id = ? AND status IN ('APPROVED','PARTIAL')", [$this->businessId,$carId]);
         if (!$settlement) throw new Exception('Approve the Outside Car settlement before paying the Source Entity.');
         $amount = round(floatval($amount), 2);
@@ -815,12 +1773,55 @@ trait OutsideCarAccounting {
         return $entryId;
     }
 
-    public function recordOutsideRtoMovement($carId, $type, $amount, $date, $accountId, $narration = '') {
+    public function recordOutsideRtoMovement($carId, $type, $amount, $date, $accountId, $narration = '', $gstAmount = 0) {
         $car = $this->outsideContext($carId);
         $type = strtoupper(trim((string) $type));
         if (!in_array($type, ['RECEIVE','PAY'], true)) throw new Exception('Select RTO money received or paid.');
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) throw new Exception('RTO amount must be greater than zero.');
+        if ($this->isOutsideCommissionAgency($car)) {
+            if ($type === 'RECEIVE') {
+                throw new Exception('RTO income is recorded with the buyer sale. Record the buyer installment instead of a second RTO receipt.');
+            }
+            $this->validateCashAvailable($accountId, $amount);
+            [$grossAmount,$gstAmount,$baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+            $expense = $this->outsideSystemAccount('RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)');
+            $lines = [];
+            if ($baseAmount > 0) {
+                $lines[] = ['account_id'=>$expense['id'],'amount'=>$baseAmount,'type'=>'DR','narration'=>'Outside Car RTO expense'];
+            }
+            if ($gstAmount > 0) {
+                $gst = $this->outsideSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets');
+                $lines[] = ['account_id'=>$gst['id'],'amount'=>$gstAmount,'type'=>'DR','narration'=>'GST input for RTO'];
+            }
+            $lines[] = ['account_id'=>$accountId,'amount'=>$grossAmount,'type'=>'CR','narration'=>'Outside Car RTO payment'];
+            $entryId = $this->postJournalEntry(
+                'RTO_EXPENSE',
+                $date,
+                $narration ?: "Outside Car RTO payment - {$car['registration_no']}",
+                $lines,
+                [
+                    'car_id'=>$carId,
+                    'entry_type_id'=>systemEntryTypeId('OUTSIDE_RTO_AGENCY_EXPENSE'),
+                    'entry_amount'=>$grossAmount,
+                    'audit_metadata'=>['gst_amount'=>$gstAmount],
+                ]
+            );
+            $this->db->insert('outside_car_rto_movements', [
+                'id'=>Database::uuid(),
+                'business_id'=>$this->businessId,
+                'car_id'=>$carId,
+                'source_entity_id'=>$car['source_entity_id'],
+                'movement_type'=>'PAY',
+                'movement_date'=>$date,
+                'amount'=>$grossAmount,
+                'journal_entry_id'=>$entryId,
+                'narration'=>$narration,
+                'created_by'=>$this->userId,
+            ]);
+            $this->db->query("UPDATE outside_car_deals SET rto_status='IN_PROGRESS' WHERE id=?",[$car['deal_id']]);
+            return $entryId;
+        }
         $rto = $this->outsideSystemAccount('RTO-CLEAR', 'RTO Clearing', 'LIABILITY', 'Current Liabilities');
         if ($type === 'RECEIVE') $lines = [
             ['account_id' => $accountId, 'amount' => $amount, 'type' => 'DR', 'narration' => 'RTO money received'],
@@ -851,6 +1852,9 @@ trait OutsideCarAccounting {
 
     public function recordOutsideRtoShortfall($carId, $amount, $bearer, $date, $reason) {
         $car = $this->outsideContext($carId);
+        if ($this->isOutsideCommissionAgency($car)) {
+            throw new Exception('Commission-agency Outside Cars record RTO income and expense separately; no clearing shortfall approval is required.');
+        }
         $amount = round(floatval($amount), 2);
         $bearer = strtoupper(trim((string) $bearer));
         $reason = trim((string) $reason);
@@ -879,6 +1883,18 @@ trait OutsideCarAccounting {
         $car = $this->outsideContext($carId);
         $reason = trim((string) $reason);
         if (strlen($reason) < 5) throw new Exception('RTO completion reason or file reference is required.');
+        if ($this->isOutsideCommissionAgency($car)) {
+            $this->db->query("UPDATE outside_car_deals SET rto_status='COMPLETED' WHERE id=?",[$car['deal_id']]);
+            Auth::auditUpdate(
+                'outside_car',
+                $carId,
+                ['rto_status'=>$car['rto_status']],
+                ['rto_status'=>'COMPLETED','reason'=>$reason],
+                'Outside Car RTO completed: ' . $reason,
+                'outside_cars'
+            );
+            return;
+        }
         $sale = $this->getOutsideSale($carId);
         $moves = $this->db->fetch("SELECT COALESCE(SUM(CASE WHEN movement_type IN ('RECEIVE','ALLOCATE') AND status='POSTED' THEN amount WHEN movement_type='PAY' AND status='POSTED' THEN -amount ELSE 0 END),0) balance FROM outside_car_rto_movements WHERE business_id=? AND car_id=?",[$this->businessId,$carId]);
         $balance = round(floatval($sale['buyer_rto_charge'] ?? 0) + floatval($moves['balance'] ?? 0), 2);
@@ -894,7 +1910,57 @@ trait OutsideCarAccounting {
         $advance = $this->db->fetch("SELECT COALESCE(SUM(CASE WHEN direction='PAID_TO_ENTITY' THEN amount ELSE 0 END),0) paid, COALESCE(SUM(CASE WHEN direction='RECEIVED_FROM_ENTITY' THEN amount ELSE 0 END),0) received FROM outside_car_advances WHERE business_id = ? AND car_id = ? AND status = 'POSTED'", [$this->businessId,$carId]);
         $rto = $this->db->fetch("SELECT COALESCE(SUM(CASE WHEN movement_type='RECEIVE' THEN amount ELSE 0 END),0) received, COALESCE(SUM(CASE WHEN movement_type='ALLOCATE' THEN amount ELSE 0 END),0) allocated, COALESCE(SUM(CASE WHEN movement_type='PAY' THEN amount ELSE 0 END),0) paid FROM outside_car_rto_movements WHERE business_id = ? AND car_id = ? AND status = 'POSTED'", [$this->businessId,$carId]);
         $settlement = $this->db->fetch("SELECT * FROM outside_car_settlements WHERE business_id = ? AND car_id = ? AND status <> 'REVERSED' ORDER BY created_at DESC LIMIT 1", [$this->businessId,$carId]);
-        return ['car'=>$car,'sale'=>$sale,'expense'=>$expense,'advance'=>$advance,'rto'=>$rto,'settlement'=>$settlement];
+        if (!$this->isOutsideCommissionAgency($car)) {
+            return ['car'=>$car,'sale'=>$sale,'expense'=>$expense,'advance'=>$advance,'rto'=>$rto,'settlement'=>$settlement];
+        }
+        $buyerMoney = $this->db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN payment_kind='RECEIPT' THEN amount ELSE 0 END),0) AS receipts,
+                    COALESCE(SUM(CASE WHEN payment_kind='REFUND' THEN amount ELSE 0 END),0) AS refunds
+             FROM outside_car_buyer_payments
+             WHERE business_id=? AND car_id=? AND status='POSTED'",
+            [$this->businessId,$carId]
+        );
+        $sourceMoney = $this->db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN movement_kind='PAY_OR_ADVANCE' THEN amount ELSE 0 END),0) AS payments,
+                    COALESCE(SUM(CASE WHEN movement_kind='SOURCE_REFUND' THEN amount ELSE 0 END),0) AS refunds
+             FROM outside_source_movements
+             WHERE business_id=? AND origin_car_id=? AND status='POSTED'",
+            [$this->businessId,$carId]
+        );
+        $carPosition = $this->getOutsideSourcePosition($car['source_entity_id'], $carId);
+        $entityPosition = $this->getOutsideSourcePosition($car['source_entity_id']);
+        $buyerCollected = round(
+            floatval($sale['token_applied'] ?? 0)
+            + floatval($sale['received_at_sale'] ?? 0)
+            + floatval($buyerMoney['receipts'] ?? 0)
+            - floatval($buyerMoney['refunds'] ?? 0),
+            2
+        );
+        $fundsDeployed = round(
+            floatval($sourceMoney['payments'] ?? 0)
+            + floatval($expense['actual'] ?? 0)
+            + floatval($rto['paid'] ?? 0)
+            + floatval($buyerMoney['refunds'] ?? 0)
+            - $buyerCollected
+            - floatval($sourceMoney['refunds'] ?? 0),
+            2
+        );
+        return [
+            'car'=>$car,
+            'sale'=>$sale,
+            'expense'=>$expense,
+            'advance'=>$advance,
+            'rto'=>$rto,
+            'settlement'=>null,
+            'source_car_position'=>$carPosition,
+            'source_entity_position'=>$entityPosition,
+            'buyer_collected'=>$buyerCollected,
+            'funds_deployed'=>$fundsDeployed,
+            'commission_income'=>round(floatval($sale['separate_commission'] ?? 0), 2),
+            'rto_income'=>round(floatval($sale['buyer_rto_charge'] ?? 0), 2),
+            'rto_expense'=>round(floatval($rto['paid'] ?? 0), 2),
+            'rto_net'=>round(floatval($sale['buyer_rto_charge'] ?? 0) - floatval($rto['paid'] ?? 0), 2),
+        ];
     }
 
     public function generateOutsideCarAgreement($carId, array $data = []) {
@@ -934,13 +2000,26 @@ trait OutsideCarAccounting {
         $version = $this->db->fetch("SELECT COALESCE(MAX(version_no),0)+1 AS next_version FROM outside_car_agreements WHERE business_id = ? AND car_id = ?", [$this->businessId,$carId]);
         $versionNo = max(1, intval($version['next_version'] ?? 1));
         $payments = $this->db->fetchAll("SELECT payment_date, amount FROM outside_car_buyer_payments WHERE business_id = ? AND sale_id = ? AND status = 'POSTED' ORDER BY payment_date, created_at", [$this->businessId,$sale['id']]);
+        $financial = $this->getOutsideCarFinancials($carId);
+        $agency = $this->isOutsideCommissionAgency($car);
         $snapshot = [
-            'schema' => 'outside-car-agreement-v1', 'generated_at' => date(DATE_ATOM),
+            'schema' => $agency ? 'outside-car-commission-agreement-v2' : 'outside-car-agreement-v1', 'generated_at' => date(DATE_ATOM),
             'business' => ['name'=>$business['name'] ?? APP_NAME,'address'=>$business['address'] ?? '','phone'=>$business['phone'] ?? '','gstin'=>$business['gstin'] ?? ''],
             'source_entity' => ['name'=>$source['name'] ?? $car['source_entity_name'],'phone'=>$source['phone'] ?? '','address'=>$source['address'] ?? ''],
             'buyer' => ['name'=>$sale['buyer_name'],'phone'=>$sale['buyer_phone'] ?? '','address'=>$data['buyer_address'] ?? ''],
             'vehicle' => ['registration_no'=>$car['registration_no'],'make'=>$car['make'],'model'=>$car['model'],'year'=>$car['year'],'color'=>$car['color'],'chassis_no'=>$car['chassis_no'] ?? '','engine_no'=>$car['engine_no'] ?? '','second_key'=>!empty($car['has_second_key']),'insurance'=>$car['insurance_details'] ?? '','hypothecation'=>$car['hypothecation_details'] ?? ''],
-            'amounts' => ['A_source_base'=>round(floatval($car['source_base_value']),2),'B_actual_expenses'=>round(floatval($this->getOutsideCarFinancials($carId)['expense']['actual'] ?? 0),2),'C_vehicle_selling_price'=>round(floatval($sale['vehicle_sale_price']),2),'K_separate_commission'=>round(floatval($sale['separate_commission']),2),'discount'=>round(floatval($sale['discount_amount']),2),'buyer_rto'=>round(floatval($sale['buyer_rto_charge']),2),'buyer_total'=>round(floatval($sale['buyer_total']),2),'buyer_outstanding'=>round(floatval($sale['buyer_outstanding']),2)],
+            'amounts' => [
+                'accounting_model'=>$car['accounting_model'],
+                'A_source_base'=>$agency ? 0 : round(floatval($car['source_base_value']),2),
+                'B_actual_expenses'=>round(floatval($financial['expense']['actual'] ?? 0),2),
+                'C_vehicle_selling_price'=>round(floatval($sale['net_vehicle_value']),2),
+                'K_separate_commission'=>round(floatval($sale['separate_commission']),2),
+                'source_entity_entitlement'=>round(floatval($sale['source_entity_entitlement'] ?? 0),2),
+                'discount'=>round(floatval($sale['discount_amount']),2),
+                'buyer_rto'=>round(floatval($sale['buyer_rto_charge']),2),
+                'buyer_total'=>round(floatval($sale['buyer_total']),2),
+                'buyer_outstanding'=>round(floatval($sale['buyer_outstanding']),2),
+            ],
             'sale_date'=>$sale['sale_date'],'payments'=>$payments,
             'delivery_terms'=>trim((string) ($data['delivery_terms'] ?? 'Full payment and agreement readiness required before delivery.')),
             'witnesses'=>[['name'=>trim((string) ($data['witness_1'] ?? ''))],['name'=>trim((string) ($data['witness_2'] ?? ''))]],
@@ -955,12 +2034,15 @@ trait OutsideCarAccounting {
         foreach ($clauses as $index => $clause) {
             $clauseHtml .= '<div class="clause"><b>' . ($index + 1) . '.</b> ' . $h($clause['gu'] ?? '') . '<br><span class="en">' . $h($clause['en'] ?? '') . '</span></div>';
         }
+        $calculationHtml = $agency
+            ? '<h3>Commission Agency Calculation</h3><table class="grid"><tr><th>C: Final Vehicle Price (commission included)</th><td>₹' . $money($snapshot['amounts']['C_vehicle_selling_price']) . '</td><th>K: Tiranga Commission</th><td>₹' . $money($snapshot['amounts']['K_separate_commission']) . '</td></tr><tr><th>Source Entity Entitlement (C − K)</th><td>₹' . $money($snapshot['amounts']['source_entity_entitlement']) . '</td><th>Buyer RTO</th><td>₹' . $money($snapshot['amounts']['buyer_rto']) . '</td></tr><tr><th>Buyer Total</th><td>₹' . $money($snapshot['amounts']['buyer_total']) . '</td><th>Buyer Outstanding</th><td>₹' . $money($snapshot['amounts']['buyer_outstanding']) . '</td></tr></table>'
+            : '<h3>A / B / C / K Calculation</h3><table class="grid"><tr><th>A: Source Base Value</th><td>₹' . $money($snapshot['amounts']['A_source_base']) . '</td><th>B: Actual Expenses</th><td>₹' . $money($snapshot['amounts']['B_actual_expenses']) . '</td></tr><tr><th>C: Vehicle Selling Price</th><td>₹' . $money($snapshot['amounts']['C_vehicle_selling_price']) . '</td><th>K: Separate Commission</th><td>₹' . $money($snapshot['amounts']['K_separate_commission']) . '</td></tr><tr><th>Buyer RTO</th><td>₹' . $money($snapshot['amounts']['buyer_rto']) . '</td><th>Buyer Outstanding</th><td>₹' . $money($snapshot['amounts']['buyer_outstanding']) . '</td></tr></table>';
         $html = '<!doctype html><html lang="gu"><head><meta charset="utf-8"><style>@font-face{font-family:notogujarati;src:url("' . $h($fontPath) . '")}body{font-family:notogujarati,sans-serif;font-size:10.5pt;color:#111}h1{text-align:center;font-size:18pt}.meta{font-size:8pt;color:#555;text-align:center}.box{border:1px solid #444;padding:10px;margin:10px 0}.grid{width:100%;border-collapse:collapse}.grid td,.grid th{border:1px solid #777;padding:5px;text-align:left}.en{color:#333}.clause{margin:8px 0}.sign{height:70px;vertical-align:bottom;text-align:center}</style></head><body>'
             . '<h1>' . $h($template['title']) . '</h1><div class="meta">Version ' . $versionNo . ' · SHA-256 ' . $h($hash) . '</div>'
             . '<div class="box"><b>' . $h($business['name'] ?? APP_NAME) . '</b><br>' . $h($business['address'] ?? '') . '<br>' . $h($business['phone'] ?? '') . '</div>'
             . '<table class="grid"><tr><th>Source Entity</th><td>' . $h($source['name'] ?? '') . '<br>' . $h($source['phone'] ?? '') . '</td><th>Buyer</th><td>' . $h($sale['buyer_name']) . '<br>' . $h($sale['buyer_phone'] ?? '') . '</td></tr>'
             . '<tr><th>Vehicle</th><td colspan="3">' . $h(formatRegistrationNo($car['registration_no'])) . ' · ' . $h(trim($car['make'] . ' ' . $car['model'])) . ' · ' . $h($car['year']) . '</td></tr></table>'
-            . '<h3>A / B / C / K Calculation</h3><table class="grid"><tr><th>A: Source Base Value</th><td>₹' . $money($snapshot['amounts']['A_source_base']) . '</td><th>B: Actual Expenses</th><td>₹' . $money($snapshot['amounts']['B_actual_expenses']) . '</td></tr><tr><th>C: Vehicle Selling Price</th><td>₹' . $money($snapshot['amounts']['C_vehicle_selling_price']) . '</td><th>K: Separate Commission</th><td>₹' . $money($snapshot['amounts']['K_separate_commission']) . '</td></tr><tr><th>Buyer RTO</th><td>₹' . $money($snapshot['amounts']['buyer_rto']) . '</td><th>Buyer Outstanding</th><td>₹' . $money($snapshot['amounts']['buyer_outstanding']) . '</td></tr></table>'
+            . $calculationHtml
             . '<h3>Terms / શરતો</h3>' . $clauseHtml . '<div class="box"><b>Delivery terms:</b> ' . $h($snapshot['delivery_terms']) . '</div>'
             . '<table class="grid"><tr><td class="sign">Source Entity Signature</td><td class="sign">Buyer Signature</td><td class="sign">Tiranga Authorized Signatory</td></tr><tr><td class="sign">Witness 1: ' . $h($snapshot['witnesses'][0]['name']) . '</td><td class="sign">Witness 2: ' . $h($snapshot['witnesses'][1]['name']) . '</td><td class="sign">Date</td></tr></table></body></html>';
 
@@ -1030,13 +2112,21 @@ trait OutsideCarAccounting {
 
     private function assertOutsideCarEntryCanBeReversed($entry) {
         $identity = $this->outsideEntryIdentity($entry['entry_type_id'] ?? '');
-        if ($identity === 'OUTSIDE_CAR_SALE') {
+        if (in_array($identity, ['OUTSIDE_CAR_SALE','OUTSIDE_CAR_AGENCY_SALE'], true)) {
             $sale = $this->db->fetch("SELECT id FROM outside_car_sales WHERE business_id = ? AND sale_entry_id = ? AND status <> 'REVERSED'",[$this->businessId,$entry['id']]);
             if ($sale) {
                 $settled = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_settlements WHERE business_id = ? AND sale_id = ? AND status <> 'REVERSED'",[$this->businessId,$sale['id']]);
                 $payments = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_buyer_payments WHERE business_id = ? AND sale_id = ? AND status = 'POSTED'",[$this->businessId,$sale['id']]);
                 $rto = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_rto_movements WHERE business_id=? AND car_id=? AND status='POSTED'",[$this->businessId,$entry['car_id'] ?? '']);
-                if (($settled['cnt'] ?? 0) > 0 || ($payments['cnt'] ?? 0) > 0 || ($rto['cnt'] ?? 0) > 0) throw new Exception('Reverse Outside Car settlement, later buyer payments, and RTO movements before reversing the sale.');
+                $allocations = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_source_allocations WHERE business_id=? AND sale_id=? AND status='POSTED'",[$this->businessId,$sale['id']]);
+                $agreements = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_agreements WHERE business_id=? AND sale_id=?",[$this->businessId,$sale['id']]);
+                $delivery = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_deliveries WHERE business_id=? AND sale_id=?",[$this->businessId,$sale['id']]);
+                $loanCommission = $this->db->fetch("SELECT COUNT(*) cnt FROM car_loan_commissions WHERE business_id=? AND car_id=? AND status<>'REVERSED'",[$this->businessId,$entry['car_id'] ?? '']);
+                if (($settled['cnt'] ?? 0) > 0 || ($payments['cnt'] ?? 0) > 0 || ($rto['cnt'] ?? 0) > 0
+                    || ($allocations['cnt'] ?? 0) > 0 || ($agreements['cnt'] ?? 0) > 0
+                    || ($delivery['cnt'] ?? 0) > 0 || ($loanCommission['cnt'] ?? 0) > 0) {
+                    throw new Exception('Reverse Source allocations/payments, buyer movements, RTO, and loan commission before reversing the sale. Signed agreements or delivery records must be resolved first.');
+                }
             }
         }
         if ($identity === 'OUTSIDE_CAR_SETTLEMENT') {
@@ -1050,6 +2140,23 @@ trait OutsideCarAccounting {
             $settlement = $this->db->fetch("SELECT COUNT(*) cnt FROM outside_car_settlements WHERE business_id=? AND car_id=? AND status <> 'REVERSED'",[$this->businessId,$entry['car_id'] ?? '']);
             if (($settlement['cnt'] ?? 0) > 0) throw new Exception('Reverse the Outside Car settlement before reversing its expenses or applied advances.');
         }
+        if (in_array($identity, ['OUTSIDE_SOURCE_PAYMENT','OUTSIDE_SOURCE_PAYMENT_ADVANCE','OUTSIDE_CAR_AGENCY_EXPENSE'], true)) {
+            $movement = $this->db->fetch(
+                "SELECT id FROM outside_source_movements WHERE business_id=? AND journal_entry_id=? AND status='POSTED'",
+                [$this->businessId,$entry['id']]
+            );
+            if ($movement) {
+                $dependent = $this->db->fetch(
+                    "SELECT COUNT(*) cnt FROM outside_source_allocations
+                     WHERE business_id=? AND source_movement_id=? AND status='POSTED'
+                       AND journal_entry_id<>?",
+                    [$this->businessId,$movement['id'],$entry['id']]
+                );
+                if (($dependent['cnt']??0)>0) {
+                    throw new Exception('Reverse later Source Advance allocations or refunds before reversing this payment/expense.');
+                }
+            }
+        }
     }
 
     private function applyOutsideCarReversalEffects($entry, $reversalId) {
@@ -1060,16 +2167,22 @@ trait OutsideCarAccounting {
             'OUTSIDE_CAR_EXPENSE' => ['outside_car_expenses','journal_entry_id'],
             'OUTSIDE_BUYER_PAYMENT' => ['outside_car_buyer_payments','journal_entry_id'],
             'OUTSIDE_BUYER_REFUND' => ['outside_car_buyer_payments','journal_entry_id'],
+            'OUTSIDE_BUYER_BAD_DEBT' => ['outside_car_buyer_payments','journal_entry_id'],
             'OUTSIDE_ENTITY_SETTLEMENT_PAYMENT' => ['outside_entity_payments','journal_entry_id'],
             'OUTSIDE_RTO_RECEIPT' => ['outside_car_rto_movements','journal_entry_id'],
             'OUTSIDE_RTO_PAYMENT' => ['outside_car_rto_movements','journal_entry_id'],
             'OUTSIDE_RTO_ADJUSTMENT' => ['outside_car_rto_movements','journal_entry_id'],
+            'OUTSIDE_RTO_AGENCY_EXPENSE' => ['outside_car_rto_movements','journal_entry_id'],
+            'OUTSIDE_CAR_AGENCY_EXPENSE' => ['outside_car_expenses','journal_entry_id'],
+            'OUTSIDE_SOURCE_PAYMENT' => ['outside_source_movements','journal_entry_id'],
+            'OUTSIDE_SOURCE_PAYMENT_ADVANCE' => ['outside_source_movements','journal_entry_id'],
+            'OUTSIDE_SOURCE_REFUND' => ['outside_source_movements','journal_entry_id'],
         ];
         if (isset($map[$identity])) {
             [$table,$column] = $map[$identity];
             $this->db->query("UPDATE `$table` SET status = 'REVERSED' WHERE business_id = ? AND `$column` = ?",[$this->businessId,$entry['id']]);
         }
-        if ($identity === 'OUTSIDE_BUYER_PAYMENT' || $identity === 'OUTSIDE_BUYER_REFUND') {
+        if (in_array($identity, ['OUTSIDE_BUYER_PAYMENT','OUTSIDE_BUYER_REFUND','OUTSIDE_BUYER_BAD_DEBT'], true)) {
             $payment = $this->db->fetch("SELECT * FROM outside_car_buyer_payments WHERE business_id = ? AND journal_entry_id = ?",[$this->businessId,$entry['id']]);
             if ($payment) {
                 $delta = $identity === 'OUTSIDE_BUYER_REFUND' ? -floatval($payment['amount']) : floatval($payment['amount']);
@@ -1079,7 +2192,7 @@ trait OutsideCarAccounting {
                 $this->db->query("UPDATE outside_car_deals SET buyer_status=? WHERE business_id=? AND car_id=?",[$paid?'FULLY_PAID':'PARTLY_PAID',$this->businessId,$payment['car_id']]);
                 $this->db->query("UPDATE cars SET status=? WHERE business_id=? AND id=?",[$paid?'SOLD':'PENDING_PAYMENT',$this->businessId,$payment['car_id']]);
             }
-        } elseif ($identity === 'OUTSIDE_CAR_EXPENSE') {
+        } elseif ($identity === 'OUTSIDE_CAR_EXPENSE' || $identity === 'OUTSIDE_CAR_AGENCY_EXPENSE') {
             $expense = $this->db->fetch("SELECT * FROM outside_car_expenses WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
             if ($expense && $expense['responsibility'] === 'BUYER') {
                 $sale = $this->db->fetch("SELECT id FROM outside_car_sales WHERE business_id=? AND car_id=? AND status<>'REVERSED' ORDER BY created_at DESC LIMIT 1",[$this->businessId,$expense['car_id']]);
@@ -1098,12 +2211,52 @@ trait OutsideCarAccounting {
                 $this->db->query("UPDATE outside_car_advances SET applied_amount=0 WHERE business_id=? AND car_id=? AND direction='PAID_TO_ENTITY' AND status='POSTED'",[$this->businessId,$entry['car_id']]);
                 $this->db->query("UPDATE outside_car_expenses SET reclass_entry_id=NULL WHERE business_id=? AND car_id=? AND reclass_entry_id=?",[$this->businessId,$entry['car_id'],$entry['id']]);
             }
-        } elseif ($identity === 'OUTSIDE_CAR_SALE') {
+            if ($identity === 'OUTSIDE_CAR_AGENCY_EXPENSE') {
+                $movement = $this->db->fetch("SELECT * FROM outside_source_movements WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
+                if ($movement) {
+                    $this->db->query("UPDATE outside_source_allocations SET status='REVERSED' WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
+                    $this->db->query("UPDATE outside_source_movements SET status='REVERSED' WHERE id=?",[$movement['id']]);
+                }
+            }
+        } elseif (in_array($identity, ['OUTSIDE_SOURCE_PAYMENT','OUTSIDE_SOURCE_PAYMENT_ADVANCE'], true)) {
+            $this->db->query("UPDATE outside_source_allocations SET status='REVERSED' WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
+            $this->db->query("UPDATE outside_source_movements SET status='REVERSED' WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
+        } elseif ($identity === 'OUTSIDE_SOURCE_REFUND') {
+            $refund = $this->db->fetch("SELECT * FROM outside_source_movements WHERE business_id=? AND journal_entry_id=?",[$this->businessId,$entry['id']]);
+            if ($refund) {
+                $lots = $this->db->fetchAll(
+                    "SELECT source_movement_id,amount FROM outside_source_allocations
+                     WHERE business_id=? AND trigger_movement_id=? AND allocation_kind='REFUND_FROM_ADVANCE' AND status='POSTED'",
+                    [$this->businessId,$refund['id']]
+                );
+                foreach ($lots as $lot) {
+                    $this->db->query(
+                        "UPDATE outside_source_movements SET advance_refunded=GREATEST(0,advance_refunded-?) WHERE id=?",
+                        [$lot['amount'],$lot['source_movement_id']]
+                    );
+                }
+                $this->db->query("UPDATE outside_source_allocations SET status='REVERSED' WHERE business_id=? AND trigger_movement_id=?",[$this->businessId,$refund['id']]);
+                $this->db->query("UPDATE outside_source_movements SET status='REVERSED' WHERE id=?",[$refund['id']]);
+            }
+        } elseif ($identity === 'OUTSIDE_SOURCE_ADVANCE_ALLOCATION') {
+            $allocation = $this->db->fetch(
+                "SELECT * FROM outside_source_allocations WHERE business_id=? AND journal_entry_id=? AND status='POSTED'",
+                [$this->businessId,$entry['id']]
+            );
+            if ($allocation) {
+                $this->db->query("UPDATE outside_source_allocations SET status='REVERSED' WHERE id=?",[$allocation['id']]);
+                $this->db->query("UPDATE outside_source_movements SET allocated_amount=GREATEST(0,allocated_amount-?) WHERE id=?",[$allocation['amount'],$allocation['source_movement_id']]);
+                if (!empty($allocation['sale_id'])) {
+                    $this->db->query("UPDATE outside_car_sales SET source_advance_applied=GREATEST(0,source_advance_applied-?) WHERE id=?",[$allocation['amount'],$allocation['sale_id']]);
+                }
+            }
+        } elseif ($identity === 'OUTSIDE_CAR_SALE' || $identity === 'OUTSIDE_CAR_AGENCY_SALE') {
             $this->db->query("UPDATE outside_car_sales SET status='REVERSED', buyer_outstanding=0 WHERE business_id = ? AND sale_entry_id = ?",[$this->businessId,$entry['id']]);
             $tokens = $this->db->fetchAll("SELECT id FROM car_tokens WHERE business_id=? AND applied_sale_entry_id=?",[$this->businessId,$entry['id']]);
             foreach ($tokens as $token) $this->db->query("UPDATE car_tokens SET applied_amount=0,applied_sale_entry_id=NULL,status='OPEN' WHERE id=? AND business_id=?",[$token['id'],$this->businessId]);
             if (!empty($entry['car_id'])) {
-                $this->db->query("UPDATE outside_car_deals SET buyer_status='NO_BUYER', physical_status='WITH_TIRANGA', terms_locked_at=NULL WHERE business_id = ? AND car_id = ?",[$this->businessId,$entry['car_id']]);
+                $settlementStatus=$identity==='OUTSIDE_CAR_AGENCY_SALE'?'NOT_APPLICABLE':'CALCULATION_PENDING';
+                $this->db->query("UPDATE outside_car_deals SET buyer_status='NO_BUYER', physical_status='WITH_TIRANGA', rto_status='NOT_STARTED', settlement_status=?, terms_locked_at=NULL WHERE business_id = ? AND car_id = ?",[$settlementStatus,$this->businessId,$entry['car_id']]);
                 $this->db->query("UPDATE cars SET status='IN_STOCK',sold_date=NULL,sale_price=NULL,sale_commission_amount=0,buyer_name=NULL,buyer_party_id=NULL WHERE business_id=? AND id=?",[$this->businessId,$entry['car_id']]);
             }
         }
