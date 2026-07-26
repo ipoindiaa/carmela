@@ -39,6 +39,8 @@ $assertNotContains('outside-cars/create.php', 'name="commission_value"', 'Outsid
 $assertContains('outside-cars/agency_workspace.php', "require __DIR__.'/agency_workspace_simple.php'", 'Commission-agency records must open the simple progressive workspace by default.');
 $assertContains('outside-cars/agency_workspace_simple.php', 'No account entries yet', 'Simple Outside Car workspace must explain when the car account starts.');
 $assertContains('outside-cars/agency_workspace_simple.php', 'Choose one action. Only that form will open.', 'Simple Outside Car workspace must show only one entry form at a time.');
+$assertContains('outside-cars/view.php', 'ob_start();', 'Outside Car actions must keep a real HTTP redirect available.');
+$assertContains('outside-cars/agency_workspace.php', "redirect('/outside-cars/view.php?id='", 'Outside Car actions must return to the canonical live car page.');
 $assertNotContains('outside-cars/view.php', "'documents'=>'Documents'", 'Outside Car workspace must not show an intake Documents section.');
 $assertContains('outside-cars/view.php', "\$groups['gst_book']??[]", 'Outside Car workspace must include accessible GST Bank accounts.');
 $assertNotContains('outside-cars/agency_workspace.php', 'Approve Settlement', 'Commission-agency workspace must not show settlement approval.');

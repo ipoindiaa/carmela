@@ -1,4 +1,7 @@
 <?php
+// The workspace handles POST actions after the shared header is composed.
+// Buffer it so successful actions can still return a real HTTP 302.
+ob_start();
 $pageTitle='Outside Car Workspace';
 $pageIcon='<i class="ri-car-line"></i>';
 require_once __DIR__.'/../includes/header.php';
@@ -51,7 +54,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }
         elseif($action==='delivery')$engine->recordOutsideCarDelivery($carId,['delivery_date'=>post('delivery_date'),'delivery_time'=>post('delivery_time'),'odometer'=>post('odometer'),'fuel_level'=>post('fuel_level'),'keys_handed_over'=>post('keys_handed_over'),'documents_handed_over'=>post('documents_handed_over'),'receiver_name'=>post('receiver_name'),'override_used'=>post('override_used')==='1','override_reason'=>post('override_reason'),'promised_payment_date'=>post('promised_payment_date')]);
         else throw new Exception('Unknown Outside Car action.');
-        setFlash('success','Outside Car record updated and linked accounting/audit history saved.');redirect('view.php?id='.urlencode($carId).'#'.urlencode($action));
+        setFlash('success','Outside Car record updated and linked accounting/audit history saved.');redirect('/outside-cars/view.php?id='.urlencode($carId));
     }catch(Throwable $e){$actionError=$e->getMessage();}
 }
 $f=$engine->getOutsideCarFinancials($carId);$car=$f['car'];$sale=$f['sale'];$settlement=$f['settlement'];

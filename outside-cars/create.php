@@ -1,4 +1,5 @@
 <?php
+ob_start();
 $pageTitle = 'Register Outside Car';
 $pageIcon = '<i class="ri-add-circle-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
@@ -18,7 +19,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'commission_type'=>'FIXED','commission_value'=>0,
         ]);
         if($owns)$db->commit();
-        setFlash('success','Outside Car registered. Add details or record the first entry from its car page.');redirect('view.php?id='.urlencode($carId));
+        setFlash('success','Outside Car registered. Add details or record the first entry from its car page.');redirect('/outside-cars/view.php?id='.urlencode($carId));
     }catch(Throwable $e){if($owns&&$db->inTransaction())$db->rollBack();$error=$e->getMessage();}
 }
 ?>

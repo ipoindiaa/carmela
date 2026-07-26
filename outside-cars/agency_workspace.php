@@ -131,7 +131,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             throw new Exception('Unknown Outside Car action.');
         }
         setFlash('success',$successMessage);
-        redirect('view.php?id='.urlencode($carId).'#'.urlencode($action));
+        redirect('/outside-cars/view.php?id='.urlencode($carId));
     }catch(Throwable $e){
         $actionError=$e->getMessage();
     }
