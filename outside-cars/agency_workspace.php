@@ -1,6 +1,7 @@
 <?php
 // Included by view.php; that loader closes this workspace with includes/footer.php and the shared selector enhancer.
 $actionError='';
+$successMessage='Outside Car entry posted to the linked accounts and car account.';
 $submittedAction=$_SERVER['REQUEST_METHOD']==='POST'?post('action'):'';
 $draft=static function($action,$key,$default='')use($submittedAction){
     return $submittedAction===$action?post($key,$default):$default;
@@ -16,7 +17,52 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($accountAction&&$accountRequired&&!in_array($selectedAccount,$accountIds,true)){
             throw new Exception('Select an accessible Cash, Bank, or GST Bank account.');
         }
-        if($action==='expense'){
+        if($action==='update_details'){
+            $year=intval(post('year'))?:null;
+            if($year&&($year<1990||$year>intval(date('Y'))+1))throw new Exception('Enter a valid vehicle year.');
+            $expectedSale=round(parseDecimalInput(post('expected_sale_value')),2);
+            $commissionType=strtoupper(trim((string)post('commission_type','FIXED')));
+            $commissionValue=round(parseDecimalInput(post('commission_value')),4);
+            if($expectedSale<0)throw new Exception('Expected sale value cannot be negative.');
+            if(!in_array($commissionType,['FIXED','PERCENT'],true))throw new Exception('Select fixed or percentage commission.');
+            if($commissionValue<0||($commissionType==='PERCENT'&&$commissionValue>100))throw new Exception('Enter a valid commission value.');
+            $existing=$db->fetch(
+                "SELECT c.make,c.model,c.year,c.color,c.has_second_key,c.notes,d.expected_sale_value,d.commission_type,d.commission_value
+                 FROM cars c JOIN outside_car_deals d ON d.car_id=c.id AND d.business_id=c.business_id
+                 WHERE c.business_id=? AND c.id=?",
+                [$businessId,$carId]
+            );
+            $activeSale=$db->fetch("SELECT id FROM outside_car_sales WHERE business_id=? AND car_id=? AND status<>'REVERSED' LIMIT 1",[$businessId,$carId]);
+            if($activeSale&&(
+                abs($expectedSale-floatval($existing['expected_sale_value']))>0.009||
+                $commissionType!==$existing['commission_type']||
+                abs($commissionValue-floatval($existing['commission_value']))>0.0001
+            ))throw new Exception('Sale and commission are already posted. Reverse the sale before changing financial terms.');
+            $ownsDetails=!$db->inTransaction();
+            if($ownsDetails)$db->beginTransaction();
+            try{
+                $db->query(
+                    "UPDATE cars SET make=?,model=?,year=?,color=?,has_second_key=?,notes=?,expected_sale_price=?,expected_commission_amount=? WHERE business_id=? AND id=?",
+                    [trim((string)post('make')),trim((string)post('model')),$year,trim((string)post('color')),post('has_second_key')==='1'?1:0,trim((string)post('notes')),$expectedSale,$commissionType==='FIXED'?round($commissionValue,2):0,$businessId,$carId]
+                );
+                if(!$activeSale){
+                    $db->query(
+                        "UPDATE outside_car_deals SET expected_sale_value=?,commission_type=?,commission_value=? WHERE business_id=? AND car_id=?",
+                        [$expectedSale,$commissionType,$commissionValue,$businessId,$carId]
+                    );
+                }
+                Auth::auditUpdate(
+                    'car',$carId,$existing,
+                    ['make'=>post('make'),'model'=>post('model'),'year'=>$year,'color'=>post('color'),'has_second_key'=>post('has_second_key')==='1'?1:0,'notes'=>post('notes'),'expected_sale_value'=>$expectedSale,'commission_type'=>$commissionType,'commission_value'=>$commissionValue],
+                    'Outside Car details updated','outside_cars'
+                );
+                if($ownsDetails)$db->commit();
+            }catch(Throwable $detailsError){
+                if($ownsDetails&&$db->inTransaction())$db->rollBack();
+                throw $detailsError;
+            }
+            $successMessage='Outside Car details updated.';
+        }elseif($action==='expense'){
             $engine->recordOutsideCarExpense($carId,[
                 'amount'=>parseDecimalInput(post('amount')),
                 'gst_amount'=>parseDecimalInput(post('gst_amount')),
@@ -84,7 +130,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }else{
             throw new Exception('Unknown Outside Car action.');
         }
-        setFlash('success','Outside Car entry posted to the linked accounts and audit history.');
+        setFlash('success',$successMessage);
         redirect('view.php?id='.urlencode($carId).'#'.urlencode($action));
     }catch(Throwable $e){
         $actionError=$e->getMessage();
@@ -164,9 +210,17 @@ $delivery=$db->fetch(
 );
 $entries=$db->fetchAll(
     "SELECT je.id,je.reference_no,je.entry_date,je.created_at,je.narration,je.transaction_type,
-            je.entry_type_id,je.entry_amount,je.status,je.is_reversal,u.full_name created_by_name
+            je.entry_type_id,je.entry_amount,je.status,je.is_reversal,u.full_name created_by_name,
+            gateways.gateway_accounts
      FROM journal_entries je
      LEFT JOIN users u ON u.id=je.created_by AND u.business_id=je.business_id
+     LEFT JOIN (
+         SELECT jl.journal_entry_id,
+                GROUP_CONCAT(DISTINCT CASE WHEN a.entity_type IN ('CASH','BANK','GST') THEN a.name END ORDER BY a.name SEPARATOR ', ') gateway_accounts
+         FROM journal_lines jl
+         JOIN accounts a ON a.id=jl.account_id
+         GROUP BY jl.journal_entry_id
+     ) gateways ON gateways.journal_entry_id=je.id
      WHERE je.business_id=? AND je.car_id=?
      ORDER BY je.entry_date DESC,je.created_at DESC",
     [$businessId,$carId]
@@ -176,6 +230,10 @@ $latestAgreement=$agreements[0]??null;
 $commissionLabel=$car['commission_type']==='PERCENT'
     ? rtrim(rtrim(number_format(floatval($car['commission_value']),4,'.',''),'0'),'.').'% of C'
     : formatAmount($car['commission_value']);
+if(strtolower(trim((string)get('mode','simple')))!=='advanced'){
+    require __DIR__.'/agency_workspace_simple.php';
+    return;
+}
 ?>
 <div class="page-header"><div><h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1><p class="page-subtitle"><?= clean(trim($car['make'].' '.$car['model'])) ?> · Source Entity: <a href="source_statement.php?id=<?= urlencode($car['source_entity_id']) ?>"><?= clean($car['source_entity_name']) ?></a> · <span class="badge badge-blue">Commission Agency</span></p></div><div class="page-actions"><?php if($sale): ?><a href="../cars/loan_commission.php?car_id=<?= urlencode($carId) ?>" class="btn btn-outline"><i class="ri-bank-card-line"></i> Loan Commission</a><?php endif; ?><a href="sheet.php?id=<?= urlencode($carId) ?>" class="btn btn-outline"><i class="ri-printer-line"></i> Deal Statement</a><a href="index.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back</a></div></div>
 <?php if($actionError): ?><div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($actionError) ?></div><?php endif; ?>

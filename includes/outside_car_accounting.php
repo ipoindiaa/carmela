@@ -495,7 +495,7 @@ trait OutsideCarAccounting {
         $commissionValue = round(floatval($data['commission_value'] ?? 0), 4);
         if ($expectedSale < 0) throw new Exception('Expected sale value cannot be negative.');
         if (!in_array($commissionType, ['FIXED','PERCENT'], true)) throw new Exception('Select fixed or percentage commission.');
-        if ($commissionValue <= 0) throw new Exception('Commission value must be greater than zero.');
+        if ($commissionValue < 0) throw new Exception('Commission value cannot be negative.');
         if ($commissionType === 'PERCENT' && $commissionValue > 100) throw new Exception('Percentage commission cannot exceed 100%.');
 
         $owns = !$this->db->inTransaction();

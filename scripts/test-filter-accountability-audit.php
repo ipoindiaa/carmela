@@ -35,6 +35,10 @@ $assertContains('includes/header.php', 'reports/action_center.php', 'Action Cent
 $assertNotContains('outside-cars/create.php', 'Initial Advance', 'Outside Car intake must not offer an initial advance.');
 $assertNotContains('outside-cars/create.php', 'Documents &amp; Vehicle Identifiers', 'Outside Car intake must not require documents or vehicle identifiers.');
 $assertNotContains('outside-cars/create.php', 'uploadEntityAttachments(', 'Outside Car intake must not upload intake documents.');
+$assertNotContains('outside-cars/create.php', 'name="commission_value"', 'Outside Car registration must defer commission details to the car page.');
+$assertContains('outside-cars/agency_workspace.php', "require __DIR__.'/agency_workspace_simple.php'", 'Commission-agency records must open the simple progressive workspace by default.');
+$assertContains('outside-cars/agency_workspace_simple.php', 'No account entries yet', 'Simple Outside Car workspace must explain when the car account starts.');
+$assertContains('outside-cars/agency_workspace_simple.php', 'Choose one action. Only that form will open.', 'Simple Outside Car workspace must show only one entry form at a time.');
 $assertNotContains('outside-cars/view.php', "'documents'=>'Documents'", 'Outside Car workspace must not show an intake Documents section.');
 $assertContains('outside-cars/view.php', "\$groups['gst_book']??[]", 'Outside Car workspace must include accessible GST Bank accounts.');
 $assertNotContains('outside-cars/agency_workspace.php', 'Approve Settlement', 'Commission-agency workspace must not show settlement approval.');

@@ -6284,3 +6284,128 @@ table td .form-control {
 @media (max-width:768px){.outside-stats-grid,.outside-calc-stats,.outside-settlement-summary,.outside-abck-grid{grid-template-columns:1fr 1fr}.traditional-deal-sheet .deal-two-col{grid-template-columns:1fr}.outside-workspace-nav{top:0}.inline-action-form{grid-template-columns:1fr}.outside-step .card-body{padding:14px}}
 @media (max-width:480px){.outside-stats-grid,.outside-calc-stats,.outside-settlement-summary,.outside-abck-grid{grid-template-columns:1fr}}
 @media print{.outside-workspace-nav{display:none}.traditional-deal-sheet{border:1px solid #a33;padding:12px}.traditional-deal-sheet .deal-two-col{grid-template-columns:1.05fr .95fr}}
+
+/* Outside Car default view: progressive actions and one transparent car account. */
+.outside-simple-stats {
+    margin-bottom: var(--space-3);
+}
+
+.outside-simple-actions .card-body {
+    padding: var(--space-3);
+}
+
+.outside-action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.outside-action {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 76px;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.outside-action:hover,
+.outside-action:focus-visible {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-light);
+}
+
+.outside-action.is-primary {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-light);
+}
+
+.outside-action > i {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 9px;
+    background: var(--accent-blue-light);
+    color: var(--accent-blue);
+    font-size: 20px;
+}
+
+.outside-action span,
+.outside-action strong,
+.outside-action small {
+    display: block;
+}
+
+.outside-action strong {
+    font-size: 13px;
+}
+
+.outside-action small {
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.outside-entry-card {
+    border-top: 3px solid var(--accent-blue);
+}
+
+.outside-car-account table {
+    min-width: 820px;
+}
+
+.outside-info-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.outside-info-grid > div {
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+}
+
+.outside-info-grid span,
+.outside-info-grid strong {
+    display: block;
+}
+
+.outside-info-grid span {
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.outside-info-grid strong {
+    font-size: 13px;
+}
+
+@media (max-width: 1000px) {
+    .outside-action-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .outside-info-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .outside-action-grid,
+    .outside-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .outside-action {
+        min-height: 68px;
+    }
+}

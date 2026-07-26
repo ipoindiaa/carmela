@@ -19,6 +19,14 @@ $suffix=strtoupper(substr(str_replace('-','',Database::uuid()),0,6));
 $reg=static fn($state,$seed)=>$state.substr('ABCDEFGHIJKLMNOPQRSTUVWXYZ',abs(crc32($seed))%26,1).substr('0000'.strval((abs(crc32($seed.'n'))%9000)+1000),-4);
 $db->beginTransaction();
 try{
+    $registeredCar=$engine->createOutsideCar([
+        'registration_no'=>$reg('GJ04Z',$suffix.'register'),'received_date'=>date('Y-m-d'),
+        'source_name'=>'Registration Source '.$suffix,'source_phone'=>'9876501200','source_kind'=>'OTHER_CAR_MELA',
+    ]);
+    $registeredDeal=$db->fetch("SELECT commission_value FROM outside_car_deals WHERE car_id=?",[$registeredCar]);
+    $registeredEntries=$db->fetch("SELECT COUNT(*) count FROM journal_entries WHERE business_id=? AND car_id=?",[$business['id'],$registeredCar]);
+    outsideAssert(floatval($registeredDeal['commission_value'])===0.0&&intval($registeredEntries['count'])===0,'Outside Car can be registered before details and its car account starts with the first financial entry');
+
     $car1=$engine->createOutsideCar([
         'registration_no'=>$reg('GJ05A',$suffix.'one'),'received_date'=>date('Y-m-d'),'make'=>'Test','model'=>'Agency Fixed',
         'source_name'=>'Agency Source '.$suffix,'source_phone'=>'9876501234','source_kind'=>'OTHER_CAR_MELA',
