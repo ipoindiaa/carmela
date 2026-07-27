@@ -1356,6 +1356,10 @@ class AccountingEngine {
         if ($salePrice <= 0) throw new Exception('Sale price must be greater than zero.');
         $commissionAmount = round(floatval($commissionAmount), 2);
         if ($commissionAmount < 0) throw new Exception('Commission cannot be negative.');
+        $narration = trim((string) $narration);
+        if ($narration === '') {
+            $narration = "Car sold - {$car['registration_no']}";
+        }
 
         $party = $this->resolveParty($buyerPartyId, $buyerName, $buyerPhone, 'BUYER', ['BUYER', 'DEBTOR']);
         $partyId = $party['id'];
@@ -1375,7 +1379,7 @@ class AccountingEngine {
         if ($received < 0) throw new Exception('Amount received now cannot be negative.');
         if ($received - $remainingAfterToken > 0.01) throw new Exception('Amount received now cannot exceed the amount remaining after token adjustment.');
         $outstanding = round($remainingAfterToken - $received, 2);
-        $profit = ($netSalePrice + $commissionAmount) - $totalCost;
+        $profit = ($netSalePrice + $commissionAmount) - $totalCost - $this->getCarRtoPnlExpense($carId);
 
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
@@ -1984,17 +1988,6 @@ class AccountingEngine {
         if ($gstAmount > 0 && !empty($gstInputAccount['id'])) $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => 'GST input for RTO'];
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => 'Paid RTO expense'];
         $entryId = $this->postJournalEntry('RTO_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
-
-        if ($baseAmount > 0) {
-            $this->postJournalEntry('RTO_EXPENSE', $date, "Allocate RTO to {$car['registration_no']}", [
-                ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "RTO {$rto['rto_type']}"],
-                ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => 'RTO allocated to car'],
-            ], [
-                'car_id' => $carId,
-                'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
-                'entry_amount' => 0,
-            ]);
-        }
 
         $this->db->query(
             "UPDATE rto_records
@@ -3898,6 +3891,30 @@ class AccountingEngine {
         return floatval($total['total_cost'] ?? 0) + floatval($employeeCommission['total'] ?? 0);
     }
 
+    /**
+     * RTO expense that remains in the Profit & Loss account for this car.
+     *
+     * Older entries may contain a matching internal allocation that credited
+     * RTO Expense and moved the amount into the car asset. Summing the actual
+     * RTO Expense ledger lines keeps those historical entries at zero here,
+     * while new direct-expense entries remain part of car-wise profit.
+     */
+    public function getCarRtoPnlExpense($carId) {
+        $row = $this->db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE -jl.amount END), 0) AS total
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             JOIN accounts a ON a.id = jl.account_id
+             WHERE je.business_id = ?
+               AND je.car_id = ?
+               AND je.status IN ('POSTED','REVERSED')
+               AND a.business_id = ?
+               AND a.code = 'RTO-EXP'",
+            [$this->businessId, $carId, $this->businessId]
+        );
+        return round(max(0, floatval($row['total'] ?? 0)), 2);
+    }
+
     public function syncCarPartyLinks($carId) {
         $car = $this->db->fetch(
             "SELECT * FROM cars WHERE id = ? AND business_id = ?",
@@ -3986,10 +4003,11 @@ class AccountingEngine {
             [$this->businessId, $carId]
         );
         $rtoRecovered = floatval($rtoRecovery['total'] ?? 0);
+        $rtoExpense = $this->getCarRtoPnlExpense($carId);
         $loanCommission = $this->db->fetch("SELECT COALESCE(SUM(commission_amount),0) total FROM car_loan_commissions WHERE business_id=? AND car_id=? AND status<>'REVERSED'",[$this->businessId,$carId]);
         $loanCommissionIncome = floatval($loanCommission['total'] ?? 0);
         $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome;
-        $profit = $netBusinessRevenue - $totalCost;
+        $profit = $netBusinessRevenue - $totalCost - $rtoExpense;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
             "SELECT pps.*, p.name as partner_name
@@ -4003,14 +4021,17 @@ class AccountingEngine {
         return [
             'car' => $car,
             'purchase_price' => $car['purchase_price'],
-            'total_expenses' => $totalCost - $car['purchase_price'],
-            'total_cost' => $totalCost,
+            'total_expenses' => ($totalCost - $car['purchase_price']) + $rtoExpense,
+            'total_cost' => $totalCost + $rtoExpense,
+            'inventory_cost' => $totalCost,
             'sale_price' => $salePrice,
             'sale_commission_amount' => $saleCommissionAmount,
             'sale_gst_amount' => $saleGstAmount,
             'net_sale_price' => $netSalePrice,
             'total_sale_realisation' => $totalSaleRealisation,
             'rto_recovered' => $rtoRecovered,
+            'rto_expense' => $rtoExpense,
+            'rto_net' => $rtoRecovered - $rtoExpense,
             'loan_commission_income' => $loanCommissionIncome,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
@@ -4476,7 +4497,7 @@ class AccountingEngine {
     public function getTrialBalance($asOnDate = null) {
         $asOnDate = $asOnDate ?: date('Y-m-d');
         $rows = $this->db->fetchAll(
-            "SELECT a.id, a.code, a.name, a.group_name, a.sub_group, a.entity_type,
+            "SELECT a.id, a.code, a.name, a.group_name, a.sub_group, a.entity_type, a.entity_id,
                     a.opening_balance, a.opening_balance_type, a.opening_entry_id,
                     COALESCE(SUM(CASE WHEN je.status IN ('POSTED','REVERSED') AND je.entry_date <= ? AND jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) as posted_dr,
                     COALESCE(SUM(CASE WHEN je.status IN ('POSTED','REVERSED') AND je.entry_date <= ? AND jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) as posted_cr
@@ -4572,6 +4593,8 @@ class AccountingEngine {
                 'code' => $row['code'],
                 'name' => $row['name'],
                 'sub_group' => $row['sub_group'],
+                'entity_type' => $row['entity_type'] ?? null,
+                'entity_id' => $row['entity_id'] ?? null,
                 'amount' => $row['balance_amount'],
                 'balance_type' => $row['balance_type'],
             ];

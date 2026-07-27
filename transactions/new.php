@@ -174,7 +174,7 @@ $resolveRtoRecord = function () use ($db, $businessId, $userId) {
         throw new Exception('Select a valid car for RTO entry.');
     }
     if ($rtoType === '') {
-        throw new Exception('Enter RTO work name.');
+        throw new Exception('Enter RTO narration.');
     }
 
     $record = [
@@ -646,7 +646,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Narration / Description *</label>
+                    <label class="form-label" id="narration-label">Narration / Description *</label>
                     <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" value="<?= clean($preselectedNarration) ?>" required>
                 </div>
             </div>
@@ -992,7 +992,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </button>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">RTO Work *</label>
+                        <label class="form-label">RTO Narration *</label>
                         <input type="text" name="rto_type_name" class="form-control" placeholder="Transfer, NOC, passing, tax">
                     </div>
                 </div>
@@ -1818,11 +1818,22 @@ function syncSaleAmountUi() {
     const amountInput = document.querySelector('input[name=\"amount\"]');
     const salePriceInput = document.querySelector('input[name=\"sale_price\"]');
     const commissionInput = document.querySelector('input[name=\"sale_commission_amount\"]');
+    const narrationInput = document.querySelector('input[name=\"narration\"]');
+    const narrationLabel = document.getElementById('narration-label');
     if (!amountGroup || !amountInput) return;
 
     const isCarSale = txnType === 'CAR_SALE';
     amountGroup.style.display = isCarSale ? 'none' : '';
     amountInput.required = !isCarSale;
+    if (narrationInput) {
+        narrationInput.required = !isCarSale;
+        narrationInput.placeholder = isCarSale
+            ? 'Optional — system will use the car number'
+            : 'Brief description of this entry';
+    }
+    if (narrationLabel) {
+        narrationLabel.textContent = isCarSale ? 'Narration / Description (Optional)' : 'Narration / Description *';
+    }
     if (isCarSale) {
         const salePrice = parseNumericString(salePriceInput?.value || '0');
         const commission = parseNumericString(commissionInput?.value || '0');

@@ -208,6 +208,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
+        <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?><a href="#payment-history" class="btn btn-outline btn-sm"><i class="ri-wallet-3-line"></i> Payment History</a><?php endif; ?>
         <?php if (!empty($car['buyer_party_id'])): ?><a href="loan_commission.php?car_id=<?= urlencode($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-bank-card-line"></i> Loan Commission</a><?php endif; ?>
         <a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-shield-2-line"></i> RTO</a>
         <a href="list.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
@@ -266,6 +267,7 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($sellerOutstanding) ?></div><div class="stat-label">Purchase Pending</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($rtoSpent) ?></div><div class="stat-label">RTO Spent</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($rtoRecovered) ?></div><div class="stat-label">RTO Recovered</div></div>
+    <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($profitability['loan_commission_income'] ?? 0) ?></div><div class="stat-label">Loan Commission Income</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($tokenSummary['available']) ?></div><div class="stat-label">Token Held</div></div>
 </div>
 
@@ -483,7 +485,8 @@ function removeFundingEditRow(button) {
 </div>
 
 <div class="grid-2 car-support-grid" style="margin-top:24px;">
-    <div class="card">
+    <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?>
+    <div class="card" id="payment-history">
         <div class="card-header"><h3><i class="ri-wallet-3-line"></i> Buyer / Seller Payment History</h3></div>
         <div class="card-body">
             <h4 class="attachment-group-title">Buyer Receipts</h4>
@@ -498,6 +501,7 @@ function removeFundingEditRow(button) {
             </tbody></table><?php endif; ?>
         </div>
     </div>
+    <?php endif; ?>
     <div class="card">
         <div class="card-header"><h3><i class="ri-key-2-line"></i> Second Key</h3></div>
         <div class="card-body">
@@ -547,7 +551,7 @@ function removeFundingEditRow(button) {
 <div class="card" style="margin-top:24px;">
     <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
     <div class="card-body" style="padding:0;">
-        <table><thead><tr><th>Work</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
+        <table><thead><tr><th>RTO Narration</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
             <?php if (empty($rtoHistory)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
             <?php foreach ($rtoHistory as $rto): ?><tr>
                 <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= ($rto['money_type'] === 'RECEIVE') ? 'badge-green' : 'badge-red' ?>"><?= $rto['money_type'] === 'RECEIVE' ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['received_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['spent_amount']) ?></td>

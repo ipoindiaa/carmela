@@ -65,7 +65,7 @@ if ($canReadOutside) {
             $addItem(['type'=>'SETTLEMENT','priority'=>'HIGH','car_id'=>$row['car_id'],'registration_no'=>$row['registration_no'],'title'=>'Approve deal settlement','detail'=>'Status: ' . str_replace('_',' ',strtolower($row['settlement_status'])),'date'=>$date,'owner'=>'Approver','link'=>$link . '#settlement']);
         }
         if (!empty($row['sale_id']) && $row['rto_status'] !== 'COMPLETED') {
-            $addItem(['type'=>'RTO','priority'=>$row['rto_status']==='IN_PROGRESS'?'MEDIUM':'LOW','car_id'=>$row['car_id'],'registration_no'=>$row['registration_no'],'title'=>'Complete RTO work','detail'=>'Status: ' . str_replace('_',' ',strtolower($row['rto_status'])),'date'=>$date,'owner'=>'RTO Desk','link'=>$link . '#rto']);
+            $addItem(['type'=>'RTO','priority'=>$row['rto_status']==='IN_PROGRESS'?'MEDIUM':'LOW','car_id'=>$row['car_id'],'registration_no'=>$row['registration_no'],'title'=>'Complete RTO process','detail'=>'Status: ' . str_replace('_',' ',strtolower($row['rto_status'])),'date'=>$date,'owner'=>'RTO Desk','link'=>$link . '#rto']);
         }
         if (!empty($row['sale_id']) && $row['agreement_status'] !== 'SIGNED') {
             $addItem(['type'=>'AGREEMENT','priority'=>'HIGH','car_id'=>$row['car_id'],'registration_no'=>$row['registration_no'],'title'=>$row['agreement_status']==='DRAFT'?'Generate agreement':'Obtain signed agreement','detail'=>'Status: ' . strtolower($row['agreement_status']),'date'=>$date,'owner'=>'Documentation','link'=>$link . '#agreement']);

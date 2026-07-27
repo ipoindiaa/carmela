@@ -29,7 +29,7 @@ $resolveRtoCase = function () use ($db, $businessId, $userId) {
     if ($carId === '') throw new Exception('Select car for RTO entry.');
     $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
     if (!$car) throw new Exception('Select a valid car.');
-    if ($rtoType === '') throw new Exception('RTO work name is required.');
+    if ($rtoType === '') throw new Exception('RTO narration is required.');
 
     $record = [
         'id' => Database::uuid(),
@@ -98,6 +98,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $q = trim((string) get('q', ''));
+$filterDate = trim((string) get('date', ''));
+if ($filterDate !== '') {
+    $parsedFilterDate = DateTime::createFromFormat('Y-m-d', $filterDate);
+    if (!$parsedFilterDate || $parsedFilterDate->format('Y-m-d') !== $filterDate) {
+        $filterDate = '';
+    }
+}
 $showDeleted = get('show') === 'deleted';
 $where = "WHERE r.business_id = ? AND r.status " . ($showDeleted ? "= 'CANCELLED'" : "<> 'CANCELLED'");
 $params = [$businessId];
@@ -110,6 +117,25 @@ if ($q !== '') {
     $where .= " AND (r.rto_type LIKE ? OR r.party_name LIKE ? OR r.agent_name LIKE ? OR c.registration_no LIKE ? OR c.make LIKE ? OR c.model LIKE ?)";
     array_push($params, $needle, $needle, $needle, $needle, $needle, $needle);
 }
+if ($filterDate !== '') {
+    $where .= " AND (
+        EXISTS (
+            SELECT 1 FROM journal_entries rto_expense_entry
+            WHERE rto_expense_entry.id = r.expense_entry_id
+              AND rto_expense_entry.business_id = r.business_id
+              AND rto_expense_entry.entry_date = ?
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM rto_recoveries rr_filter
+            JOIN journal_entries rto_recovery_entry ON rto_recovery_entry.id = rr_filter.journal_entry_id
+            WHERE rr_filter.rto_record_id = r.id
+              AND rr_filter.business_id = r.business_id
+              AND rto_recovery_entry.entry_date = ?
+        )
+    )";
+    array_push($params, $filterDate, $filterDate);
+}
 
 $records = $db->fetchAll(
     "SELECT r.*, c.registration_no, c.make, c.model, c.status AS car_status
@@ -120,7 +146,47 @@ $records = $db->fetchAll(
     $params
 );
 
-$hasCaseFilter = $q !== '' || $selectedCarId !== '' || $showDeleted;
+$hasCaseFilter = $q !== '' || $selectedCarId !== '' || $filterDate !== '' || $showDeleted;
+$filteredCarIds = array_values(array_unique(array_filter(array_column($records, 'car_id'))));
+$rtoPnlWhere = "WHERE je.business_id = ?
+    AND je.status IN ('POSTED','REVERSED')
+    AND a.code IN ('RTO-REC','RTO-EXP')";
+$rtoPnlParams = [$businessId];
+if ($selectedCarId !== '') {
+    $rtoPnlWhere .= ' AND je.car_id = ?';
+    $rtoPnlParams[] = $selectedCarId;
+} elseif ($hasCaseFilter) {
+    if ($filteredCarIds) {
+        $rtoPnlPlaceholders = implode(',', array_fill(0, count($filteredCarIds), '?'));
+        $rtoPnlWhere .= " AND je.car_id IN ($rtoPnlPlaceholders)";
+        $rtoPnlParams = array_merge($rtoPnlParams, $filteredCarIds);
+    } else {
+        $rtoPnlWhere .= ' AND 1 = 0';
+    }
+}
+if ($filterDate !== '') {
+    $rtoPnlWhere .= ' AND je.entry_date = ?';
+    $rtoPnlParams[] = $filterDate;
+}
+$rtoPnlRows = $db->fetchAll(
+    "SELECT a.code,
+            COALESCE(SUM(CASE
+                WHEN a.group_name = 'INCOME' AND jl.entry_type = 'CR' THEN jl.amount
+                WHEN a.group_name = 'INCOME' THEN -jl.amount
+                WHEN a.group_name = 'EXPENSE' AND jl.entry_type = 'DR' THEN jl.amount
+                ELSE -jl.amount
+            END), 0) AS amount
+     FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.journal_entry_id
+     JOIN accounts a ON a.id = jl.account_id
+     $rtoPnlWhere
+     GROUP BY a.code",
+    $rtoPnlParams
+);
+$rtoPnlByCode = array_column($rtoPnlRows, 'amount', 'code');
+$rtoPnlIncome = floatval($rtoPnlByCode['RTO-REC'] ?? 0);
+$rtoPnlExpense = floatval($rtoPnlByCode['RTO-EXP'] ?? 0);
+$rtoPnlNet = round($rtoPnlIncome - $rtoPnlExpense, 2);
 if ($hasCaseFilter) {
     $filteredRecovered = array_sum(array_map(static fn($record) => (float) ($record['recovered_amount'] ?? 0), $records));
     $filteredSpent = array_sum(array_map(static fn($record) => (float) ($record['expense_amount'] ?? 0), $records));
@@ -143,7 +209,7 @@ $cars = $db->fetchAll(
     [$businessId]
 );
 
-$rtoEntryWhere = "je.transaction_type IN ('RTO_EXPENSE', 'RTO_RECOVERY')";
+$rtoEntryWhere = "(je.transaction_type IN ('RTO_EXPENSE', 'RTO_RECOVERY') AND ABS(COALESCE(je.entry_amount, 0)) > 0.009)";
 $rtoEntryParams = [$businessId];
 if ($selectedCarId === '' && !empty($rtoOpeningAccount['id'])) {
     $rtoEntryWhere = "($rtoEntryWhere OR EXISTS (
@@ -156,8 +222,11 @@ if ($selectedCarId !== '') {
     $rtoEntryWhere .= ' AND je.car_id = ?';
     $rtoEntryParams[] = $selectedCarId;
 }
+if ($filterDate !== '') {
+    $rtoEntryWhere .= ' AND je.entry_date = ?';
+    $rtoEntryParams[] = $filterDate;
+}
 if ($hasCaseFilter && $selectedCarId === '') {
-    $filteredCarIds = array_values(array_unique(array_filter(array_column($records, 'car_id'))));
     if ($filteredCarIds) {
         $filteredCarPlaceholders = implode(',', array_fill(0, count($filteredCarIds), '?'));
         $rtoEntryWhere .= " AND je.car_id IN ($filteredCarPlaceholders)";
@@ -178,6 +247,15 @@ $rtoEntries = $db->fetchAll(
      LIMIT 200",
     $rtoEntryParams
 );
+$rtoDraft = $_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'save_rto_entry' ? $_POST : [];
+$rtoDraftValue = static fn(string $key, string $default = ''): string => trim((string) ($rtoDraft[$key] ?? $default));
+$clearFilterParams = $selectedCarId !== '' ? ['car_id' => $selectedCarId] : [];
+$archiveFilterParams = array_filter([
+    'car_id' => $selectedCarId,
+    'q' => $q,
+    'date' => $filterDate,
+    'show' => $showDeleted ? 'active' : 'deleted',
+], static fn($value) => $value !== '');
 ?>
 
 <div class="page-header">
@@ -192,8 +270,13 @@ $rtoEntries = $db->fetchAll(
     <div class="stat-card"><div class="stat-value <?= ($stats['opening'] ?? 0) >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($stats['opening'] ?? 0, true) ?></div><div class="stat-label"><?= $hasCaseFilter ? 'Opening Excluded From Filter' : 'Opening RTO Balance' ?></div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($stats['recovered'] ?? 0) ?></div><div class="stat-label">RTO Received From Buyer</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($stats['spent'] ?? 0) ?></div><div class="stat-label">RTO Paid To Agent / Office</div></div>
+    <div class="stat-card"><div class="stat-value <?= $rtoPnlNet >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($rtoPnlNet, true) ?></div><div class="stat-label">P&amp;L RTO Net</div><div class="table-secondary">Income <?= formatAmount($rtoPnlIncome) ?> · Expense <?= formatAmount($rtoPnlExpense) ?></div></div>
     <?php $rtoNet = (float) ($stats['net'] ?? 0); ?>
     <div class="stat-card"><div class="stat-value <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>"><?= formatAmount($rtoNet, true) ?></div><div class="stat-label">Net RTO Balance</div></div>
+</div>
+<div class="alert alert-info">
+    <i class="ri-information-line"></i>
+    <div><strong>RTO is included in company profit.</strong><span>RTO money received is income and RTO money paid is expense. Only the net affects Profit &amp; Loss; the Cash/Bank movement remains visible on the Dashboard and in All Entries for a complete audit trail.</span></div>
 </div>
 <?php if ($hasCaseFilter): ?><div class="form-hint" style="margin:-8px 0 16px;">Summary and transaction history are limited to the matching RTO cases. Clear filters to see the complete RTO book.</div><?php endif; ?>
 
@@ -207,10 +290,11 @@ $rtoEntries = $db->fetchAll(
 <div class="filter-bar compact-filter-bar">
     <form method="GET" class="compact-filter-form">
         <?php if ($selectedCarId !== ''): ?><input type="hidden" name="car_id" value="<?= clean($selectedCarId) ?>"><?php endif; ?>
-        <input type="search" name="q" class="form-control" value="<?= clean($q) ?>" placeholder="Search car, buyer, agent, work name">
-        <button class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
-        <a href="list.php<?= $selectedCarId !== '' ? '?car_id=' . urlencode($selectedCarId) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
-        <a href="list.php?show=<?= $showDeleted ? 'active' : 'deleted' ?>" class="btn btn-outline btn-sm"><i class="ri-archive-line"></i> <?= $showDeleted ? 'Active Records' : 'Deleted Records' ?></a>
+        <div><label class="form-label">Specific Day</label><input type="date" name="date" class="form-control" value="<?= clean($filterDate) ?>"></div>
+        <div><label class="form-label">Search</label><input type="search" name="q" class="form-control" value="<?= clean($q) ?>" placeholder="Car, buyer, agent, RTO narration"></div>
+        <button class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
+        <a href="list.php<?= $clearFilterParams ? '?' . clean(http_build_query($clearFilterParams)) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
+        <a href="list.php?<?= clean(http_build_query($archiveFilterParams)) ?>" class="btn btn-outline btn-sm"><i class="ri-archive-line"></i> <?= $showDeleted ? 'Active Records' : 'Deleted Records' ?></a>
     </form>
 </div>
 
@@ -228,53 +312,53 @@ $rtoEntries = $db->fetchAll(
             <div class="form-group">
                 <label class="form-label">Money Type *</label>
                 <select name="entry_mode" class="form-control searchable-select">
-                    <option value="RECEIVE">RTO Money Received</option>
-                    <option value="EXPENSE">RTO Expense Paid</option>
+                    <option value="RECEIVE" <?= $rtoDraftValue('entry_mode', 'RECEIVE') === 'RECEIVE' ? 'selected' : '' ?>>RTO Money Received</option>
+                    <option value="EXPENSE" <?= $rtoDraftValue('entry_mode') === 'EXPENSE' ? 'selected' : '' ?>>RTO Expense Paid</option>
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Date *</label>
-                <input type="date" name="entry_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                <input type="date" name="entry_date" class="form-control" value="<?= clean($rtoDraftValue('entry_date', date('Y-m-d'))) ?>" required>
             </div>
             <div class="form-group">
                 <label class="form-label">Cash / Bank Account *</label>
                 <select name="payment_account" class="form-control searchable-select" required>
                     <option value="">Select account</option>
                     <?php foreach ($paymentAccounts as $account): ?>
-                        <option value="<?= clean($account['id']) ?>"><?= clean($account['name'] . ' (' . $account['code'] . ')') ?></option>
+                        <option value="<?= clean($account['id']) ?>" <?= $rtoDraftValue('payment_account') === $account['id'] ? 'selected' : '' ?>><?= clean($account['name'] . ' (' . $account['code'] . ')') ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Amount (₹) *</label>
-                <input name="amount" class="form-control currency-input" placeholder="0" required>
+                <input name="amount" class="form-control currency-input" value="<?= clean($rtoDraftValue('amount')) ?>" placeholder="0" required>
             </div>
             <div class="form-group">
                 <label class="form-label">Car *</label>
                 <select name="car_id" class="form-control searchable-select" required>
                     <option value="">Select car</option>
                     <?php foreach ($cars as $car): ?>
-                        <option value="<?= clean($car['id']) ?>" <?= $selectedCarId === $car['id'] ? 'selected' : '' ?>>
+                        <option value="<?= clean($car['id']) ?>" <?= $rtoDraftValue('car_id', $selectedCarId) === $car['id'] ? 'selected' : '' ?>>
                             <?= clean(formatRegistrationNo($car['registration_no']) . ' - ' . trim(($car['make'] ?? '') . ' ' . ($car['model'] ?? ''))) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">RTO Work *</label>
-                <input name="rto_type" class="form-control" placeholder="Transfer, NOC, tax, passing" required>
+                <label class="form-label">RTO Narration *</label>
+                <input name="rto_type" class="form-control" value="<?= clean($rtoDraftValue('rto_type')) ?>" placeholder="Transfer, NOC, tax, passing" required>
             </div>
             <div class="form-group">
                 <label class="form-label">Buyer / Customer</label>
-                <input name="party_name" class="form-control" placeholder="Who gives RTO money">
+                <input name="party_name" class="form-control" value="<?= clean($rtoDraftValue('party_name')) ?>" placeholder="Who gives RTO money">
             </div>
             <div class="form-group">
                 <label class="form-label">Agent / Office</label>
-                <input name="agent_name" class="form-control" placeholder="Who receives expense payment">
+                <input name="agent_name" class="form-control" value="<?= clean($rtoDraftValue('agent_name')) ?>" placeholder="Who receives expense payment">
             </div>
             <div class="form-group rto-span-2">
-                <label class="form-label">Narration</label>
-                <input name="narration" class="form-control" placeholder="Short note for this RTO entry">
+                <label class="form-label">Additional Note</label>
+                <input name="narration" class="form-control" value="<?= clean($rtoDraftValue('narration')) ?>" placeholder="Optional file, receipt, or follow-up note">
             </div>
             <div class="form-group rto-span-2">
                 <label class="form-label">Files / Vouchers</label>
@@ -294,7 +378,7 @@ $rtoEntries = $db->fetchAll(
         <table>
             <thead>
                 <tr>
-                    <th>Car / Work</th>
+                    <th>Car / RTO Narration</th>
                     <th>Buyer / Agent</th>
                     <th>Money Type</th>
                     <th class="text-right">Received</th>

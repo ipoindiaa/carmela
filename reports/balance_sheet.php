@@ -8,9 +8,37 @@ $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $asOnDate = get('as_on', date('Y-m-d'));
 $bs = $engine->getBalanceSheet($asOnDate);
+$inventorySignedTotal = 0.0;
+$balanceSheetAssets = [];
+foreach ($bs['ASSET'] as $asset) {
+    if (($asset['entity_type'] ?? '') === 'CAR') {
+        $inventorySignedTotal += ($asset['balance_type'] ?? 'DR') === 'DR'
+            ? floatval($asset['amount'])
+            : -floatval($asset['amount']);
+        continue;
+    }
+    $balanceSheetAssets[] = $asset;
+}
+if (abs($inventorySignedTotal) >= 0.005) {
+    $balanceSheetAssets[] = [
+        'id' => null,
+        'code' => 'CAR-INVENTORY-SUMMARY',
+        'name' => 'Vehicle Inventory (Consolidated)',
+        'sub_group' => 'Inventory',
+        'amount' => abs(round($inventorySignedTotal, 2)),
+        'balance_type' => $inventorySignedTotal >= 0 ? 'DR' : 'CR',
+        'report_url' => Auth::hasBookAccess('car_profitability', 'read')
+            ? APP_URL . 'reports/car_inventory.php?' . http_build_query(['as_on' => $asOnDate])
+            : null,
+    ];
+}
+$bs['ASSET'] = $balanceSheetAssets;
 $canViewLedger = Auth::hasBookAccess('general_ledger', 'read');
 $ledgerFromDate = getCurrentFY($asOnDate) . '-04-01';
 $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate, $asOnDate): ?string {
+    if (!empty($item['report_url'])) {
+        return $item['report_url'];
+    }
     if (!$canViewLedger || empty($item['id'])) {
         return null;
     }
@@ -33,6 +61,11 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
         <span class="text-muted" style="font-size:13px;">As on <?= formatDate($asOnDate) ?></span>
         <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="ri-information-line"></i>
+    <div><strong>Car-wise inventory has moved to the Car Inventory report.</strong><span>The Balance Sheet keeps one consolidated Vehicle Inventory asset so Total Assets remain complete and balanced.</span></div>
 </div>
 
 <div class="grid-2">

@@ -85,7 +85,7 @@ define('BOOK_PERMISSIONS', [
     ],
     'rto_book' => [
         'label' => 'RTO Book',
-        'description' => 'Manage car-wise RTO work, expenses, and recoveries',
+        'description' => 'Manage car-wise RTO narration, expenses, recoveries, and net profit',
     ],
     'outside_cars' => [
         'label' => 'Outside Cars',

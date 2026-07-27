@@ -77,6 +77,18 @@ try {
     ]);
     $rtoExpenseId = $engine->rtoExpense($rtoId, $carId, 300, date('Y-m-d'), $cash['id'], 'Taxonomy RTO expense');
     assertEntryTaxonomy(debitAccountCode($db, $rtoExpenseId) === 'RTO-EXP', 'RTO Expense posts to one canonical RTO expense account');
+    $rtoAllocation = $db->fetch(
+        "SELECT COUNT(*) AS cnt FROM journal_entries
+         WHERE business_id = ? AND car_id = ? AND transaction_type = 'RTO_EXPENSE'
+           AND entry_type_id = ? AND status = 'POSTED'",
+        [$business['id'], $carId, systemEntryTypeId('INTERNAL_ALLOCATION')]
+    );
+    assertEntryTaxonomy(intval($rtoAllocation['cnt'] ?? 0) === 0, 'New RTO expense remains in Profit & Loss instead of being cancelled into car inventory');
+    $rtoProfitability = $engine->getCarProfitability($carId);
+    assertEntryTaxonomy(
+        abs(floatval($rtoProfitability['rto_expense'] ?? 0) - 300) < 0.01,
+        'Car-wise profitability includes its journal-backed RTO expense'
+    );
 
     foreach (['CAR-REPAIR', 'GEN-EXP', 'RTO-EXP'] as $code) {
         $count = $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ? AND code = ?", [$business['id'], $code]);
@@ -88,6 +100,21 @@ try {
     $customEntry = $db->fetch("SELECT entry_type_id FROM journal_entries WHERE id = ?", [$customEntryId]);
     assertEntryTaxonomy($customEntry['entry_type_id'] === customEntryTypeId($customAccountId), 'Custom entry type remains a separate top-level type with stable identity');
     assertEntryTaxonomy(debitAccountCode($db, $customEntryId) === 'TX-CUSTOM-' . $suffix, 'Custom entry posts directly to its own ledger account');
+
+    $saleEntryId = $engine->carSale(
+        $carId,
+        2000,
+        date('Y-m-d'),
+        $cash['id'],
+        '',
+        'Narration Optional Buyer ' . $suffix,
+        2000
+    );
+    $saleEntry = $db->fetch("SELECT narration FROM journal_entries WHERE id = ?", [$saleEntryId]);
+    assertEntryTaxonomy(
+        ($saleEntry['narration'] ?? '') === "Car sold - $registration",
+        'Sold Car accepts blank narration and writes a transparent system narration'
+    );
 
     $db->rollBack();
     echo "Entry taxonomy regression checks completed and test data rolled back.\n";

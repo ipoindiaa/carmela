@@ -27,6 +27,15 @@ foreach (['buyer_status','rto_status','physical_status','source_entity_id','acco
 }
 $assertContains('outside-cars/index.php', '<table data-no-quick-filter>', 'Outside Cars must use only its server-side filter panel.');
 $assertContains('rto/list.php', '$hasCaseFilter', 'RTO totals must respond to case filters.');
+$assertContains('rto/list.php', 'name="date"', 'RTO Book needs a specific-day filter.');
+$assertContains('rto/list.php', 'P&amp;L RTO Net', 'RTO Book must show the journal-derived RTO contribution to profit.');
+$assertNotContains('rto/list.php', 'RTO Work', 'RTO Book must use RTO Narration instead of RTO Work.');
+$assertContains('rto/list.php', "\$rtoDraftValue", 'Failed RTO validation must retain submitted fields and account selection.');
+$assertContains('includes/header.php', 'reports/car_inventory.php', 'Car Inventory must have its own discoverable menu.');
+$assertContains('reports/car_inventory.php', 'Inventory Total', 'Car Inventory report must show the filtered inventory total.');
+$assertContains('reports/balance_sheet.php', 'Vehicle Inventory (Consolidated)', 'Balance Sheet must replace car-wise inventory clutter with one accounting-safe summary.');
+$assertContains('transactions/new.php', "narrationInput.required = !isCarSale", 'Sold Car narration must be optional without weakening other entry types.');
+$assertContains('cars/view.php', 'href="#payment-history"', 'Sold cars need a direct Payment History action.');
 $assertContains('reports/audit_log.php', 'name="from_date"', 'Audit Log needs a date-range filter.');
 $assertContains('reports/audit_log.php', 'name="user_id"', 'Audit Log needs a user filter.');
 $assertContains('reports/action_center.php', 'Accountable Desk', 'Action Center must identify accountable desks.');
