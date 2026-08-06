@@ -149,16 +149,11 @@ switch ($kind) {
 
     case 'partner':
     case 'main_partner':
-        $partnerTypeFilter = '';
-        if ($kind === 'main_partner') {
-            $partnerTypeFilter = " AND partner_type = 'MAIN'";
-        }
         $rows = $db->fetchAll(
             "SELECT id, name, phone, profit_share_pct, partner_type
              FROM partners
              WHERE business_id = ?
                AND is_active = 1
-               $partnerTypeFilter
                AND (
                    name LIKE ?
                    OR phone LIKE ?

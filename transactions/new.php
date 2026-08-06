@@ -140,7 +140,7 @@ if ($preselectedPartyId !== '') {
 
 if ($preselectedPartnerId !== '') {
     $preselectedPartner = $db->fetch(
-        "SELECT id, name FROM partners WHERE id = ? AND business_id = ? AND partner_type = 'MAIN' AND is_active = 1",
+        "SELECT id, name FROM partners WHERE id = ? AND business_id = ? AND is_active = 1",
         [$preselectedPartnerId, $businessId]
     );
     if (!$preselectedPartner) {
@@ -859,7 +859,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Partner *</label>
                     <input type="hidden" name="partner_id" id="partner_id" value="<?= clean($preselectedPartnerId) ?>">
-                    <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('main_partner', this)">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="partner-picker-trigger" onclick="openEntityPicker('partner', this)">
                         <span><?= $preselectedPartner ? clean($preselectedPartner['name']) : 'Select partner' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
@@ -1286,16 +1286,9 @@ const entityPickerConfig = {
         triggerId: 'car-picker-trigger',
         emptyLabel: 'Select car',
     },
-    main_partner: {
-        title: 'Search Main Partners',
-        subtitle: 'Search by partner name or phone number.',
-        inputId: 'partner_id',
-        triggerId: 'partner-picker-trigger',
-        emptyLabel: 'Select partner',
-    },
     partner: {
-        title: 'Select Partner',
-        subtitle: 'Search active main and car-wise partners by name or phone number.',
+        title: 'Search Partners',
+        subtitle: 'Search every active partner by name or phone number.',
         inputId: 'partner_id',
         triggerId: 'partner-picker-trigger',
         emptyLabel: 'Select partner',

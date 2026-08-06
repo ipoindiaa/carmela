@@ -2169,9 +2169,8 @@ class AccountingEngine {
      * PARTNER INVEST
      */
     public function partnerInvest($partnerId, $amount, $date, $receivingAccount, $narration) {
-        $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
-        if (!$partner) throw new Exception("Partner not found");
-        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can add business capital.");
+        $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
+        if (!$partner || empty($partner['capital_account_id'])) throw new Exception("Select an active partner with a capital account.");
 
         $lines = [
             ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => "Received from {$partner['name']}"],
@@ -2185,9 +2184,8 @@ class AccountingEngine {
      * PARTNER WITHDRAW
      */
     public function partnerWithdraw($partnerId, $amount, $date, $paymentAccount, $narration, $allowOverdraw = false) {
-        $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
-        if (!$partner) throw new Exception("Partner not found");
-        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can withdraw business capital.");
+        $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
+        if (!$partner || empty($partner['capital_account_id'])) throw new Exception("Select an active partner with a capital account.");
 
         $amount = round(floatval($amount), 2);
         $allowOverdraw = filter_var($allowOverdraw, FILTER_VALIDATE_BOOLEAN);

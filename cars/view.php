@@ -37,6 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $partnerIds = array_values((array) ($_POST['partner_ids'] ?? []));
             $amounts = array_values((array) ($_POST['partner_amounts'] ?? []));
             $shares = array_values((array) ($_POST['partner_profit_share_pcts'] ?? []));
+            $_SESSION['car_partner_funding_draft'][$id] = [
+                'partner_ids' => $partnerIds,
+                'amounts' => $amounts,
+                'shares' => $shares,
+                'correction_date' => post('correction_date'),
+                'correction_reason' => post('correction_reason'),
+            ];
             $partnerFunding = [];
             $seen = [];
             $rowCount = max(count($partnerIds), count($amounts), count($shares));
@@ -57,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
             }
             $engine->correctCarPartnerFunding($id, $partnerFunding, post('correction_date'), post('correction_reason'));
+            unset($_SESSION['car_partner_funding_draft'][$id]);
             setFlash('success', 'Partner funding updated. Financial corrections and field changes are preserved in History.');
         } elseif ($action === 'upload_car_images') {
             $imageType = strtoupper(post('image_type', 'SELLER')) === 'BUYER' ? 'BUYER' : 'SELLER';
@@ -72,10 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $engine->recordSecondKeyEvent($id, post('event_type'), post('event_date'), post('narration'));
             setFlash('success', 'Second key event saved.');
         }
-        redirect("view.php?id=$id");
+        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : "view.php?id=$id");
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
-        redirect("view.php?id=$id");
+        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : "view.php?id=$id");
     }
 }
 
@@ -189,6 +197,8 @@ $contributions = $db->fetchAll(
      WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
      ORDER BY cp.created_at", [$businessId, $id]);
 $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $contributions)), 2);
+$partnerFundingDraft = $_SESSION['car_partner_funding_draft'][$id] ?? null;
+unset($_SESSION['car_partner_funding_draft'][$id]);
 ?>
 
 <div class="page-header">
@@ -313,13 +323,27 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
             </div>
         </div>
         <?php if (get('edit_funding') === '1' && $car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
-            <?php $fundingRows = $contributions ?: [['partner_id' => '', 'amount' => '', 'profit_share_pct' => '']]; ?>
+            <?php
+                $fundingRows = $contributions ?: [['partner_id' => '', 'amount' => '', 'profit_share_pct' => '']];
+                if (is_array($partnerFundingDraft)) {
+                    $draftRowCount = max(count($partnerFundingDraft['partner_ids'] ?? []), count($partnerFundingDraft['amounts'] ?? []), count($partnerFundingDraft['shares'] ?? []));
+                    $fundingRows = [];
+                    for ($draftIndex = 0; $draftIndex < $draftRowCount; $draftIndex++) {
+                        $fundingRows[] = [
+                            'partner_id' => $partnerFundingDraft['partner_ids'][$draftIndex] ?? '',
+                            'amount' => $partnerFundingDraft['amounts'][$draftIndex] ?? '',
+                            'profit_share_pct' => $partnerFundingDraft['shares'][$draftIndex] ?? '',
+                        ];
+                    }
+                    if (empty($fundingRows)) $fundingRows = [['partner_id' => '', 'amount' => '', 'profit_share_pct' => '']];
+                }
+            ?>
             <div class="card-body partner-funding-editor">
                 <div class="correction-notice compact-correction-notice">
                     <i class="ri-shield-check-line"></i>
-                    <div><strong>Posted funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Reallocate this total between partners. Amount changes create reversing and replacement entries; profit-share-only changes update terms without changing the ledger.</span></div>
+                    <div><strong>Fixed funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Reallocate exactly this amount between any active partners. Separate capital changes belong in Partner Added Money or Partner Took Money.</span></div>
                 </div>
-                <form method="POST" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
+                <form method="POST" id="partner-funding-correction-form" data-fixed-total="<?= clean(number_format($totalPartnerFunding, 2, '.', '')) ?>" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
                     <?= csrfField() ?><input type="hidden" name="action" value="correct_partner_funding">
                     <div id="partner-funding-editor-rows">
                         <?php foreach ($fundingRows as $fundingRow): ?>
@@ -344,9 +368,10 @@ $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($ro
                         <?php endforeach; ?>
                     </div>
                     <button type="button" class="btn btn-outline btn-sm partner-add-row" onclick="addFundingEditRow()"><i class="ri-add-line"></i> Add Partner</button>
+                    <div class="form-hint" id="partner-funding-total-status" aria-live="polite" style="margin-top:10px;"></div>
                     <div class="form-row partner-correction-meta">
-                        <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean(date('Y-m-d')) ?>" required></div>
-                        <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
+                        <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean($partnerFundingDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
+                        <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" value="<?= clean($partnerFundingDraft['correction_reason'] ?? '') ?>" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
                     </div>
                     <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Partner Funding</button><a href="view.php?id=<?= clean($car['id']) ?>#car-partner-terms" class="btn btn-outline">Cancel</a></div>
                 </form>
@@ -398,6 +423,7 @@ function addFundingEditRow() {
     container.appendChild(row);
     if (typeof initCurrencyInputs === 'function') initCurrencyInputs(row);
     if (typeof enhanceSelects === 'function') enhanceSelects(row);
+    updateFundingEditTotal();
 }
 function removeFundingEditRow(button) {
     const container = document.getElementById('partner-funding-editor-rows');
@@ -410,10 +436,50 @@ function removeFundingEditRow(button) {
             select.dispatchEvent(new Event('change', { bubbles: true }));
         }
         row.querySelectorAll('input').forEach((input) => input.value = '');
+        updateFundingEditTotal();
         return;
     }
     button.closest('.partner-funding-edit-row')?.remove();
+    updateFundingEditTotal();
 }
+
+function parseFundingEditAmount(value) {
+    const normalized = String(value || '').replace(/[^0-9.-]/g, '');
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? amount : 0;
+}
+function formatFundingEditAmount(value) {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+}
+function updateFundingEditTotal() {
+    const form = document.getElementById('partner-funding-correction-form');
+    const status = document.getElementById('partner-funding-total-status');
+    if (!form || !status) return true;
+    const fixedTotal = Number(form.dataset.fixedTotal || 0);
+    const allocated = Array.from(form.querySelectorAll('input[name="partner_amounts[]"]'))
+        .reduce((sum, input) => sum + parseFundingEditAmount(input.value), 0);
+    const difference = Math.round((fixedTotal - allocated) * 100) / 100;
+    if (Math.abs(difference) < 0.01) {
+        status.className = 'form-hint text-green';
+        status.textContent = `Allocated ${formatFundingEditAmount(allocated)} of ${formatFundingEditAmount(fixedTotal)}. Ready to save.`;
+        return true;
+    }
+    status.className = 'form-hint text-red';
+    status.textContent = difference > 0
+        ? `${formatFundingEditAmount(difference)} remains to allocate. Total must stay ${formatFundingEditAmount(fixedTotal)}.`
+        : `${formatFundingEditAmount(Math.abs(difference))} is over the fixed total. Total must stay ${formatFundingEditAmount(fixedTotal)}.`;
+    return false;
+}
+document.getElementById('partner-funding-editor-rows')?.addEventListener('input', function(event) {
+    if (event.target.matches('input[name="partner_amounts[]"]')) updateFundingEditTotal();
+});
+document.getElementById('partner-funding-correction-form')?.addEventListener('submit', function(event) {
+    if (!updateFundingEditTotal()) {
+        event.preventDefault();
+        document.getElementById('partner-funding-total-status')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+});
+updateFundingEditTotal();
 </script>
 <?php endif; ?>
 
