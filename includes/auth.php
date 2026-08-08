@@ -242,11 +242,6 @@ class Auth {
 
         $entityBooks = [
             'car' => ['car_profitability', 'cash_book', 'bank_book'],
-            'outside_car' => ['outside_cars'],
-            'source_entity' => ['outside_cars'],
-            'outside_car_settlement' => ['outside_cars'],
-            'outside_car_agreement' => ['outside_cars'],
-            'outside_car_delivery' => ['outside_cars'],
             'car_token' => ['car_profitability', 'cash_book', 'bank_book'],
             'commission_car_settlement' => ['car_profitability', 'cash_book', 'bank_book'],
             'partner' => ['partner_accounts'],
@@ -351,19 +346,10 @@ class Auth {
             return true;
         }
 
-        if (self::hasBookAccess('outside_cars', $access)) {
-            $outsideEntry = Database::getInstance()->fetch(
-                "SELECT je.id FROM journal_entries je JOIN cars c ON c.id=je.car_id AND c.business_id=je.business_id
-                 WHERE je.id=? AND je.business_id=? AND c.ownership_type='OUTSIDE'",
-                [$entryId,$businessId]
-            );
-            if ($outsideEntry) return true;
-        }
-
         if (self::hasEntityAccess('car', $access)) {
             $carEntry = Database::getInstance()->fetch(
                 "SELECT je.id FROM journal_entries je JOIN cars c ON c.id=je.car_id AND c.business_id=je.business_id
-                 WHERE je.id=? AND je.business_id=? AND COALESCE(c.ownership_type,'OWNED')<>'OUTSIDE'",
+                 WHERE je.id=? AND je.business_id=?",
                 [$entryId,$businessId]
             );
             if ($carEntry) return true;

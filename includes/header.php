@@ -59,7 +59,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     All Entries
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('outside_cars', 'read') || Auth::hasBookAccess('car_profitability', 'read')): ?>
+                <?php if (Auth::hasBookAccess('car_profitability', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/action_center.php" class="nav-link <?= $currentPage === 'action_center' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-task-line"></i></span>
                     Action Center
@@ -77,16 +77,6 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                 <a href="<?= APP_URL ?>reports/car_inventory.php" class="nav-link <?= $currentPage === 'car_inventory' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-parking-box-line"></i></span>
                     Car Inventory
-                </a>
-                <?php endif; ?>
-                <?php if (Auth::hasBookAccess('outside_cars', 'read')): ?>
-                <a href="<?= APP_URL ?>outside-cars/index.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'outside-cars/') !== false ? 'active' : '' ?>">
-                    <span class="nav-icon"><i class="ri-hand-coin-line"></i></span>
-                    Outside Cars
-                </a>
-                <a href="<?= APP_URL ?>reports/outside_cars.php" class="nav-link <?= $currentPage === 'outside_cars' && strpos($_SERVER['PHP_SELF'], 'reports/') !== false ? 'active' : '' ?>">
-                    <span class="nav-icon"><i class="ri-bar-chart-box-line"></i></span>
-                    Outside Cars Report
                 </a>
                 <?php endif; ?>
                 <?php if (Auth::hasBookAccess('rto_book', 'read')): ?>
@@ -157,7 +147,7 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     Car Profitability
                 </a>
                 <?php endif; ?>
-                <?php if (Auth::hasBookAccess('car_profitability', 'read') || Auth::hasBookAccess('outside_cars', 'read')): ?>
+                <?php if (Auth::hasBookAccess('car_profitability', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/loan_commissions.php" class="nav-link <?= $currentPage === 'loan_commissions' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
                     Loan Commissions

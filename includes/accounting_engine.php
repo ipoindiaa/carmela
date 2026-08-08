@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
-require_once __DIR__ . '/outside_car_accounting.php';
 require_once __DIR__ . '/car_loan_commission_accounting.php';
 
 /**
@@ -10,7 +9,7 @@ require_once __DIR__ . '/car_loan_commission_accounting.php';
  * Users never need to understand Dr/Cr — the engine does it all.
  */
 class AccountingEngine {
-    use OutsideCarAccounting, CarLoanCommissionAccounting;
+    use CarLoanCommissionAccounting;
     private $db;
     private $businessId;
     private $userId;
@@ -45,15 +44,7 @@ class AccountingEngine {
             ['PNL', 'Profit & Loss Account', 'INCOME', 'P&L', 'GENERAL'],
             ['BAD-DEBT', 'Bad Debt Expense', 'EXPENSE', 'Direct Expenses', 'GENERAL'],
             ['ADV-WOFF', 'Employee Advance Write-Off Expense', 'EXPENSE', 'Indirect Expenses', 'GENERAL'],
-            ['OUTCAR-ADV', 'Outside Car Entity Advances', 'ASSET', 'Current Assets', 'GENERAL'],
-            ['OUTCAR-COST', 'Outside Car Recoverable Costs', 'ASSET', 'Current Assets', 'GENERAL'],
-            ['OUTCAR-CLEAR', 'Outside Car Sale Clearing', 'LIABILITY', 'Outside Car Clearing', 'GENERAL'],
-            ['OUTCAR-PROFIT', 'Outside Car Deal Profit Income', 'INCOME', 'Direct Income', 'GENERAL'],
-            ['OUTCAR-COMM', 'Outside Car Commission / Service Income', 'INCOME', 'Direct Income', 'GENERAL'],
-            ['OUTCAR-EXP', 'Outside Car Business Expense / Adjustment', 'EXPENSE', 'Direct Expenses (Car)', 'GENERAL'],
             ['RTO-CLEAR', 'RTO Clearing', 'LIABILITY', 'Current Liabilities', 'GENERAL'],
-            ['SETTLE-RNDI', 'Outside Car Settlement Round Off Income', 'INCOME', 'Settlement Adjustments', 'GENERAL'],
-            ['SETTLE-RNDE', 'Outside Car Settlement Round Off Expense', 'EXPENSE', 'Settlement Adjustments', 'GENERAL'],
             ['LOAN-COMM', 'Car Loan Commission Income', 'INCOME', 'Direct Income', 'GENERAL'],
         ];
 
@@ -333,7 +324,6 @@ class AccountingEngine {
             $this->ensureJournalEntryTypeEnum();
             $this->ensureCarStatusEnum();
             $this->ensureCarOperationsSchema();
-            $this->ensureOutsideCarSchema();
             $this->ensureCarLoanCommissionSchema();
 
             $this->db->query(
@@ -3233,7 +3223,6 @@ class AccountingEngine {
             throw new Exception('A reversal entry is permanent correction history and cannot itself be reversed.');
         }
 
-        $this->assertOutsideCarEntryCanBeReversed($entry);
         $this->assertCarLoanCommissionEntryCanBeReversed($entry);
 
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
@@ -3379,7 +3368,6 @@ class AccountingEngine {
     }
 
     private function applyReversalBusinessEffects($entry, $lines, $reversalId) {
-        $this->applyOutsideCarReversalEffects($entry, $reversalId);
         $this->applyCarLoanCommissionReversalEffects($entry);
         switch ($entry['transaction_type']) {
             case 'JOURNAL_VOUCHER':

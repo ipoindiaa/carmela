@@ -8,9 +8,8 @@ $businessId = Auth::user('business_id');
 $carId = trim((string) get('car_id', ''));
 $car = $db->fetch("SELECT c.*,buyer.name buyer_name FROM cars c LEFT JOIN debtors_creditors buyer ON buyer.id=c.buyer_party_id WHERE c.id=? AND c.business_id=?",[$carId,$businessId]);
 if (!$car) { setFlash('error','Car not found.'); redirect('list.php'); }
-$isOutside = ($car['ownership_type'] ?? 'OWNED') === 'OUTSIDE';
-if ($isOutside) Auth::requireBookAccess('outside_cars','read'); else Auth::requireEntityAccess('car','read');
-$canWrite = $isOutside ? Auth::hasBookAccess('outside_cars','write') : Auth::hasEntityAccess('car','write');
+Auth::requireEntityAccess('car','read');
+$canWrite = Auth::hasEntityAccess('car','write');
 $engine = new AccountingEngine($businessId,Auth::user('user_id'));
 $groups = Auth::getAccessiblePrimaryAccountList($businessId,'write');
 $accounts = array_merge($groups['cash_book']??[],$groups['bank_book']??[]);
@@ -44,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 
 $cases = $engine->getCarLoanCommissions($carId);
 $receipts = $db->fetchAll("SELECT r.*,je.reference_no FROM car_loan_commission_receipts r LEFT JOIN journal_entries je ON je.id=r.journal_entry_id WHERE r.business_id=? AND r.car_id=? ORDER BY r.receipt_date,r.created_at",[$businessId,$carId]);
-$back = $isOutside ? '../outside-cars/view.php?id='.urlencode($carId) : (($car['ownership_type']??'OWNED')==='COMMISSION'?'commission_view.php?id='.urlencode($carId):'view.php?id='.urlencode($carId));
+$back = (($car['ownership_type']??'OWNED')==='COMMISSION'?'commission_view.php?id='.urlencode($carId):'view.php?id='.urlencode($carId));
 ?>
 <div class="page-header"><div><h1><i class="ri-bank-card-line"></i> Loan Commission · <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1><p class="page-subtitle">Customer: <?= clean($car['buyer_name']?:'Sale buyer not recorded') ?> · Loan principal is memorandum only; finance commission is business income.</p></div><a href="<?= clean($back) ?>" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back to Car</a></div>
 <?php if($error): ?><div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($error) ?></div><?php endif; ?>

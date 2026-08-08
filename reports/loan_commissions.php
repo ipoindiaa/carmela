@@ -1,7 +1,7 @@
 <?php
 $pageTitle='Loan Commissions';$pageIcon='<i class="ri-bank-card-line"></i>';
 require_once __DIR__.'/../includes/header.php';require_once __DIR__.'/../includes/accounting_engine.php';
-Auth::requireAnyBookAccess(['car_profitability','outside_cars'],'read');$businessId=Auth::user('business_id');new AccountingEngine($businessId,Auth::user('user_id'));
+Auth::requireBookAccess('car_profitability','read');$businessId=Auth::user('business_id');new AccountingEngine($businessId,Auth::user('user_id'));
 $q=trim((string)get('q',''));$status=strtoupper(trim((string)get('status','')));$from=trim((string)get('from_date',''));$to=trim((string)get('to_date',''));
 $where='clc.business_id=?';$params=[$businessId];
 if($q!==''){$where.=' AND (c.registration_no LIKE ? OR buyer.name LIKE ? OR financier.name LIKE ? OR clc.loan_account_no LIKE ?)';$like='%'.$q.'%';array_push($params,$like,$like,$like,$like);}

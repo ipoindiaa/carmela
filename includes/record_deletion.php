@@ -19,7 +19,7 @@ class RecordDeletionService {
             case 'car':
                 $record = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$entityId, $this->businessId]);
                 return $this->description($record, 'Car', $record ? formatRegistrationNo($record['registration_no']) : '',
-                    in_array(($record['ownership_type'] ?? 'OWNED'), ['COMMISSION','OUTSIDE'], true) ? 'outside-cars/index.php' : 'cars/list.php',
+                    'cars/list.php',
                     'Financial entries will be reversed where safe. The car will remain in History as cancelled.');
             case 'partner':
                 $record = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$entityId, $this->businessId]);

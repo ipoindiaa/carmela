@@ -8,7 +8,7 @@ Auth::check();
 $id = get('id');
 $businessId = Auth::user('business_id');
 
-Auth::requireAnyBookAccess(array_merge(Auth::getPrimaryBookKeys(), ['jv_register','outside_cars','car_profitability']), 'delete');
+Auth::requireAnyBookAccess(array_merge(Auth::getPrimaryBookKeys(), ['jv_register','car_profitability']), 'delete');
 if (!Auth::canAccessTransactionEntry($id, $businessId, 'delete')) {
     setFlash('error', 'You do not have delete access for that entry.');
     redirect('list.php');

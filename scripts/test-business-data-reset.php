@@ -148,7 +148,7 @@ assertResetTest(!is_dir($attachmentDir), 'Business attachment files are cleared'
 assertResetTest(!is_dir($agreementDir), 'Business agreement snapshots and PDFs are cleared');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM users WHERE business_id = ?", [$business['id']])['cnt'] === 2, 'Business users are preserved');
 $defaultAccountCount = (int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ?", [$business['id']])['cnt'];
-assertResetTest($defaultAccountCount === 26, 'Clean default accounts, including Outside Car and loan commission accounts, are recreated');
+assertResetTest($defaultAccountCount === 18, 'Clean default accounts, including the loan commission account, are recreated');
 $canonicalExpenseCount = (int) $db->fetch(
     "SELECT COUNT(*) AS cnt FROM accounts WHERE business_id = ? AND code IN ('GEN-EXP', 'CAR-REPAIR', 'RTO-EXP')",
     [$business['id']]

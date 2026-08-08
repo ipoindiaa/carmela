@@ -1574,7 +1574,7 @@ function initTransactionTypePicker() {
     const search = document.getElementById('txn-type-search');
     if (!select || !picker || !trigger || !menu || !search) return;
 
-    // Keep the menu outside cards and scrolling form shells so no ancestor can clip it.
+    // Keep the menu above cards and scrolling form shells so no ancestor can clip it.
     document.body.appendChild(menu);
 
     transactionTypeOptions = Array.from(select.options)
