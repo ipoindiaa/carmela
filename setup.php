@@ -121,6 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
 $uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION;
+$polishCssVersion = @filemtime(__DIR__ . '/assets/css/ui-polish.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -131,8 +132,12 @@ $uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION
     <title>Setup — <?= APP_NAME ?></title>
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="apple-touch-icon" href="logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
     <link rel="stylesheet" href="assets/css/ui-system.css?v=<?= $uiCssVersion ?>">
+    <link rel="stylesheet" href="assets/css/ui-polish.css?v=<?= $polishCssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body>
@@ -166,13 +171,9 @@ $uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION
                 <label class="form-label">Business / Firm Name *</label>
                 <input type="text" name="business_name" class="form-control" placeholder="e.g., Car Mela Auto" required>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Phone</label>
-                    <input type="text" name="phone" class="form-control" placeholder="10 digit phone" inputmode="numeric" pattern="[0-9]{10}" maxlength="10">
-                </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="text" name="phone" class="form-control" placeholder="10 digit phone" inputmode="numeric" pattern="[0-9]{10}" maxlength="10">
             </div>
             <div class="form-group">
                 <label class="form-label">Address</label>
