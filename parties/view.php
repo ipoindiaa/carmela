@@ -71,7 +71,7 @@ $partyTokens = $db->fetchAll(
     [$businessId, $id]
 );
 $tokenAvailable = round(array_sum(array_map(static function ($token) {
-    return $token['status'] === 'REVERSED' ? 0 : max(0, floatval($token['amount']) - floatval($token['applied_amount']));
+    return in_array($token['status'], ['OPEN', 'PARTIAL'], true) ? max(0, floatval($token['amount']) - floatval($token['applied_amount'])) : 0;
 }, $partyTokens)), 2);
 ?>
 
@@ -133,7 +133,44 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
                 <td><a href="../transactions/view.php?id=<?= urlencode($token['journal_entry_id']) ?>"><?= clean($token['reference_no'] ?: 'View') ?></a></td>
                 <td class="text-right amount flow-in"><?= formatAmount($token['amount']) ?></td>
                 <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']))) ?></td>
-                <td><span class="badge <?= $token['status'] === 'APPLIED' ? 'badge-green' : ($token['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($token['status']) ?></span></td>
+                <td><span class="badge <?= $token['status'] === 'APPLIED' ? 'badge-green' : ($token['status'] === 'FORFEITED' ? 'badge-yellow' : ($token['status'] === 'REVERSED' || $token['status'] === 'REFUNDED' ? 'badge-red' : 'badge-blue')) ?>"><?= clean($token['status']) ?></span></td>
+            </tr><?php endforeach; ?></tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// For a source/seller, show every car bought from them (even fully paid) so the
+// owner can see the full relationship history for negotiation and verification.
+$relatedCars = [];
+if (in_array($party['type'], ['SELLER', 'CREDITOR'], true)) {
+    $relatedCars = $db->fetchAll(
+        "SELECT id, registration_no, make, model, purchase_date, purchase_price, sale_price, status
+         FROM cars WHERE business_id = ? AND seller_party_id = ? ORDER BY purchase_date DESC, created_at DESC",
+        [$businessId, $party['id']]
+    );
+    $relatedLabel = 'Cars Bought From This Source';
+} elseif (in_array($party['type'], ['BUYER', 'DEBTOR'], true)) {
+    $relatedCars = $db->fetchAll(
+        "SELECT id, registration_no, make, model, purchase_date, sale_price, status
+         FROM cars WHERE business_id = ? AND buyer_party_id = ? ORDER BY sold_date DESC, created_at DESC",
+        [$businessId, $party['id']]
+    );
+    $relatedLabel = 'Cars Purchased By This Buyer';
+}
+?>
+<?php if (!empty($relatedCars)): ?>
+<div class="card">
+    <div class="card-header"><h3><i class="ri-car-line"></i> <?= clean($relatedLabel) ?></h3></div>
+    <div class="card-body card-body-flush table-container">
+        <table>
+            <thead><tr><th>Car</th><th>Make / Model</th><th class="text-right">Price</th><th>Status</th></tr></thead>
+            <tbody><?php foreach ($relatedCars as $rc): ?><tr>
+                <td><a href="../cars/view.php?id=<?= urlencode($rc['id']) ?>"><?= clean(formatRegistrationNo($rc['registration_no'])) ?></a></td>
+                <td><?= clean(trim(($rc['make'] ?? '') . ' ' . ($rc['model'] ?? ''))) ?></td>
+                <td class="text-right amount"><?= formatAmount(in_array($party['type'], ['SELLER','CREDITOR'], true) ? ($rc['purchase_price'] ?? 0) : ($rc['sale_price'] ?? 0)) ?></td>
+                <td><span class="badge <?= ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray'][$rc['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$rc['status']] ?></span></td>
             </tr><?php endforeach; ?></tbody>
         </table>
     </div>

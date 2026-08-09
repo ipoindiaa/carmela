@@ -41,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->insert('businesses', [
                 'id' => $businessId,
                 'name' => $businessName,
-                'gstin' => post('gstin') ?: null,
                 'address' => post('address') ?: null,
                 'phone' => $phone,
                 'email' => $email,
@@ -169,8 +168,6 @@ $uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label class="form-label">GSTIN (optional)</label>
-                    <input type="text" name="gstin" class="form-control" placeholder="e.g., 24XXXXX1234X1Z5" maxlength="15">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Phone</label>

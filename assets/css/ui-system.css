@@ -2523,6 +2523,28 @@ tbody tr:last-child td {
     max-width: 250px;
 }
 
+.text-nowrap {
+    white-space: nowrap !important;
+}
+
+.form-action-note {
+    align-self: center;
+}
+
+.token-action-form {
+    flex-wrap: nowrap;
+}
+
+.token-action-form .form-control {
+    min-height: var(--control-height-sm);
+    padding-block: var(--space-1);
+    font-size: var(--font-size-sm);
+}
+
+.token-action-date { width: 128px; }
+.token-action-reason { width: 160px; }
+.token-action-account { width: 140px; }
+
 .picker-trigger-wide {
     width: 100%;
 }

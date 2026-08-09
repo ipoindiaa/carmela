@@ -143,7 +143,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
         <?php if ($showDeleted): ?><input type="hidden" name="show" value="deleted"><?php endif; ?>
         <div class="filter-main-field">
             <label class="form-label">Search Party</label>
-            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, type, or GSTIN">
+            <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, or type">
         </div>
         <button type="submit" class="btn btn-outline btn-sm"><i class="ri-search-line"></i> Search</button>
         <?php if ($search !== ''): ?><a href="list.php<?= $showDeleted ? '?show=deleted' : '' ?>" class="btn btn-ghost btn-sm">Clear</a><?php endif; ?>

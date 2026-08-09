@@ -35,12 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('A car with this registration number already exists.');
         }
         $purchasePrice = parseDecimalInput(post('purchase_price'));
-        $gstAmount = 0.0;
         $purchaseDate = post('purchase_date');
         $paymentAccount = post('payment_account');
         $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
         $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
         $sellerName = post('seller_name');
+        $expectedSalePrice = parseDecimalInput(post('expected_sale_price', '0'));
         if (!in_array($paymentAccount, $paymentAccountIds, true)) {
             throw new Exception('You do not have write access to that payment account.');
         }
@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
-        $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
+        $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerName, $purchasePaidNow);
         $partnerFunding = $validation['partner_funding'];
         $purchasePaidNow = $validation['paid_now'];
 
@@ -108,9 +108,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'year' => intval(post('year')) ?: null,
             'color' => post('color'),
             'purchase_date' => $purchaseDate,
-            'purchase_price' => max(0, $purchasePrice - $gstAmount),
+            'purchase_price' => $purchasePrice,
             'purchase_paid_amount' => $purchasePaidNow,
             'ownership_type' => 'OWNED',
+            'expected_sale_price' => $expectedSalePrice,
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
             'partner_id' => null,
             'account_id' => $carAccountId,
@@ -119,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Auto-create the CAR_PURCHASE journal entry via accounting engine
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
-        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $gstAmount, $sellerName, $purchasePaidNow);
+        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $sellerName, $purchasePaidNow);
         $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
         Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo], "Car $regNo added with purchase entry", 'cars');
         if ($ownsTransaction) $db->commit();
@@ -203,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">Seller Name</label>
                     <input type="text" name="seller_name" class="form-control" placeholder="Seller's full name">
-                    <div class="form-hint">Required if purchase payment will remain pending.</div>
+                    <div class="form-hint">Source we bought from — used to link the source's history.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Amount Paid Now (₹)</label>
@@ -211,6 +212,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span class="input-prefix">₹</span>
                         <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Expected Selling Value (₹)</label>
+                    <div class="input-group">
+                        <span class="input-prefix">₹</span>
+                        <input type="text" name="expected_sale_price" class="form-control currency-input" placeholder="Optional target sale price" inputmode="decimal" autocomplete="off">
+                    </div>
+                    <div class="form-hint">If the car is later sold below this, you'll get a warning alert.</div>
                 </div>
             </div>
             <div class="form-row">

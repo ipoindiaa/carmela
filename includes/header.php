@@ -118,6 +118,10 @@ $uiCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-system.css') ?: APP_VERS
                     <span class="nav-icon"><i class="ri-book-2-line"></i></span>
                     Cash Book
                 </a>
+                <a href="<?= APP_URL ?>reports/cash_reconciliation.php" class="nav-link <?= $currentPage === 'cash_reconciliation' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
+                    End-of-Day Cash Count
+                </a>
                 <?php endif; ?>
                 <?php if (Auth::hasBookAccess('bank_book', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/bankbook.php" class="nav-link <?= $currentPage === 'bankbook' ? 'active' : '' ?>">

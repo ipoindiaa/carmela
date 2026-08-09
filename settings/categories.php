@@ -21,7 +21,7 @@ $categoryGroups = [
         'icon' => 'ri-arrow-up-circle-line',
     ],
 ];
-$systemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
+$systemCodes = ['CAR-REV', 'PNL', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP'];
 $categoryWhereSql = "business_id = ?
        AND entity_type = 'GENERAL'
        AND group_name IN ('INCOME','EXPENSE')

@@ -87,8 +87,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
             </div>
             <div class="form-group">
-                <label class="form-label">Reason / Narration *</label>
-                <textarea name="narration" class="form-control" rows="3" required>Bad debt written off for <?= clean($party['name']) ?></textarea>
+                <label class="form-label">Reason / Narration (Optional)</label>
+                <textarea name="narration" class="form-control" rows="3" placeholder="Optional">Bad debt written off for <?= clean($party['name']) ?></textarea>
             </div>
             <button type="submit" class="btn btn-danger"><i class="ri-save-line"></i> Post Write-Off</button>
         </form>

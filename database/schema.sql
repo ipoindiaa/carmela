@@ -15,7 +15,6 @@ USE `autobooks_pro`;
 CREATE TABLE `businesses` (
     `id` CHAR(36) NOT NULL,
     `name` VARCHAR(200) NOT NULL,
-    `gstin` VARCHAR(15) DEFAULT NULL,
     `address` TEXT DEFAULT NULL,
     `phone` VARCHAR(20) DEFAULT NULL,
     `email` VARCHAR(100) DEFAULT NULL,
@@ -61,7 +60,7 @@ CREATE TABLE `accounts` (
     `name` VARCHAR(200) NOT NULL,
     `group_name` ENUM('ASSET','LIABILITY','INCOME','EXPENSE','EQUITY','CONTRA') NOT NULL,
     `sub_group` VARCHAR(100) DEFAULT NULL,
-    `entity_type` ENUM('CASH','BANK','GST','CAR','PARTNER','EMPLOYEE','DEBTOR','CREDITOR','GENERAL') NOT NULL DEFAULT 'GENERAL',
+    `entity_type` ENUM('CASH','BANK','CAR','PARTNER','EMPLOYEE','DEBTOR','CREDITOR','GENERAL') NOT NULL DEFAULT 'GENERAL',
     `entity_id` CHAR(36) DEFAULT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `opening_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -86,7 +85,7 @@ CREATE TABLE `journal_entries` (
     `entry_date` DATE NOT NULL,
     `reference_no` VARCHAR(50) NOT NULL,
     `narration` TEXT DEFAULT NULL,
-    `transaction_type` ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION') NOT NULL,
+    `transaction_type` ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION') NOT NULL,
     `entry_type_id` VARCHAR(80) DEFAULT NULL,
     `entry_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `is_reversal` TINYINT(1) NOT NULL DEFAULT 0,
@@ -157,7 +156,6 @@ CREATE TABLE `cars` (
     `sold_date` DATE DEFAULT NULL,
     `sale_price` DECIMAL(15,2) DEFAULT NULL,
     `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `buyer_name` VARCHAR(200) DEFAULT NULL,
     `buyer_contact` VARCHAR(20) DEFAULT NULL,
     `buyer_party_id` CHAR(36) DEFAULT NULL,
@@ -371,7 +369,7 @@ CREATE TABLE `car_tokens` (
     `received_date` DATE NOT NULL,
     `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED') NOT NULL DEFAULT 'OPEN',
+    `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED','FORFEITED','REFUNDED') NOT NULL DEFAULT 'OPEN',
     `narration` VARCHAR(500) DEFAULT NULL,
     `created_by` CHAR(36) NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -472,7 +470,7 @@ CREATE TABLE `audit_log` (
 CREATE TABLE `alerts` (
     `id` CHAR(36) NOT NULL,
     `business_id` CHAR(36) NOT NULL,
-    `type` ENUM('CASH_LOW','DEBTOR_OVERDUE','ADVANCE_HIGH','CAR_AGING','TRIAL_IMBALANCE','PARTNER_WITHDRAWAL','SALARY_DUPLICATE') NOT NULL,
+    `type` ENUM('CASH_LOW','DEBTOR_OVERDUE','ADVANCE_HIGH','CAR_AGING','TRIAL_IMBALANCE','PARTNER_WITHDRAWAL','SALARY_DUPLICATE','LOW_SALE_PRICE','SALE_BELOW_COST','CASH_SHORTAGE') NOT NULL,
     `severity` ENUM('INFO','WARNING','CRITICAL') NOT NULL DEFAULT 'WARNING',
     `message` TEXT NOT NULL,
     `entity_type` VARCHAR(50) DEFAULT NULL,
@@ -676,6 +674,35 @@ CREATE TABLE `car_loan_commission_receipts` (
     `amount` DECIMAL(15,2) NOT NULL DEFAULT 0,`receiving_account_id` CHAR(36) NOT NULL,`journal_entry_id` CHAR(36) NOT NULL,`status` VARCHAR(20) NOT NULL DEFAULT 'POSTED',
     `narration` VARCHAR(500) DEFAULT NULL,`created_by` CHAR(36) NOT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`),
     UNIQUE KEY `uk_car_loan_receipt_entry` (`journal_entry_id`),KEY `idx_car_loan_receipt` (`business_id`,`commission_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: cash_reconciliations
+-- End-of-day physical cash count vs book balance. A mismatch posts a
+-- Cash Shortage/Surplus journal entry (admin-approved + reason) so the
+-- difference is visible and investigable, never silently erased.
+-- ============================================================
+CREATE TABLE `cash_reconciliations` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `cash_account_id` CHAR(36) NOT NULL,
+    `account_name` VARCHAR(200) DEFAULT NULL,
+    `recon_date` DATE NOT NULL,
+    `book_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `counted_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `shortage` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `surplus` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `difference` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `reason` VARCHAR(500) DEFAULT NULL,
+    `journal_entry_id` CHAR(36) DEFAULT NULL,
+    `approved_by` CHAR(36) DEFAULT NULL,
+    `approved_at` TIMESTAMP NULL DEFAULT NULL,
+    `status` ENUM('RECONCILED','SHORTAGE','SURPLUS') NOT NULL DEFAULT 'RECONCILED',
+    `created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_cash_recon_business` (`business_id`, `cash_account_id`, `recon_date`),
+    KEY `idx_cash_recon_entry` (`journal_entry_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 COMMIT;

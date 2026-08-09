@@ -21,7 +21,6 @@ $businessId = Database::uuid();
 $db->insert('businesses', [
     'id' => $businessId,
     'name' => 'Car Mela Auto',
-    'gstin' => '24AABCC1234D1Z5',
     'address' => 'Plot 45, Ring Road, Surat - 395002, Gujarat',
     'phone' => '9876543210',
     'email' => 'info@carmela.com',

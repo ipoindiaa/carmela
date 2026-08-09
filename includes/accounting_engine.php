@@ -315,6 +315,140 @@ class AccountingEngine {
         ];
     }
 
+    // ========================================
+    // END-OF-DAY CASH RECONCILIATION
+    // Compare the book balance of a cash account against a physical count.
+    // A mismatch posts a Cash Shortage/Surplus journal (admin-approved + reason)
+    // so the difference is visible and investigable, never silently erased.
+    // ========================================
+
+    /** Signed cash balance for a cash account (DR = cash in hand, positive). */
+    public function getCashBookSignedBalance($accountId) {
+        $account = $this->db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $this->businessId]);
+        if (!$account) throw new Exception("Account not found.");
+        return round($this->storedBalanceValue($account['current_balance'], $account['current_balance_type'], false), 2);
+    }
+
+    /**
+     * Record an end-of-day cash reconciliation.
+     * @return array with id, journal_entry_id (null if exact), shortage, surplus, book_balance, counted_amount
+     */
+    public function reconcileCash($accountId, $countedAmount, $date, $reason = '') {
+        $account = $this->db->fetch(
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL AND is_active = 1",
+            [$accountId, $this->businessId]
+        );
+        if (!$account) throw new Exception("Select a valid cash account.");
+
+        $date = trim((string) $date);
+        $dateParts = preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $m)
+            ? [intval($m[1]), intval($m[2]), intval($m[3])]
+            : null;
+        if (!$dateParts || !checkdate($dateParts[1], $dateParts[2], $dateParts[0])) {
+            throw new Exception('A valid reconciliation date is required.');
+        }
+        $this->validateDateNotLocked($date);
+
+        $counted = round(floatval($countedAmount), 2);
+        if ($counted < 0) throw new Exception("Counted cash cannot be negative.");
+
+        $bookBalance = $this->getCashBookSignedBalance($accountId);
+        $difference = round($counted - $bookBalance, 2);
+        $shortage = $difference < 0 ? round(abs($difference), 2) : 0.0;
+        $surplus = $difference > 0 ? round($difference, 2) : 0.0;
+
+        // Any difference requires an admin (owner) sign-off and a reason. This
+        // prevents staff from silently writing off cash that is actually missing.
+        if (abs($difference) > 0.01 && !Auth::isAdmin()) {
+            throw new Exception("Only an admin (owner) can record a cash shortage or surplus. Ask the owner to approve this count.");
+        }
+        if (abs($difference) > 0.01 && trim((string) $reason) === '') {
+            throw new Exception("A reason is required when counted cash does not match the book balance.");
+        }
+
+        $journalEntryId = null;
+        if (abs($difference) > 0.01) {
+            $ownsTransaction = !$this->db->inTransaction();
+            if ($ownsTransaction) $this->db->beginTransaction();
+            try {
+                $diffAccount = $this->getOrCreateSystemAccount('CASH-DIFF', 'Cash Shortage / Surplus', 'EXPENSE', 'Direct Expenses');
+                if ($shortage > 0) {
+                    // Money missing: expense + reduce the cash book to match physical count.
+                    $lines = [
+                        ['account_id' => $diffAccount['id'], 'amount' => $shortage, 'type' => 'DR', 'narration' => 'Cash shortage (counted ' . formatAmount($counted) . ' vs book ' . formatAmount($bookBalance) . ')'],
+                        ['account_id' => $accountId, 'amount' => $shortage, 'type' => 'CR', 'narration' => 'Cash count adjustment (shortage)'],
+                    ];
+                } else {
+                    // Money extra: cash + surplus income.
+                    $lines = [
+                        ['account_id' => $accountId, 'amount' => $surplus, 'type' => 'DR', 'narration' => 'Cash count adjustment (surplus)'],
+                        ['account_id' => $diffAccount['id'], 'amount' => $surplus, 'type' => 'CR', 'narration' => 'Cash surplus (counted ' . formatAmount($counted) . ' vs book ' . formatAmount($bookBalance) . ')'],
+                    ];
+                }
+                $journalEntryId = $this->postJournalEntry(
+                    'CASH_RECONCILIATION',
+                    $date,
+                    trim((string) $reason) ?: 'End-of-day cash count adjustment',
+                    $lines,
+                    ['entry_amount' => round(abs($difference), 2)]
+                );
+                if ($ownsTransaction) $this->db->commit();
+            } catch (Throwable $e) {
+                if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+                throw $e;
+            }
+        }
+
+        $status = $shortage > 0 ? 'SHORTAGE' : ($surplus > 0 ? 'SURPLUS' : 'RECONCILED');
+        $reconId = Database::uuid();
+        $record = [
+            'id' => $reconId,
+            'business_id' => $this->businessId,
+            'cash_account_id' => $accountId,
+            'account_name' => $account['name'],
+            'recon_date' => $date,
+            'book_balance' => $bookBalance,
+            'counted_amount' => $counted,
+            'shortage' => $shortage,
+            'surplus' => $surplus,
+            'difference' => $difference,
+            'reason' => trim((string) $reason) ?: null,
+            'journal_entry_id' => $journalEntryId,
+            'approved_by' => $this->userId,
+            'approved_at' => date('Y-m-d H:i:s'),
+            'status' => $status,
+            'created_by' => $this->userId,
+        ];
+        $this->db->insert('cash_reconciliations', $record);
+        Auth::auditCreate('cash_reconciliation', $reconId, $record, "Cash reconciliation: {$account['name']} on {$date}", 'reports');
+
+        if ($shortage > 0) {
+            $this->createAlert('CASH_SHORTAGE', "Cash shortage of " . formatAmount($shortage) . " in {$account['name']} (book " . formatAmount($bookBalance) . ", counted " . formatAmount($counted) . ").", 'account', $accountId, 'WARNING');
+        }
+
+        return [
+            'id' => $reconId,
+            'journal_entry_id' => $journalEntryId,
+            'shortage' => $shortage,
+            'surplus' => $surplus,
+            'book_balance' => $bookBalance,
+            'counted_amount' => $counted,
+            'status' => $status,
+        ];
+    }
+
+    public function getCashReconciliationHistory($accountId, $limit = 30) {
+        return $this->db->fetchAll(
+            "SELECT cr.*, u.full_name AS created_by_name
+             FROM cash_reconciliations cr
+             LEFT JOIN users u ON u.id = cr.created_by
+             WHERE cr.business_id = ? AND cr.cash_account_id = ?
+             ORDER BY cr.recon_date DESC, cr.created_at DESC
+             LIMIT " . intval($limit),
+            [$this->businessId, $accountId]
+        );
+    }
+
     private function ensureAdvancedSchema() {
         if (self::$advancedSchemaEnsured) {
             return;
@@ -325,6 +459,8 @@ class AccountingEngine {
             $this->ensureCarStatusEnum();
             $this->ensureCarOperationsSchema();
             $this->ensureCarLoanCommissionSchema();
+            $this->ensureAlertsTypeEnum();
+            $this->ensureCashReconciliationSchema();
 
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_vouchers` (
@@ -438,7 +574,7 @@ class AccountingEngine {
                     `received_date` DATE NOT NULL,
                     `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                     `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-                    `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED') NOT NULL DEFAULT 'OPEN',
+                    `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED','FORFEITED','REFUNDED') NOT NULL DEFAULT 'OPEN',
                     `narration` VARCHAR(500) DEFAULT NULL,
                     `created_by` CHAR(36) NOT NULL,
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -553,9 +689,7 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED' AFTER `purchase_paid_amount`");
             }
             $this->ensureEntryTypeIdentitySchema();
-            if (!$this->columnExists('cars', 'sale_gst_amount')) {
-                $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_gst_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
-            }
+            $this->ensureCarTokensStatusEnum();
             if (!$this->columnExists('cars', 'buyer_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `buyer_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_contact`");
             }
@@ -642,7 +776,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'GST_UTILIZATION', 'RTO_EXPENSE', 'RTO_RECOVERY'];
+        $required = ['CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -656,10 +790,75 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','GST_PAYMENT','GST_UTILIZATION','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION')
+                 ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION')
                  NOT NULL"
             );
         }
+    }
+
+    private function ensureCarTokensStatusEnum() {
+        $column = $this->db->fetch(
+            "SELECT COLUMN_TYPE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'car_tokens'
+               AND COLUMN_NAME = 'status'"
+        );
+        $currentType = $column['COLUMN_TYPE'] ?? '';
+        if (strpos($currentType, "'FORFEITED'") === false || strpos($currentType, "'REFUNDED'") === false) {
+            $this->db->query(
+                "ALTER TABLE `car_tokens`
+                 MODIFY COLUMN `status`
+                 ENUM('OPEN','PARTIAL','APPLIED','REVERSED','FORFEITED','REFUNDED')
+                 NOT NULL DEFAULT 'OPEN'"
+            );
+        }
+    }
+
+    private function ensureAlertsTypeEnum() {
+        $column = $this->db->fetch(
+            "SELECT COLUMN_TYPE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'alerts'
+               AND COLUMN_NAME = 'type'"
+        );
+        $currentType = $column['COLUMN_TYPE'] ?? '';
+        if (strpos($currentType, "'LOW_SALE_PRICE'") === false || strpos($currentType, "'SALE_BELOW_COST'") === false || strpos($currentType, "'CASH_SHORTAGE'") === false) {
+            $this->db->query(
+                "ALTER TABLE `alerts`
+                 MODIFY COLUMN `type`
+                 ENUM('CASH_LOW','DEBTOR_OVERDUE','ADVANCE_HIGH','CAR_AGING','TRIAL_IMBALANCE','PARTNER_WITHDRAWAL','SALARY_DUPLICATE','LOW_SALE_PRICE','SALE_BELOW_COST','CASH_SHORTAGE')
+                 NOT NULL"
+            );
+        }
+    }
+
+    private function ensureCashReconciliationSchema() {
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `cash_reconciliations` (
+                `id` CHAR(36) NOT NULL,
+                `business_id` CHAR(36) NOT NULL,
+                `cash_account_id` CHAR(36) NOT NULL,
+                `account_name` VARCHAR(200) DEFAULT NULL,
+                `recon_date` DATE NOT NULL,
+                `book_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `counted_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `shortage` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `surplus` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `difference` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                `reason` VARCHAR(500) DEFAULT NULL,
+                `journal_entry_id` CHAR(36) DEFAULT NULL,
+                `approved_by` CHAR(36) DEFAULT NULL,
+                `approved_at` TIMESTAMP NULL DEFAULT NULL,
+                `status` ENUM('RECONCILED','SHORTAGE','SURPLUS') NOT NULL DEFAULT 'RECONCILED',
+                `created_by` CHAR(36) NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_cash_recon_business` (`business_id`, `cash_account_id`, `recon_date`),
+                KEY `idx_cash_recon_entry` (`journal_entry_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
     }
 
     private function ensureEntryTypeIdentitySchema() {
@@ -1094,9 +1293,9 @@ class AccountingEngine {
     /**
      * CAR PURCHASE — Business funds
      */
-    public function validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
+    public function validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding = [], $sellerName = null, $paidNow = null) {
         $this->validateDateNotLocked($date);
-        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $grossAmount = round(floatval($amount), 2);
         $partnerFunding = $this->normalizePartnerFunding($grossAmount, $partnerFunding);
 
         $businessAmount = $grossAmount;
@@ -1120,8 +1319,6 @@ class AccountingEngine {
 
         return [
             'gross_amount' => $grossAmount,
-            'gst_amount' => $gstAmount,
-            'base_amount' => $baseAmount,
             'partner_funding' => $partnerFunding,
             'business_amount' => round($businessAmount, 2),
             'paid_now' => $paidNow,
@@ -1129,7 +1326,7 @@ class AccountingEngine {
         ];
     }
 
-    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $gstAmount = 0, $sellerName = null, $paidNow = null) {
+    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $sellerName = null, $paidNow = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -1138,31 +1335,32 @@ class AccountingEngine {
         try {
             $carAccountId = $car['account_id'];
             $lines = [];
-            $validation = $this->validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding, $gstAmount, $sellerName, $paidNow);
+            $validation = $this->validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding, $sellerName, $paidNow);
         $grossAmount = $validation['gross_amount'];
-        $gstAmount = $validation['gst_amount'];
         $partnerFunding = $validation['partner_funding'];
         $businessAmount = $validation['business_amount'];
         $paidNow = $validation['paid_now'];
         $sellerOutstanding = $validation['seller_outstanding'];
-        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
-        $businessGst = 0.0;
+        $sellerPartyId = null;
+        $sellerParty = null;
+        $sellerName = trim((string) $sellerName);
+        if ($sellerName !== '') {
+            // Always create/link the source (seller) party so the car keeps a
+            // seller relationship even when the purchase is fully paid on the spot.
+            // A seller ledger line is only posted when money is still owed; the
+            // seller_party_id link still lets the car page and party profile show
+            // "bought from this source" for negotiation and history.
+            $sellerPartyId = $this->getOrCreateParty($sellerName, 'SELLER');
+            $sellerParty = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$sellerPartyId, $this->businessId]);
+        }
+
         if ($businessAmount > 0) {
-            $businessGst = $grossAmount > 0 ? round(($gstAmount * $businessAmount) / $grossAmount, 2) : 0.0;
-            $businessBase = round($businessAmount - $businessGst, 2);
-            if ($businessBase > 0) {
-                $lines[] = ['account_id' => $carAccountId, 'amount' => $businessBase, 'type' => 'DR', 'narration' => 'Car purchase - business funds'];
-            }
-            if ($businessGst > 0 && !empty($gstInputAccount['id'])) {
-                $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $businessGst, 'type' => 'DR', 'narration' => 'GST input on car purchase'];
-            }
+            $lines[] = ['account_id' => $carAccountId, 'amount' => $businessAmount, 'type' => 'DR', 'narration' => 'Car purchase - business funds'];
             if ($paidNow > 0) {
                 $lines[] = ['account_id' => $paymentAccount, 'amount' => $paidNow, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
             }
             if ($sellerOutstanding > 0) {
-                $sellerPartyId = $this->getOrCreateParty($sellerName, 'SELLER');
-                $sellerParty = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$sellerPartyId, $this->businessId]);
                 $lines[] = ['account_id' => $sellerParty['account_id'], 'amount' => $sellerOutstanding, 'type' => 'CR', 'narration' => "Pending purchase payment to $sellerName"];
             }
         }
@@ -1173,28 +1371,14 @@ class AccountingEngine {
         }
 
         // Partner funding entries
-        $partnerGstAllocated = 0.0;
-        $partnerGstTarget = round($gstAmount - $businessGst, 2);
         $partnerRowsRemaining = count(array_filter($partnerFunding, static fn($row) => floatval($row['amount'] ?? 0) > 0));
         foreach ($partnerFunding as $pf) {
             $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$pf['partner_id'], $this->businessId]);
             if (!$partner) continue;
 
             if ($pf['amount'] > 0) {
-                $partnerRowsRemaining--;
-                $partnerGst = $partnerRowsRemaining === 0
-                    ? round($partnerGstTarget - $partnerGstAllocated, 2)
-                    : ($grossAmount > 0 ? round(($gstAmount * $pf['amount']) / $grossAmount, 2) : 0.0);
-                $partnerGstAllocated += $partnerGst;
-                $partnerBase = round($pf['amount'] - $partnerGst, 2);
-
                 $partnerLines = [];
-                if ($partnerBase > 0) {
-                    $partnerLines[] = ['account_id' => $carAccountId, 'amount' => $partnerBase, 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"];
-                }
-                if ($partnerGst > 0 && !empty($gstInputAccount['id'])) {
-                    $partnerLines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $partnerGst, 'type' => 'DR', 'narration' => "GST input on {$car['registration_no']}"];
-                }
+                $partnerLines[] = ['account_id' => $carAccountId, 'amount' => $pf['amount'], 'type' => 'DR', 'narration' => "Partner {$partner['name']} contribution"];
                 $partnerLines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $pf['amount'], 'type' => 'CR', 'narration' => "Investment in car {$car['registration_no']}"];
                 $partnerEntryId = $this->postJournalEntry('PARTNER_INVEST', $date, "Partner {$partner['name']} invested in {$car['registration_no']}", $partnerLines, ['car_id' => $carId, 'partner_id' => $pf['partner_id']]);
 
@@ -1263,21 +1447,6 @@ class AccountingEngine {
         if ($amount <= 0) throw new Exception('Token amount must be greater than zero.');
         $party = $this->resolveParty($partyId, $buyerName, $buyerPhone, 'BUYER', ['BUYER', 'DEBTOR']);
 
-        $otherBuyer = $this->db->fetch(
-            "SELECT ct.party_id, dc.name
-             FROM car_tokens ct
-             JOIN debtors_creditors dc ON dc.id = ct.party_id
-             WHERE ct.business_id = ? AND ct.car_id = ?
-               AND ct.status IN ('OPEN','PARTIAL')
-               AND (ct.amount - ct.applied_amount) > 0.009
-               AND ct.party_id <> ?
-             LIMIT 1",
-            [$this->businessId, $carId, $party['id']]
-        );
-        if ($otherBuyer) {
-            throw new Exception("This car already has an open token from {$otherBuyer['name']}. Reverse or settle that token before accepting another buyer.");
-        }
-
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
@@ -1321,10 +1490,14 @@ class AccountingEngine {
         );
         $received = 0.0;
         $applied = 0.0;
+        $held = 0.0;
         foreach ($rows as $row) {
             if ($row['status'] === 'REVERSED') continue;
             $received += floatval($row['amount']);
             $applied += floatval($row['applied_amount']);
+            if (in_array($row['status'], ['OPEN', 'PARTIAL'], true)) {
+                $held += max(0, floatval($row['amount']) - floatval($row['applied_amount']));
+            }
         }
         $openRow = null;
         foreach ($rows as $row) {
@@ -1337,7 +1510,7 @@ class AccountingEngine {
             'rows' => $rows,
             'received' => round($received, 2),
             'applied' => round($applied, 2),
-            'available' => round(max(0, $received - $applied), 2),
+            'available' => round($held, 2),
             'party_id' => $openRow['party_id'] ?? null,
             'party_name' => $openRow['party_name'] ?? null,
         ];
@@ -1346,7 +1519,152 @@ class AccountingEngine {
     /**
      * CAR SALE - full or partial payment, including any token already held.
      */
-    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $gstAmount = 0, $commissionAmount = 0, $buyerPartyId = null, $buyerPhone = null) {
+    public function getCarTokenAvailableForParty($carId, $partyId) {
+        $rows = $this->db->fetchAll(
+            "SELECT amount, applied_amount FROM car_tokens
+             WHERE business_id = ? AND car_id = ? AND party_id = ?
+               AND status IN ('OPEN','PARTIAL')",
+            [$this->businessId, $carId, $partyId]
+        );
+        $available = 0.0;
+        foreach ($rows as $row) {
+            $available += max(0, floatval($row['amount']) - floatval($row['applied_amount']));
+        }
+        return round($available, 2);
+    }
+
+    /**
+     * TOKEN FORFEITURE — a buyer who never completed the deal leaves their token
+     * with the business. The held liability is converted into income of THIS car:
+     *   Dr Customer Token Advances / Cr Token Forfeiture Income
+     * No cash moves. This is an explicit, dated, reason-required action — it is
+     * never applied silently. The token is marked FORFEITED.
+     */
+    public function forfeitCarToken($tokenId, $date, $reason) {
+        $token = $this->db->fetch("SELECT * FROM car_tokens WHERE id = ? AND business_id = ?", [$tokenId, $this->businessId]);
+        if (!$token) throw new Exception("Token not found.");
+        if (!in_array($token['status'], ['OPEN', 'PARTIAL'], true)) {
+            throw new Exception("Only an open token that is not already applied can be forfeited.");
+        }
+        $amount = round(floatval($token['amount']) - floatval($token['applied_amount']), 2);
+        if ($amount <= 0.009) throw new Exception("This token has no available balance left to forfeit.");
+        $reason = trim((string) $reason);
+        if ($reason === '') throw new Exception("A forfeiture reason and date are required.");
+
+        $car = $this->db->fetch("SELECT registration_no FROM cars WHERE id = ? AND business_id = ?", [$token['car_id'], $this->businessId]);
+        $reg = $car['registration_no'] ?? '';
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $advanceAccount = $this->getOrCreateSystemAccount('CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities');
+            $incomeAccount = $this->getOrCreateSystemAccount('TOKEN-FORF', 'Token Forfeiture Income', 'INCOME', 'Direct Income');
+            $entryId = $this->postJournalEntry('TOKEN_FORFEITURE', $date, $reason, [
+                ['account_id' => $advanceAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'Token forfeited (buyer did not complete the deal)'],
+                ['account_id' => $incomeAccount['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Token forfeiture income - $reg"],
+            ], ['car_id' => $token['car_id'], 'party_id' => $token['party_id']]);
+
+            $this->db->query(
+                "UPDATE car_tokens SET status = 'FORFEITED' WHERE id = ? AND business_id = ?",
+                [$tokenId, $this->businessId]
+            );
+            Auth::auditUpdate('car_token', $tokenId, $token, array_merge($token, ['status' => 'FORFEITED']), 'Token forfeited (became profit of this car): ' . $reason, 'transactions');
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * TOKEN REFUND — money paid back to a buyer.
+     *  - If the token was still OPEN (a held liability): Dr Customer Token Advances / Cr Cash.
+     *  - If the token was FORFEITED (already booked as this car's profit): Dr Token
+     *    Forfeiture Income / Cr Cash — this REDUCES this car's profit even if the car
+     *    has already been sold to someone else.
+     * Either way the token is marked REFUNDED. A reason is required.
+     */
+    public function refundCarToken($tokenId, $amount, $date, $paymentAccount, $reason) {
+        $token = $this->db->fetch("SELECT * FROM car_tokens WHERE id = ? AND business_id = ?", [$tokenId, $this->businessId]);
+        if (!$token) throw new Exception("Token not found.");
+        if (!in_array($token['status'], ['OPEN', 'PARTIAL', 'FORFEITED'], true)) {
+            throw new Exception("Only open or forfeited tokens can be refunded.");
+        }
+        $available = round(floatval($token['amount']) - floatval($token['applied_amount']), 2);
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) throw new Exception("Refund amount must be greater than zero.");
+        if (abs($amount - $available) > 0.01) {
+            throw new Exception("Refund must equal the full remaining token balance of " . formatAmount($available) . ".");
+        }
+        $reason = trim((string) $reason);
+        if ($reason === '') throw new Exception("A refund reason is required.");
+        $this->validateCashAvailable($paymentAccount, $amount);
+
+        $car = $this->db->fetch("SELECT registration_no FROM cars WHERE id = ? AND business_id = ?", [$token['car_id'], $this->businessId]);
+        $reg = $car['registration_no'] ?? '';
+        $forfeited = $token['status'] === 'FORFEITED';
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $lines = [];
+            if ($forfeited) {
+                // Reverse the earlier forfeiture income for this car -> reduces this car's profit.
+                $incomeAccount = $this->getOrCreateSystemAccount('TOKEN-FORF', 'Token Forfeiture Income', 'INCOME', 'Direct Income');
+                $lines[] = ['account_id' => $incomeAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Refund of forfeited token - $reg (reduces car profit)"];
+            } else {
+                // The liability was still being held -> clear it.
+                $advanceAccount = $this->getOrCreateSystemAccount('CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities');
+                $lines[] = ['account_id' => $advanceAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'Token refunded to buyer'];
+            }
+            $lines[] = ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => 'Token refund paid'];
+
+            $entryId = $this->postJournalEntry('TOKEN_REFUND', $date, $reason, $lines, [
+                'car_id' => $token['car_id'],
+                'party_id' => $token['party_id'],
+            ]);
+            $this->db->query(
+                "UPDATE car_tokens SET status = 'REFUNDED' WHERE id = ? AND business_id = ?",
+                [$tokenId, $this->businessId]
+            );
+            Auth::auditUpdate('car_token', $tokenId, $token, array_merge($token, ['status' => 'REFUNDED']), 'Token refunded: ' . $reason, 'transactions');
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Net forfeiture income attributable to a car: forfeited tokens (income) minus
+     * refunds of those forfeited tokens (which reduce the car's profit). Refunds of
+     * ordinary held tokens are NOT included here because they never touched profit.
+     */
+    public function getCarTokenForfeitureNet($carId) {
+        $forfeitAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'TOKEN-FORF'", [$this->businessId]);
+        if (!$forfeitAccount) return 0.0;
+        $row = $this->db->fetch(
+            "SELECT COALESCE(SUM(
+                CASE
+                    WHEN je.transaction_type = 'TOKEN_FORFEITURE' AND jl.entry_type = 'CR' THEN jl.amount
+                    WHEN je.transaction_type = 'TOKEN_REFUND' AND jl.entry_type = 'DR' THEN -jl.amount
+                    ELSE 0
+                END
+             ), 0) AS net
+             FROM journal_entries je
+             JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             WHERE je.business_id = ?
+               AND je.car_id = ?
+               AND je.status = 'POSTED'
+               AND jl.account_id = ?",
+            [$this->businessId, $carId, $forfeitAccount['id']]
+        );
+        return round(floatval($row['net'] ?? 0), 2);
+    }
+
+    public function carSale($carId, $salePrice, $date, $receivingAccount, $narration, $buyerName = null, $amountReceived = null, $commissionAmount = 0, $buyerPartyId = null, $buyerPhone = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception('Car not found.');
         if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Use the Commission Cars section to sell a customer-owned car.');
@@ -1362,16 +1680,14 @@ class AccountingEngine {
         $party = $this->resolveParty($buyerPartyId, $buyerName, $buyerPhone, 'BUYER', ['BUYER', 'DEBTOR']);
         $partyId = $party['id'];
         $buyerName = $party['name'];
-        $tokenSummary = $this->getCarTokenSummary($carId);
-        if ($tokenSummary['available'] > 0.009 && $tokenSummary['party_id'] !== $partyId) {
-            throw new Exception("This car has an open token from {$tokenSummary['party_name']}. Select that buyer or reverse the token first.");
-        }
-
         $carAccountId = $car['account_id'];
         $totalCost = $this->getCarTotalCost($carId);
-        [$grossSalePrice, $gstAmount, $netSalePrice] = $this->normalizeGstComponent($salePrice, $gstAmount);
+        $grossSalePrice = round(floatval($salePrice), 2);
+        $netSalePrice = $grossSalePrice;
         $grossReceiptTarget = round($grossSalePrice + $commissionAmount, 2);
-        $tokenApplied = round(min($tokenSummary['available'], $grossReceiptTarget), 2);
+        // Only THIS buyer's held tokens are netted against the sale. Tokens held by
+        // other buyers (double-booking) remain open so they can be forfeited or refunded later.
+        $tokenApplied = round(min($this->getCarTokenAvailableForParty($carId, $partyId), $grossReceiptTarget), 2);
         $remainingAfterToken = round($grossReceiptTarget - $tokenApplied, 2);
         $received = $amountReceived === null ? $remainingAfterToken : round(floatval($amountReceived), 2);
         if ($received < 0) throw new Exception('Amount received now cannot be negative.');
@@ -1403,10 +1719,6 @@ class AccountingEngine {
                 $commissionIncome = $this->getOrCreateSystemAccount('SALE-COMM', 'Car Sale Commission Income', 'INCOME', 'Direct Income');
                 $lines[] = ['account_id' => $commissionIncome['id'], 'amount' => $commissionAmount, 'type' => 'CR', 'narration' => "Commission income - {$car['registration_no']}"];
             }
-            if ($gstAmount > 0) {
-                $gstPayable = $this->getOrCreateSystemAccount('GST-PAY', 'GST Payable', 'LIABILITY', 'GST Liabilities');
-                $lines[] = ['account_id' => $gstPayable['id'], 'amount' => $gstAmount, 'type' => 'CR', 'narration' => "GST output on {$car['registration_no']}"];
-            }
 
             $entryId = $this->postJournalEntry('CAR_SALE', $date, $narration, $lines, [
                 'car_id' => $carId,
@@ -1432,14 +1744,30 @@ class AccountingEngine {
 
             $status = $outstanding > 0 ? 'PENDING_PAYMENT' : 'SOLD';
             $this->db->query(
-                "UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, sale_gst_amount = ?, buyer_name = ?, buyer_party_id = ? WHERE id = ? AND business_id = ?",
-                [$status, $date, $grossSalePrice, $commissionAmount, $gstAmount, $buyerName, $partyId, $carId, $this->businessId]
+                "UPDATE cars SET status = ?, sold_date = ?, sale_price = ?, sale_commission_amount = ?, buyer_name = ?, buyer_party_id = ? WHERE id = ? AND business_id = ?",
+                [$status, $date, $grossSalePrice, $commissionAmount, $buyerName, $partyId, $carId, $this->businessId]
             );
             $soldCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             Auth::auditUpdate('car', $carId, $car, $soldCar ?: [], 'Car sale, buyer, token adjustment, and payment status updated', 'transactions');
             $this->recordPartnerProfitDistribution($carId, $profit, $date);
 
             if ($ownsTransaction) $this->db->commit();
+
+            // Sale-price control: surface below-expected and below-cost sales as
+            // alerts AFTER the sale commits so a control failure never rolls back
+            // a valid sale. These give the owner a visible flag when staff sell a
+            // car cheaper than it should have gone for.
+            try {
+                $expectedSale = round(floatval($car['expected_sale_price'] ?? 0), 2);
+                if ($expectedSale > 0 && $netSalePrice < $expectedSale) {
+                    $this->createAlert('LOW_SALE_PRICE', "Car {$car['registration_no']} sold for " . formatAmount($netSalePrice) . " below its expected value of " . formatAmount($expectedSale) . '.', 'car', $carId, 'WARNING');
+                }
+                if ($netSalePrice < $totalCost) {
+                    $this->createAlert('SALE_BELOW_COST', "Car {$car['registration_no']} sold for " . formatAmount($netSalePrice) . " below its total cost of " . formatAmount($totalCost) . '.', 'car', $carId, 'WARNING');
+                }
+            } catch (Throwable $alertError) {
+                error_log('AutoBooks sale-price alert skipped: ' . $alertError->getMessage());
+            }
             return $entryId;
         } catch (Throwable $e) {
             if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
@@ -1615,16 +1943,10 @@ class AccountingEngine {
         );
         if (!$owner || !in_array($owner['type'], ['SELLER', 'CREDITOR'], true)) throw new Exception('The commission car owner account is missing or inactive.');
         $buyer = $this->resolveParty($buyerPartyId, $buyerName, $buyerPhone, 'BUYER', ['BUYER', 'DEBTOR']);
-        $tokenSummary = $this->getCarTokenSummary($carId);
-        if ($tokenSummary['available'] > 0.009 && $tokenSummary['party_id'] !== $buyer['id']) {
-            throw new Exception("This car has an open token from {$tokenSummary['party_name']}. Select that buyer or reverse the token first.");
-        }
-        if ($paymentHandling === 'COMMISSION_ONLY' && $tokenSummary['available'] > 0.009) {
-            throw new Exception('The business already holds a buyer token for this car. Select Full sale amount handled by business so the owner payable remains correct.');
-        }
+        $buyerTokenAvailable = $this->getCarTokenAvailableForParty($carId, $buyer['id']);
 
         $targetReceipt = $paymentHandling === 'FULL_AMOUNT' ? $grossSaleAmount : $commissionAmount;
-        $tokenApplied = $paymentHandling === 'FULL_AMOUNT' ? round(min($tokenSummary['available'], $targetReceipt), 2) : 0.0;
+        $tokenApplied = $paymentHandling === 'FULL_AMOUNT' ? round(min($buyerTokenAvailable, $targetReceipt), 2) : 0.0;
         $remainingAfterToken = round($targetReceipt - $tokenApplied, 2);
         $receivedNow = $amountReceived === null ? $remainingAfterToken : round(floatval($amountReceived), 2);
         if ($receivedNow < 0 || $receivedNow - $remainingAfterToken > 0.01) {
@@ -2001,7 +2323,7 @@ class AccountingEngine {
     /**
      * CAR EXPENSE
      */
-    public function carExpense($carId, $amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
+    public function carExpense($carId, $amount, $date, $paymentAccount, $narration) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -2011,7 +2333,7 @@ class AccountingEngine {
         }
 
         $this->validateCashAvailable($paymentAccount, $amount);
-        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $grossAmount = round(floatval($amount), 2);
 
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
@@ -2019,14 +2341,10 @@ class AccountingEngine {
             $expenseName = 'Car Repair / Service';
             $expenseAccount = $this->getOrCreateSystemAccount('CAR-REPAIR', $expenseName, 'EXPENSE', 'Direct Expenses (Car)');
             $expenseAccountId = $expenseAccount['id'];
-            $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
-        if ($baseAmount > 0) {
-            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
-        }
-        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
-            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$expenseName}"];
+        if ($grossAmount > 0) {
+            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $grossAmount, 'type' => 'DR', 'narration' => $narration];
         }
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$expenseName}"];
 
@@ -2035,10 +2353,10 @@ class AccountingEngine {
         // Owned stock carries its direct costs in its inventory account. An outside
         // car is never our asset: leave its expense in P&L while retaining the car
         // link on the journal entry for its own timeline and profitability.
-        if (($car['ownership_type'] ?? 'OWNED') === 'OWNED' && $baseAmount > 0 && !empty($car['account_id'])) {
+        if (($car['ownership_type'] ?? 'OWNED') === 'OWNED' && $grossAmount > 0 && !empty($car['account_id'])) {
             $carLines = [
-                ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
-                ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
+                ['account_id' => $car['account_id'], 'amount' => $grossAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
+                ['account_id' => $expenseAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
             ];
             $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$expenseName} to {$car['registration_no']}", $carLines, [
                 'car_id' => $carId,
@@ -2054,24 +2372,22 @@ class AccountingEngine {
         }
     }
 
-    public function rtoExpense($rtoId, $carId, $amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
+    public function rtoExpense($rtoId, $carId, $amount, $date, $paymentAccount, $narration) {
         $rto = $this->db->fetch("SELECT * FROM rto_records WHERE id = ? AND business_id = ?", [$rtoId, $this->businessId]);
         if (!$rto) throw new Exception("RTO record not found.");
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found.");
 
         $this->validateCashAvailable($paymentAccount, $amount);
-        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $grossAmount = round(floatval($amount), 2);
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
             $expenseAccount = $this->getOrCreateSystemAccount('RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)');
             $expenseAccountId = $expenseAccount['id'];
-            $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
-        if ($baseAmount > 0) $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
-        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => 'GST input for RTO'];
+        if ($grossAmount > 0) $lines[] = ['account_id' => $expenseAccountId, 'amount' => $grossAmount, 'type' => 'DR', 'narration' => $narration];
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => 'Paid RTO expense'];
         $entryId = $this->postJournalEntry('RTO_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
 
@@ -2162,27 +2478,23 @@ class AccountingEngine {
     /**
      * GENERAL EXPENSE
      */
-    public function generalExpense($amount, $date, $paymentAccount, $narration, $gstAmount = 0) {
+    public function generalExpense($amount, $date, $paymentAccount, $narration) {
         $this->validateCashAvailable($paymentAccount, $amount);
-        [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
+        $grossAmount = round(floatval($amount), 2);
         $expenseName = 'Office / Business Expense';
         $expenseAccount = $this->getOrCreateSystemAccount('GEN-EXP', $expenseName, 'EXPENSE', 'Indirect Expenses');
         $expenseAccountId = $expenseAccount['id'];
-        $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
 
         $lines = [];
-        if ($baseAmount > 0) {
-            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
-        }
-        if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
-            $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for $expenseName"];
+        if ($grossAmount > 0) {
+            $lines[] = ['account_id' => $expenseAccountId, 'amount' => $grossAmount, 'type' => 'DR', 'narration' => $narration];
         }
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for $expenseName"];
 
         return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
     }
 
-    public function categoryEntry($categoryAccountId, $direction, $amount, $date, $primaryAccountId, $narration, $gstAmount = 0) {
+    public function categoryEntry($categoryAccountId, $direction, $amount, $date, $primaryAccountId, $narration) {
         $direction = strtolower((string) $direction);
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) {
@@ -2230,21 +2542,17 @@ class AccountingEngine {
                 throw new Exception("Selected money-out type is not an expense account.");
             }
             $this->validateCashAvailable($primaryAccountId, $amount);
-            [$grossAmount, $gstAmount, $baseAmount] = $this->normalizeGstComponent($amount, $gstAmount);
-            $gstInputAccount = $gstAmount > 0 ? $this->getOrCreateSystemAccount('GST-RCV', 'GST Input Credit', 'ASSET', 'GST Assets') : null;
+            $grossAmount = round(floatval($amount), 2);
 
             $lines = [];
-            if ($baseAmount > 0) {
-                $lines[] = ['account_id' => $categoryAccountId, 'amount' => $baseAmount, 'type' => 'DR', 'narration' => $narration];
-            }
-            if ($gstAmount > 0 && !empty($gstInputAccount['id'])) {
-                $lines[] = ['account_id' => $gstInputAccount['id'], 'amount' => $gstAmount, 'type' => 'DR', 'narration' => "GST input for {$categoryAccount['name']}"];
+            if ($grossAmount > 0) {
+                $lines[] = ['account_id' => $categoryAccountId, 'amount' => $grossAmount, 'type' => 'DR', 'narration' => $narration];
             }
             $lines[] = ['account_id' => $primaryAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => $narration];
 
             return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines, [
                 'entry_type_id' => customEntryTypeId($categoryAccountId),
-                'entry_amount' => $baseAmount,
+                'entry_amount' => $grossAmount,
             ]);
         }
 
@@ -2499,7 +2807,7 @@ class AccountingEngine {
         }
         $narration = trim((string) $narration);
         if ($narration === '') {
-            throw new Exception("Commission reason / narration is required.");
+            $narration = "Commission to {$employee['name']}";
         }
 
         $carId = trim((string) $carId) ?: null;
@@ -2779,75 +3087,6 @@ class AccountingEngine {
         return $this->postJournalEntry('CONTRA_TRANSFER', $date, $narration, $lines);
     }
 
-    /**
-     * GST PAYMENT
-     */
-    public function gstPayment($amount, $date, $narration, $gstBankAccountId = null) {
-        $amount = round(floatval($amount), 2);
-        if ($amount <= 0) throw new Exception("GST payment amount must be greater than zero.");
-
-        $gstPayable = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$this->businessId]);
-        if ($gstBankAccountId) {
-            $gstBank = $this->db->fetch(
-                "SELECT id FROM accounts WHERE business_id = ? AND id = ? AND entity_type = 'GST' AND is_active = 1",
-                [$this->businessId, $gstBankAccountId]
-            );
-        } else {
-            $gstBank = $this->db->fetch(
-                "SELECT id FROM accounts WHERE business_id = ? AND entity_type = 'GST' AND entity_id IS NULL AND is_active = 1 ORDER BY code, name LIMIT 1",
-                [$this->businessId]
-            );
-        }
-        if (!$gstPayable || !$gstBank) throw new Exception("GST payable or GST bank account is missing.");
-
-        $payableRow = $this->getAccountBalanceRow($gstPayable['id']);
-        $payableOutstanding = $this->naturalOutstandingValue($payableRow[0], $payableRow[1], 'CR');
-        if ($payableOutstanding <= 0.009) {
-            throw new Exception("There is no GST payable balance available for payment.");
-        }
-        if ($amount - $payableOutstanding > 0.01) {
-            throw new Exception("GST payment cannot exceed current GST payable balance of " . formatAmount($payableOutstanding) . '.');
-        }
-
-        $this->validateCashAvailable($gstBank['id'], $amount);
-
-        $lines = [
-            ['account_id' => $gstPayable['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'GST liability paid'],
-            ['account_id' => $gstBank['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'Paid from GST Bank'],
-        ];
-
-        return $this->postJournalEntry('GST_PAYMENT', $date, $narration, $lines);
-    }
-
-    public function gstUtilization($amount, $date, $narration) {
-        $amount = round(floatval($amount), 2);
-        if ($amount <= 0) throw new Exception("GST utilization amount must be greater than zero.");
-
-        $gstPayable = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-PAY'", [$this->businessId]);
-        $gstInput = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'GST-RCV'", [$this->businessId]);
-        if (!$gstPayable || !$gstInput) throw new Exception("GST payable or GST input account is missing.");
-
-        $payableRow = $this->getAccountBalanceRow($gstPayable['id']);
-        $inputRow = $this->getAccountBalanceRow($gstInput['id']);
-        $availablePayable = $this->naturalOutstandingValue($payableRow[0], $payableRow[1], 'CR');
-        $availableInput = $this->naturalOutstandingValue($inputRow[0], $inputRow[1], 'DR');
-        $maxUtilization = min($availablePayable, $availableInput);
-
-        if ($maxUtilization <= 0.009) {
-            throw new Exception("There is no matching GST payable and GST input credit available to utilize.");
-        }
-        if ($amount - $maxUtilization > 0.01) {
-            throw new Exception("GST utilization cannot exceed " . formatAmount($maxUtilization) . " based on current payable and input credit balances.");
-        }
-
-        $lines = [
-            ['account_id' => $gstPayable['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'GST payable adjusted against input credit'],
-            ['account_id' => $gstInput['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'GST input credit utilized'],
-        ];
-
-        return $this->postJournalEntry('GST_UTILIZATION', $date, $narration, $lines);
-    }
-
     // ========================================
     // REVERSAL
     // ========================================
@@ -2895,7 +3134,7 @@ class AccountingEngine {
         $date = trim((string) $date);
         $narration = trim((string) $narration);
         if ($narration === '') {
-            throw new Exception('Narration is required.');
+            $narration = 'Correction - ' . $entry['reference_no'];
         }
         $this->validateDateNotLocked($entry['entry_date']);
         $this->validateDateNotLocked($date);
@@ -3331,6 +3570,10 @@ class AccountingEngine {
             }
         }
 
+        if (in_array($entry['transaction_type'], ['TOKEN_FORFEITURE', 'TOKEN_REFUND'], true)) {
+            throw new Exception('Token forfeiture and refund entries cannot be reversed directly. Use the Forfeit / Refund action on the car page so the token register stays correct.');
+        }
+
         if ($entry['transaction_type'] === 'CAR_PURCHASE') {
             if (!$this->canArchiveCarPurchase($entry)) {
                 throw new Exception("This car purchase already has downstream activity. Use a dedicated admin correction workflow instead of direct reversal.");
@@ -3611,7 +3854,6 @@ class AccountingEngine {
                              sold_date = NULL,
                              sale_price = NULL,
                              sale_commission_amount = 0,
-                             sale_gst_amount = 0,
                              buyer_name = NULL,
                              buyer_party_id = NULL
                          WHERE id = ? AND business_id = ?",
@@ -3765,7 +4007,6 @@ class AccountingEngine {
                  sold_date = NULL,
                  sale_price = NULL,
                  sale_commission_amount = 0,
-                 sale_gst_amount = 0,
                  buyer_name = NULL,
                  notes = ?
              WHERE id = ? AND business_id = ?",
@@ -3856,9 +4097,8 @@ class AccountingEngine {
             return;
         }
 
-        if (in_array($account['entity_type'], ['BANK', 'GST'], true) && ($availableBalance - $amount) < -0.009) {
-            $bookLabel = $account['entity_type'] === 'GST' ? 'GST bank' : 'bank';
-            throw new Exception("Insufficient {$bookLabel} balance. Current: " . formatAmount(max(0, $availableBalance)) . ", Required: " . formatAmount($amount) . '.');
+        if ($account['entity_type'] === 'BANK' && ($availableBalance - $amount) < -0.009) {
+            throw new Exception("Insufficient bank balance. Current: " . formatAmount(max(0, $availableBalance)) . ", Required: " . formatAmount($amount) . '.');
         }
     }
 
@@ -4093,8 +4333,7 @@ class AccountingEngine {
         $totalCost = $this->getCarTotalCost($carId);
         $salePrice = $car['sale_price'] ?? 0;
         $saleCommissionAmount = floatval($car['sale_commission_amount'] ?? 0);
-        $saleGstAmount = floatval($car['sale_gst_amount'] ?? 0);
-        $netSalePrice = max(0, $salePrice - $saleGstAmount);
+        $netSalePrice = $salePrice;
         $totalSaleRealisation = $salePrice + $saleCommissionAmount;
         $rtoRecovery = $this->db->fetch(
             "SELECT COALESCE(SUM(recovered_amount), 0) AS total FROM rto_records WHERE business_id = ? AND car_id = ? AND status <> 'CANCELLED'",
@@ -4104,7 +4343,10 @@ class AccountingEngine {
         $rtoExpense = $this->getCarRtoPnlExpense($carId);
         $loanCommission = $this->db->fetch("SELECT COALESCE(SUM(commission_amount),0) total FROM car_loan_commissions WHERE business_id=? AND car_id=? AND status<>'REVERSED'",[$this->businessId,$carId]);
         $loanCommissionIncome = floatval($loanCommission['total'] ?? 0);
-        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome;
+        // Token forfeiture income for this car (forfeited minus refunded-of-forfeited)
+        // is part of this car's profit, even after the car is sold.
+        $tokenForfeitureNet = $this->getCarTokenForfeitureNet($carId);
+        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome + $tokenForfeitureNet;
         $profit = $netBusinessRevenue - $totalCost - $rtoExpense;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
@@ -4124,13 +4366,13 @@ class AccountingEngine {
             'inventory_cost' => $totalCost,
             'sale_price' => $salePrice,
             'sale_commission_amount' => $saleCommissionAmount,
-            'sale_gst_amount' => $saleGstAmount,
             'net_sale_price' => $netSalePrice,
             'total_sale_realisation' => $totalSaleRealisation,
             'rto_recovered' => $rtoRecovered,
             'rto_expense' => $rtoExpense,
             'rto_net' => $rtoRecovered - $rtoExpense,
             'loan_commission_income' => $loanCommissionIncome,
+            'token_forfeiture_net' => $tokenForfeitureNet,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
             'status' => $car['status'],
@@ -5754,28 +5996,6 @@ class AccountingEngine {
         }
 
         return ['id' => $this->createAccount($code, $name, $group, $subGroup, 'GENERAL')];
-    }
-
-    private function normalizeGstComponent($grossAmount, $gstAmount = 0) {
-        $grossAmount = round(floatval($grossAmount), 2);
-        $gstAmount = round(floatval($gstAmount), 2);
-
-        if ($grossAmount <= 0) {
-            throw new Exception("Amount must be greater than zero.");
-        }
-        if ($gstAmount < 0) {
-            throw new Exception("GST amount cannot be negative.");
-        }
-        if ($gstAmount - $grossAmount > 0.01) {
-            throw new Exception("GST amount cannot exceed the total amount.");
-        }
-
-        $baseAmount = round($grossAmount - $gstAmount, 2);
-        if ($baseAmount <= 0 && $gstAmount > 0) {
-            throw new Exception("GST amount cannot be equal to or more than the total amount.");
-        }
-
-        return [$grossAmount, $gstAmount, $baseAmount];
     }
 
     private function naturalOutstandingValue($amount, $type, $naturalType) {

@@ -29,7 +29,7 @@ $resolveRtoCase = function () use ($db, $businessId, $userId) {
     if ($carId === '') throw new Exception('Select car for RTO entry.');
     $car = $db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
     if (!$car) throw new Exception('Select a valid car.');
-    if ($rtoType === '') throw new Exception('RTO narration is required.');
+    if ($rtoType === '') $rtoType = 'RTO - ' . $carId;
 
     $record = [
         'id' => Database::uuid(),
@@ -345,8 +345,8 @@ $archiveFilterParams = array_filter([
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">RTO Narration *</label>
-                <input name="rto_type" class="form-control" value="<?= clean($rtoDraftValue('rto_type')) ?>" placeholder="Transfer, NOC, tax, passing" required>
+                <label class="form-label">RTO Narration (Optional)</label>
+                <input name="rto_type" class="form-control" value="<?= clean($rtoDraftValue('rto_type')) ?>" placeholder="Transfer, NOC, tax, passing">
             </div>
             <div class="form-group">
                 <label class="form-label">Buyer / Customer</label>
