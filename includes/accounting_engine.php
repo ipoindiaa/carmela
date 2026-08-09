@@ -1509,8 +1509,8 @@ class AccountingEngine {
     }
 
     /**
-     * Create an outside car — taken from external entity on commission basis.
-     * Unlike commission cars, outside cars get a car asset account for expense tracking.
+     * Create an outside car — taken from an external entity on commission basis.
+     * It has no inventory/asset account because the business never owns the vehicle.
      */
     public function createOutsideCar(array $data) {
         $registrationNo = normalizeRegistrationNo($data['registration_no'] ?? '');
@@ -1542,10 +1542,9 @@ class AccountingEngine {
 
             $carId = Database::uuid();
 
-            // Create car asset account for expense tracking (unlike commission cars)
-            $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $registrationNo));
-            $carAccountId = $this->createAccount($carAccountCode, "Car A/c - $registrationNo", 'ASSET', 'Inventory', 'CAR', $carId);
-
+            // Outside cars are customer-owned. Do not create a car inventory/asset account:
+            // the vehicle must never enter our stock or balance sheet. Its activity is
+            // linked through journal_entries.car_id instead.
             $record = [
                 'id' => $carId,
                 'business_id' => $this->businessId,
@@ -1563,7 +1562,7 @@ class AccountingEngine {
                 'expected_sale_price' => 0,
                 'expected_commission_amount' => $expectedCommission,
                 'has_second_key' => !empty($data['has_second_key']) ? 1 : 0,
-                'account_id' => $carAccountId,
+                'account_id' => null,
                 'notes' => trim((string) ($data['notes'] ?? '')),
             ];
             $this->db->insert('cars', $record);
@@ -2031,15 +2030,16 @@ class AccountingEngine {
         }
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$expenseName}"];
 
-        // Also debit the car asset account to track total cost
-        // We create a separate entry for the car account
-        $carLines = [
-            ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
-            ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
-        ];
-
         $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
-        if ($baseAmount > 0) {
+
+        // Owned stock carries its direct costs in its inventory account. An outside
+        // car is never our asset: leave its expense in P&L while retaining the car
+        // link on the journal entry for its own timeline and profitability.
+        if (($car['ownership_type'] ?? 'OWNED') === 'OWNED' && $baseAmount > 0 && !empty($car['account_id'])) {
+            $carLines = [
+                ['account_id' => $car['account_id'], 'amount' => $baseAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
+                ['account_id' => $expenseAccountId, 'amount' => $baseAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
+            ];
             $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$expenseName} to {$car['registration_no']}", $carLines, [
                 'car_id' => $carId,
                 'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
@@ -3949,6 +3949,22 @@ class AccountingEngine {
     public function getCarTotalCost($carId) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) return 0;
+        if (($car['ownership_type'] ?? 'OWNED') === 'OUTSIDE') {
+            // Outside vehicles have no inventory account. Direct operating cost is
+            // already recorded in P&L and remains identifiable through car_id.
+            $outsideCost = $this->db->fetch(
+                "SELECT COALESCE(SUM(jl.amount), 0) AS total_cost
+                 FROM journal_entries je
+                 JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                 JOIN accounts a ON a.id = jl.account_id
+                 WHERE je.business_id = ? AND je.car_id = ?
+                   AND je.transaction_type = 'CAR_EXPENSE'
+                   AND je.status = 'POSTED' AND je.is_reversal = 0
+                   AND jl.entry_type = 'DR' AND a.group_name = 'EXPENSE'",
+                [$this->businessId, $carId]
+            );
+            return floatval($outsideCost['total_cost'] ?? 0);
+        }
         $total = $this->db->fetch(
             "SELECT COALESCE(SUM(jl.amount), 0) AS total_cost
              FROM journal_lines jl
@@ -4925,7 +4941,7 @@ class AccountingEngine {
             "SELECT id, account_id FROM cars WHERE id = ? AND business_id = ?",
             [$carId, $this->businessId]
         );
-        if (!$car || empty($car['account_id'])) {
+        if (!$car) {
             return [];
         }
 
