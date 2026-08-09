@@ -96,6 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show relevant sections
             const sectionMap = {
                 'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
+                'OUTSIDE_CAR_RECEIVED': ['outside-car-section'],
                 'CAR_TOKEN_RECEIVED': ['car-select-section', 'buyer-identity-section', 'token-section'],
                 'CAR_SALE': ['car-select-section', 'buyer-identity-section', 'buyer-section'],
                 'CAR_EXPENSE': ['car-select-section'],

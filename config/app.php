@@ -100,6 +100,7 @@ define('CLIENT_DEMO_HIDDEN_BOOKS', []);
 // One source of truth for entry names, flow, grouping, and summary behavior.
 define('ENTRY_TYPE_META', [
     'CAR_PURCHASE' => ['label' => 'Bought a Car', 'flow' => 'out', 'category' => 'Cars', 'icon' => 'ri-car-line', 'description' => 'Cars purchased for business stock.', 'selectable' => true, 'summary' => true],
+    'OUTSIDE_CAR_RECEIVED' => ['label' => 'Add Outside Car', 'flow' => 'neutral', 'category' => 'Cars', 'icon' => 'ri-steering-2-line', 'description' => 'Receive a customer-owned car on commission basis. It is kept outside owned inventory.', 'selectable' => true, 'summary' => false],
     'CAR_TOKEN_RECEIVED' => ['label' => 'Car Token Received', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-hand-coin-line', 'description' => 'Advance money received for a specific car.', 'selectable' => true, 'summary' => true],
     'CAR_SALE' => ['label' => 'Sold a Car', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-money-rupee-circle-line', 'description' => 'Owned cars sold to buyers.', 'selectable' => true, 'summary' => true],
     'COMMISSION_CAR_SALE' => ['label' => 'Commission Car Sale', 'flow' => 'in', 'category' => 'Cars', 'icon' => 'ri-percent-line', 'description' => 'Commission earned by selling a customer-owned car.', 'selectable' => false, 'summary' => true],
