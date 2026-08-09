@@ -25,13 +25,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'update_details') {
             $year = intval(post('year')) ?: null;
             if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
-            $oldDetails = array_intersect_key($car, array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'notes']));
+            $expectedSalePrice = parseDecimalInput(post('expected_sale_price', '0'));
+            $oldDetails = array_intersect_key($car, array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'expected_sale_price', 'notes']));
             $db->query(
-                "UPDATE cars SET make = ?, model = ?, year = ?, color = ?, has_second_key = ?, partner_id = NULL, notes = ? WHERE id = ? AND business_id = ?",
-                [post('make'), post('model'), $year, post('color'), post('has_second_key') === '1' ? 1 : 0, post('notes'), $id, $businessId]
+                "UPDATE cars SET make = ?, model = ?, year = ?, color = ?, has_second_key = ?, expected_sale_price = ?, partner_id = NULL, notes = ? WHERE id = ? AND business_id = ?",
+                [post('make'), post('model'), $year, post('color'), post('has_second_key') === '1' ? 1 : 0, $expectedSalePrice, post('notes'), $id, $businessId]
             );
             $updatedCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$id, $businessId]);
-            $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'notes']));
+            $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'expected_sale_price', 'notes']));
             Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details updated', 'cars');
             setFlash('success', 'Car details updated.');
         } elseif ($action === 'correct_partner_funding') {
@@ -80,6 +81,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'second_key_event') {
             $engine->recordSecondKeyEvent($id, post('event_type'), post('event_date'), post('narration'));
             setFlash('success', 'Second key event saved.');
+        } elseif ($action === 'forfeit_token') {
+            $engine->forfeitCarToken(post('token_id'), post('forfeit_date'), post('forfeit_reason'));
+            setFlash('success', 'Token forfeited. It is now profit of this car.');
+        } elseif ($action === 'refund_token') {
+            $engine->refundCarToken(post('token_id'), post('refund_amount'), post('refund_date'), post('payment_account'), post('refund_reason'));
+            setFlash('success', 'Token refunded.');
         }
         redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : "view.php?id=$id");
     } catch (Exception $e) {
@@ -94,6 +101,7 @@ $expenses = $profitability['total_expenses'];
 $carTotalCost = $profitability['total_cost'] ?? $car['purchase_price'];
 $partnerships = $profitability['partnerships'];
 $partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+$paymentAccounts = $db->fetchAll("SELECT id, name, code FROM accounts WHERE business_id = ? AND entity_type IN ('CASH','BANK') AND entity_id IS NULL AND is_active = 1 ORDER BY FIELD(entity_type, 'CASH', 'BANK'), name", [$businessId]);
 $buyerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'BUYER');
 $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
@@ -242,6 +250,9 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
                 <div class="form-group"><label class="form-label">Color</label><input type="text" name="color" class="form-control" value="<?= clean($car['color']) ?>"></div>
                 <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= empty($car['has_second_key']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($car['has_second_key']) ? 'selected' : '' ?>>Yes</option></select></div>
             </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Expected Selling Value (₹)</label><input type="text" name="expected_sale_price" class="form-control currency-input" value="<?= clean($car['expected_sale_price'] ?? 0) ?>"><div class="form-hint">Get a warning alert if this car sells below this value.</div></div>
+            </div>
             <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"><?= clean($car['notes']) ?></textarea></div>
             <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button><a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a></div>
         </form>
@@ -300,12 +311,13 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
                 </td></tr>
                 <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted" style="padding: 8px 0;">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
                 <?php if ($car['sold_date']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
-                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
+                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?><?php if (!empty($car['expected_sale_price']) && $car['sale_price'] < $car['expected_sale_price']): ?> <span class="badge badge-yellow">Sold below expected</span><?php endif; ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['expected_sale_price'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Expected Sale Value</td><td class="amount"><?= formatAmount($car['expected_sale_price']) ?></td></tr><?php endif; ?>
                 <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
                 <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
                 <?php if ($buyerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
-                <?php if ($sellerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Seller Payable</td><td class="amount flow-out"><?= formatAmount($sellerOutstanding) ?></td></tr><?php endif; ?>
+                <?php if ($sellerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Seller (Source)</td><td><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php if ($sellerOutstanding > 0): ?> <span class="text-muted">· Payable <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?></td></tr><?php endif; ?>
                 <tr><td class="text-muted" style="padding: 8px 0;">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
             </table>
             </div>
@@ -595,9 +607,10 @@ updateFundingEditTotal();
     <div class="card-body" style="padding:0;">
         <div class="table-container table-container-inline">
             <table>
-                <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Available</th><th>Status</th></tr></thead>
+                <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Available</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                 <?php foreach ($tokenSummary['rows'] as $token): ?>
+                    <?php $tokenStatus = strtoupper((string) $token['status']); ?>
                     <tr>
                         <td><?= formatDate($token['received_date']) ?></td>
                         <td><a href="../parties/view.php?id=<?= urlencode($token['party_id']) ?>" class="text-bold"><?= clean($token['party_name']) ?></a></td>
@@ -605,10 +618,37 @@ updateFundingEditTotal();
                         <td class="text-right amount flow-in"><?= formatAmount($token['amount']) ?></td>
                         <td class="text-right amount"><?= formatAmount($token['applied_amount']) ?></td>
                         <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']))) ?></td>
-                        <td><span class="badge <?= $token['status'] === 'APPLIED' ? 'badge-green' : ($token['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($token['status']) ?></span></td>
+                        <td><span class="badge <?= $tokenStatus === 'APPLIED' ? 'badge-green' : ($tokenStatus === 'FORFEITED' ? 'badge-yellow' : ($tokenStatus === 'REFUNDED' || $tokenStatus === 'REVERSED' ? 'badge-red' : 'badge-blue')) ?>"><?= clean($token['status']) ?></span></td>
+                        <td class="text-nowrap">
+                            <?php if (in_array($tokenStatus, ['OPEN', 'PARTIAL'], true) && (floatval($token['amount']) - floatval($token['applied_amount']) > 0.009)): ?>
+                                <form method="POST" class="inline-form" style="display:inline-flex;" data-confirm-submit="Forfeit this token? It will become profit of this car. A buyer who later returns can still get it refunded here.">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="forfeit_token">
+                                    <input type="hidden" name="token_id" value="<?= clean($token['id']) ?>">
+                                    <input type="date" name="forfeit_date" value="<?= date('Y-m-d') ?>" required class="form-control" style="width:120px;display:inline-block;">
+                                    <input type="text" name="forfeit_reason" placeholder="Reason (who, why)" required class="form-control" style="width:150px;display:inline-block;">
+                                    <button class="btn btn-outline btn-sm" type="submit"><i class="ri-hand-coin-line"></i> Forfeit → Profit</button>
+                                </form>
+                            <?php elseif ($tokenStatus === 'FORFEITED'): ?>
+                                <form method="POST" class="inline-form" style="display:inline-flex;" data-confirm-submit="Refund this forfeited token? This reduces this car's profit.">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="refund_token">
+                                    <input type="hidden" name="token_id" value="<?= clean($token['id']) ?>">
+                                    <input type="hidden" name="refund_amount" value="<?= clean($token['amount']) ?>">
+                                    <select name="payment_account" class="form-control" style="width:110px;display:inline-block;" required>
+                                        <?php foreach ($paymentAccounts as $pa): ?><option value="<?= clean($pa['id']) ?>"><?= clean($pa['name']) ?></option><?php endforeach; ?>
+                                    </select>
+                                    <input type="date" name="refund_date" value="<?= date('Y-m-d') ?>" required class="form-control" style="width:120px;display:inline-block;">
+                                    <input type="text" name="refund_reason" placeholder="Reason (who, why)" required class="form-control" style="width:150px;display:inline-block;">
+                                    <button class="btn btn-outline btn-sm" type="submit"><i class="ri-refund-2-line"></i> Refund</button>
+                                </form>
+                            <?php else: ?>
+                                <span class="text-muted">—</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (empty($tokenSummary['rows'])): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No token received for this car.</td></tr><?php endif; ?>
+                <?php if (empty($tokenSummary['rows'])): ?><tr><td colspan="8" class="text-center text-muted empty-table-cell">No token received for this car.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>

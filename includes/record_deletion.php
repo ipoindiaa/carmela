@@ -149,7 +149,7 @@ class RecordDeletionService {
         $archivedReg = substr('VOID-' . preg_replace('/[^A-Z0-9]/', '', strtoupper($originalReg)) . '-' . strtoupper(substr(str_replace('-', '', $car['id']), 0, 4)), 0, 20);
         $notes = trim('Deleted: ' . $reason . '. Original registration ' . $originalReg . '. ' . ($car['notes'] ?? ''));
         $this->db->query(
-            "UPDATE cars SET status = 'CANCELLED', registration_no = ?, notes = ?, sold_date = NULL, sale_price = NULL, sale_commission_amount = 0, sale_gst_amount = 0, buyer_name = NULL, buyer_party_id = NULL WHERE id = ? AND business_id = ?",
+            "UPDATE cars SET status = 'CANCELLED', registration_no = ?, notes = ?, sold_date = NULL, sale_price = NULL, sale_commission_amount = 0, buyer_name = NULL, buyer_party_id = NULL WHERE id = ? AND business_id = ?",
             [$archivedReg, $notes, $car['id'], $this->businessId]
         );
         if (!empty($car['account_id'])) {

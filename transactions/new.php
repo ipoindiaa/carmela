@@ -85,7 +85,7 @@ $preselectedTokenSummary = ['available' => 0, 'party_id' => null, 'party_name' =
 $preselectedEntryDate = $isPostRequest ? post('entry_date', date('Y-m-d')) : date('Y-m-d');
 $preselectedAmount = $isPostRequest ? post('amount', '') : get('amount', '');
 $preselectedNarration = $isPostRequest ? post('narration', '') : get('narration', '');
-$entryCategorySystemCodes = ['CAR-REV', 'PNL', 'GST-PAY', 'GST-RCV', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP', 'EMP-COMM'];
+$entryCategorySystemCodes = ['CAR-REV', 'PNL', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP', 'EMP-COMM'];
 $entryCategories = $db->fetchAll(
     "SELECT id, code, name, group_name, sub_group
      FROM accounts
@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = post('transaction_type');
     $date = post('entry_date');
     $amount = parseDecimalInput(post('amount'));
-    $gstAmount = 0.0;
+
     $narration = post('narration');
     $paymentAccountId = post('payment_account');
 
@@ -246,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'CATEGORY_ENTRY':
                 $categoryAccountId = post('dynamic_category_account_id');
                 $categoryDirection = post('dynamic_category_direction');
-                $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration, $gstAmount);
+                $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'CAR_PURCHASE':
@@ -300,7 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'profit_share_pct' => $partnerShareInput === '' ? null : $partnerShareInput,
                     ];
                 }
-                $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
+                $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, post('seller_name'), $purchasePaidNow);
                 $partnerFunding = $validation['partner_funding'];
                 $purchasePaidNow = $validation['paid_now'];
 
@@ -338,10 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $carRegNo], "Car $carRegNo created from New Entry", 'transactions');
                 }
                 
-                if ($carId && $gstAmount > 0) {
-                    $db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [max(0, $amount - $gstAmount), $carId, $businessId]);
-                }
-                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $gstAmount, post('seller_name'), $purchasePaidNow);
+                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, post('seller_name'), $purchasePaidNow);
                 $attachmentCarId = $carId;
                 if ($ownsPurchaseTransaction) $db->commit();
                 } catch (Throwable $purchaseError) {
@@ -357,7 +354,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $amountReceivedInput = trim((string) post('amount_received', ''));
                 $amountReceived = $amountReceivedInput === '' ? null : parseDecimalInput($amountReceivedInput);
                 $buyerName = post('buyer_name');
-                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $gstAmount, $commissionAmount, post('buyer_party_id'), post('buyer_phone'));
+                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $commissionAmount, post('buyer_party_id'), post('buyer_phone'));
                 $attachmentCarId = $carId;
                 break;
 
@@ -369,11 +366,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'CAR_EXPENSE':
                 $carId = post('expense_car_id');
-                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $narration, $gstAmount);
+                $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'GENERAL_EXPENSE':
-                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $narration, $gstAmount);
+                $entryId = $engine->generalExpense($amount, $date, $paymentAccountId, $narration);
                 break;
 
             case 'PARTNER_INVEST':
