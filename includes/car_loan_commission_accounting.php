@@ -95,23 +95,37 @@ trait CarLoanCommissionAccounting {
     }
 
     public function recordCarLoanCommissionReceipt($commissionId, $amount, $date, $receivingAccountId, $narration = '') {
-        $case = $this->db->fetch("SELECT clc.*,dc.account_id,dc.name financier_name,c.registration_no FROM car_loan_commissions clc JOIN debtors_creditors dc ON dc.id=clc.financier_party_id JOIN cars c ON c.id=clc.car_id WHERE clc.id=? AND clc.business_id=? AND clc.status<>'REVERSED' FOR UPDATE",[$commissionId,$this->businessId]);
-        if (!$case) throw new Exception('Loan commission case not found.');
-        $amount = round(parseDecimalInput($amount), 2);
-        $pending = round(floatval($case['commission_amount']) - floatval($case['received_amount']), 2);
-        if ($amount <= 0 || $amount - $pending > 0.01) throw new Exception('Receipt cannot exceed pending loan commission of ' . formatAmount($pending) . '.');
-        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: "Loan commission received - {$case['registration_no']}", [
-            ['account_id'=>$receivingAccountId,'amount'=>$amount,'type'=>'DR','narration'=>'Loan commission received'],
-            ['account_id'=>$case['account_id'],'amount'=>$amount,'type'=>'CR','narration'=>"Commission receivable cleared from {$case['financier_name']}"],
-        ], ['car_id'=>$case['car_id'],'party_id'=>$case['financier_party_id'],'entry_type_id'=>systemEntryTypeId('CAR_LOAN_COMMISSION_RECEIPT'),'entry_amount'=>$amount]);
-        $this->db->insert('car_loan_commission_receipts', [
-            'id'=>Database::uuid(),'business_id'=>$this->businessId,'commission_id'=>$commissionId,'car_id'=>$case['car_id'],
-            'receipt_date'=>$date,'amount'=>$amount,'receiving_account_id'=>$receivingAccountId,'journal_entry_id'=>$entryId,
-            'narration'=>$narration,'created_by'=>$this->userId,
-        ]);
-        $received = round(floatval($case['received_amount']) + $amount, 2);
-        $this->db->query("UPDATE car_loan_commissions SET received_amount=?,status=? WHERE id=?",[$received,$received+0.009>=floatval($case['commission_amount'])?'RECEIVED':'PARTIAL',$commissionId]);
-        return $entryId;
+        // The whole receipt (row lock -> journal post -> receipt row -> case
+        // update) must be one unit of work. Without the wrapping transaction
+        // the FOR UPDATE lock on the case row is released immediately, so two
+        // concurrent receipts could both read the same received_amount and
+        // over-receive; a failure after the journal post would also leave an
+        // orphaned entry.
+        $owns = !$this->db->inTransaction();
+        if ($owns) $this->db->beginTransaction();
+        try {
+            $case = $this->db->fetch("SELECT clc.*,dc.account_id,dc.name financier_name,c.registration_no FROM car_loan_commissions clc JOIN debtors_creditors dc ON dc.id=clc.financier_party_id JOIN cars c ON c.id=clc.car_id WHERE clc.id=? AND clc.business_id=? AND clc.status<>'REVERSED' FOR UPDATE",[$commissionId,$this->businessId]);
+            if (!$case) throw new Exception('Loan commission case not found.');
+            $amount = round(parseDecimalInput($amount), 2);
+            $pending = round(floatval($case['commission_amount']) - floatval($case['received_amount']), 2);
+            if ($amount <= 0 || $amount - $pending > 0.01) throw new Exception('Receipt cannot exceed pending loan commission of ' . formatAmount($pending) . '.');
+            $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: "Loan commission received - {$case['registration_no']}", [
+                ['account_id'=>$receivingAccountId,'amount'=>$amount,'type'=>'DR','narration'=>'Loan commission received'],
+                ['account_id'=>$case['account_id'],'amount'=>$amount,'type'=>'CR','narration'=>"Commission receivable cleared from {$case['financier_name']}"],
+            ], ['car_id'=>$case['car_id'],'party_id'=>$case['financier_party_id'],'entry_type_id'=>systemEntryTypeId('CAR_LOAN_COMMISSION_RECEIPT'),'entry_amount'=>$amount]);
+            $this->db->insert('car_loan_commission_receipts', [
+                'id'=>Database::uuid(),'business_id'=>$this->businessId,'commission_id'=>$commissionId,'car_id'=>$case['car_id'],
+                'receipt_date'=>$date,'amount'=>$amount,'receiving_account_id'=>$receivingAccountId,'journal_entry_id'=>$entryId,
+                'narration'=>$narration,'created_by'=>$this->userId,
+            ]);
+            $received = round(floatval($case['received_amount']) + $amount, 2);
+            $this->db->query("UPDATE car_loan_commissions SET received_amount=?,status=? WHERE id=?",[$received,$received+0.009>=floatval($case['commission_amount'])?'RECEIVED':'PARTIAL',$commissionId]);
+            if ($owns) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($owns && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
     }
 
     public function getCarLoanCommissions($carId) {

@@ -83,22 +83,51 @@ class Database {
             $stmt->execute($params);
             return $stmt;
         } catch (PDOException $e) {
-            // Handle MySQL server has gone away -> retry once after reconnect
-            if (stripos($e->getMessage(), 'gone away') !== false || stripos($e->getMessage(), 'Lost connection') !== false) {
-                $this->connect();
-                $stmt = $this->pdo->prepare($sql);
-                $stmt->execute($params);
-                return $stmt;
+            $msg = $e->getMessage();
+            $inTransaction = $this->transactionDepth > 0 || $this->pdo->inTransaction();
+
+            // Connection lost: reconnect and retry once — but only outside a
+            // transaction. Inside a transaction InnoDB has already rolled back
+            // the whole unit of work, so re-running a single statement would
+            // silently drop the earlier statements of that transaction and
+            // leave the books half-written.
+            if (stripos($msg, 'gone away') !== false || stripos($msg, 'Lost connection') !== false) {
+                if (!$inTransaction) {
+                    $this->connect();
+                    $stmt = $this->pdo->prepare($sql);
+                    $stmt->execute($params);
+                    return $stmt;
+                }
+                throw new RuntimeException('The database connection was lost while saving. Nothing was saved — please try again.', 0, $e);
             }
-            // Deadlock retry once
-            if (stripos($e->getMessage(), 'Deadlock') !== false || $e->getCode() == '40001') {
-                usleep(100000);
-                $stmt = $this->pdo->prepare($sql);
-                $stmt->execute($params);
-                return $stmt;
+
+            // Deadlock / lock-wait timeout: retry once only when no transaction
+            // is open. Inside a transaction MySQL has already rolled back the
+            // entire unit of work — re-executing just this statement would
+            // corrupt the accounting state, so surface a clean, retryable error
+            // and let the caller's rollback finish the job.
+            if (stripos($msg, 'Deadlock') !== false || $e->getCode() == '40001' || stripos($msg, 'Lock wait timeout') !== false) {
+                if (!$inTransaction) {
+                    usleep(150000);
+                    $stmt = $this->pdo->prepare($sql);
+                    $stmt->execute($params);
+                    return $stmt;
+                }
+                throw new RuntimeException('The entry could not be saved because of a temporary database lock. Nothing was changed — please try again.', 0, $e);
             }
+
             throw $e;
         }
+    }
+
+    /** True when a PDO error is a duplicate-key (unique index) violation. */
+    public static function isDuplicateKeyError(Throwable $e): bool {
+        $code = (string) $e->getCode();
+        if (in_array($code, ['23000', '1062'], true)) {
+            return true;
+        }
+        $msg = $e->getMessage();
+        return stripos($msg, 'Duplicate entry') !== false && stripos($msg, 'for key') !== false;
     }
 
     public function fetch($sql, $params = []) {

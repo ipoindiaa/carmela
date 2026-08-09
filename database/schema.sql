@@ -147,7 +147,7 @@ CREATE TABLE `cars` (
     `purchase_date` DATE NOT NULL,
     `purchase_price` DECIMAL(15,2) NOT NULL,
     `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED',
+    `ownership_type` ENUM('OWNED','COMMISSION','OUTSIDE') NOT NULL DEFAULT 'OWNED',
     `commission_owner_party_id` CHAR(36) DEFAULT NULL,
     `expected_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `expected_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
