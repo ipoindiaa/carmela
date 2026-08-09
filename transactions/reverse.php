@@ -48,16 +48,16 @@ require_once __DIR__ . '/../includes/header.php';
     <h1><i class="ri-delete-bin-line"></i> Delete Entry: <?= $entry['reference_no'] ?></h1>
 </div>
 
-<div class="card" style="max-width: 600px;">
+<div class="card content-narrow">
     <div class="card-body">
         <div class="alert alert-warning"><i class="ri-alert-line"></i> The entry will disappear from active books by creating a mirror-image reversal. Its original values and deletion reason remain permanently available in History.</div>
 
-        <div class="table-container" style="margin-bottom:20px;">
-            <table style="width:100%;">
-                <tr><td class="text-muted" style="padding: 8px 0;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
+        <div class="table-container block-end">
+            <table class="detail-table">
+                <tr><td class="text-muted">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
+                <tr><td class="text-muted">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
+                <tr><td class="text-muted">Type</td><td><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></td></tr>
+                <tr><td class="text-muted">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
             </table>
         </div>
 
@@ -67,7 +67,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <label class="form-label">Deletion Reason *</label>
                 <textarea name="reason" class="form-control" placeholder="Why was this entry added by mistake?" required minlength="5" rows="3"></textarea>
             </div>
-            <div style="display: flex; gap: 12px;">
+            <div class="form-actions form-actions-start">
                 <button type="submit" class="btn btn-danger"><i class="ri-delete-bin-line"></i> Confirm Delete</button>
                 <a href="view.php?id=<?= $id ?>" class="btn btn-outline" data-smart-back="1">Cancel</a>
             </div>

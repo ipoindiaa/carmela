@@ -74,7 +74,7 @@ function renderTransactionRows($entries) {
     ob_start();
     ?>
     <?php if (empty($entries)): ?>
-        <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No transactions found</td></tr>
+        <tr><td colspan="8" class="text-center text-muted empty-table-cell">No transactions found</td></tr>
     <?php else: ?>
         <?php foreach ($entries as $entry): ?>
         <tr>
@@ -84,7 +84,7 @@ function renderTransactionRows($entries) {
                 <span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span>
                 <div class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type'], $entry) ?>"><?= clean(transactionContextLabel($entry['transaction_type'], $entry)) ?></div>
             </td>
-            <td style="max-width: 250px;">
+            <td class="narration-cell">
                 <?php $fullNarration = trim((string) ($entry['narration'] ?? '')); ?>
                 <span class="narration-tooltip" data-full-text="<?= clean($fullNarration) ?>" tabindex="0">
                     <?= clean(mb_strimwidth($fullNarration, 0, 58, '…')) ?>

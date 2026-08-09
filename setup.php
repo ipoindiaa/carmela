@@ -121,16 +121,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
+$uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <title>Setup — <?= APP_NAME ?></title>
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="apple-touch-icon" href="logo.png">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
+    <link rel="stylesheet" href="assets/css/ui-system.css?v=<?= $uiCssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body>
@@ -150,12 +153,12 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         </div>
 
         <?php if ($error): ?>
-            <div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($error) ?></div>
+            <div class="alert alert-error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i> <?= clean($error) ?></div>
         <?php endif; ?>
 
         <?php if ($step === 1): ?>
-        <h3 style="margin-bottom: 6px; font-size: 18px;">Step 1: Business Details</h3>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Set up your car trading business</p>
+        <h3 class="setup-heading">Step 1: Business Details</h3>
+        <p class="setup-copy">Set up your car trading business</p>
         
         <form method="POST">
             <?= csrfField() ?>
@@ -198,28 +201,28 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         </form>
 
         <?php elseif ($step === 2): ?>
-        <h3 style="margin-bottom: 6px; font-size: 18px;">Step 2: Admin Account</h3>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Create your admin login credentials</p>
+        <h3 class="setup-heading">Step 2: Admin Account</h3>
+        <p class="setup-copy">Create your admin login credentials</p>
         
         <form method="POST">
             <?= csrfField() ?>
             <input type="hidden" name="step" value="2">
             <div class="form-group">
                 <label class="form-label">Full Name *</label>
-                <input type="text" name="full_name" class="form-control" placeholder="Your full name" required>
+                <input type="text" name="full_name" class="form-control" placeholder="Your full name" autocomplete="name" required>
             </div>
             <div class="form-group">
                 <label class="form-label">Admin Email *</label>
-                <input type="email" name="admin_email" class="form-control" placeholder="admin@email.com" required>
+                <input type="email" name="admin_email" class="form-control" placeholder="admin@email.com" autocomplete="email" required>
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Password *</label>
-                <input type="password" name="password" class="form-control" placeholder="Min 8 characters" required minlength="8">
+                    <input type="password" name="password" class="form-control" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Confirm Password *</label>
-                    <input type="password" name="confirm_password" class="form-control" placeholder="Repeat password" required>
+                    <input type="password" name="confirm_password" class="form-control" placeholder="Repeat password" autocomplete="new-password" required>
                 </div>
             </div>
             <button type="submit" class="btn btn-success btn-block btn-lg">

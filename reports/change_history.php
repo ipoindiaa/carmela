@@ -88,16 +88,16 @@ function renderAuditLines($lines) {
                     }
                 }
             ?>
-            <div class="card" style="margin-bottom:14px;">
-                <div class="card-header" style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+            <div class="card">
+                <div class="card-header history-card-header">
                     <div>
                         <h3><span class="badge badge-blue"><?= clean($log['action']) ?></span> <?= clean($log['description'] ?: $entityLabel . ' changed') ?></h3>
-                        <div class="text-muted" style="margin-top:5px;"><?= clean($log['full_name'] ?? 'System') ?> · <?= clean($log['module'] ?: 'system') ?> · <?= formatDate($log['created_at'], 'd M Y, h:i:s A') ?></div>
+                        <div class="history-card-meta text-muted"><?= clean($log['full_name'] ?? 'System') ?> · <?= clean($log['module'] ?: 'system') ?> · <?= formatDate($log['created_at'], 'd M Y, h:i:s A') ?></div>
                     </div>
-                    <?php if (!empty($log['request_uri'])): ?><span class="text-muted" style="font-size:11px;max-width:300px;word-break:break-all;"><?= clean($log['request_uri']) ?></span><?php endif; ?>
+                    <?php if (!empty($log['request_uri'])): ?><span class="history-request-uri"><?= clean($log['request_uri']) ?></span><?php endif; ?>
                 </div>
                 <?php if (!empty($changes)): ?>
-                    <div class="card-body table-container" style="padding:0;">
+                    <div class="card-body table-container card-body-flush">
                         <table data-static-table="1">
                             <thead><tr><th>Field</th><th>Old Value</th><th>New Value</th></tr></thead>
                             <tbody>

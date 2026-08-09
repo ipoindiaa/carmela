@@ -169,7 +169,7 @@ $keyEvents = $db->fetchAll(
     <div>
         <h1>
             <i class="ri-steering-2-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?>
-            <span class="badge badge-purple" style="font-size: 13px; margin-left: 8px; vertical-align: middle;">Outside Car</span>
+            <span class="badge badge-purple badge-title">Outside Car</span>
         </h1>
         <p class="page-subtitle">Sourced from external entity: <strong><?= clean($car['owner_name'] ?: 'External Party') ?></strong></p>
     </div>
@@ -209,7 +209,7 @@ $keyEvents = $db->fetchAll(
 </div>
 
 <?php if (get('edit') === '1' && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
-<div class="card car-edit-card" style="margin-bottom: 24px;">
+<div class="card car-edit-card">
     <div class="card-header"><h3><i class="ri-edit-line"></i> Edit Outside Car Details</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these outside car changes?">
@@ -247,12 +247,12 @@ $keyEvents = $db->fetchAll(
 <!-- Stat Cards -->
 <div class="stats-grid car-detail-stats-grid">
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-purple-glow); color: var(--accent-purple);"><i class="ri-user-shared-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-purple"><i class="ri-user-shared-line"></i></div></div>
         <div class="stat-value"><?= clean($car['owner_name'] ?: 'External') ?></div>
         <div class="stat-label">Source Entity</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-green-glow); color: var(--accent-green);"><i class="ri-percent-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-green"><i class="ri-percent-line"></i></div></div>
         <div class="stat-value flow-in">
             <?= ($settlement['commission_amount'] ?? $car['expected_commission_amount']) > 0 
                 ? formatAmount($settlement['commission_amount'] ?? $car['expected_commission_amount']) 
@@ -261,12 +261,12 @@ $keyEvents = $db->fetchAll(
         <div class="stat-label"><?= $settlement ? 'Commission Income' : 'Agreed Commission' ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-yellow-glow); color: var(--accent-yellow);"><i class="ri-tools-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-amber"><i class="ri-tools-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($expenses) ?></div>
         <div class="stat-label">Total Expenses</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-blue-glow); color: var(--accent-blue);"><i class="ri-line-chart-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-blue"><i class="ri-line-chart-line"></i></div></div>
         <div class="stat-value">
             <span class="badge <?= $car['status'] === 'IN_STOCK' ? 'badge-blue' : ($car['status'] === 'SOLD' ? 'badge-green' : 'badge-yellow') ?>"><?= CAR_STATUS[$car['status']] ?></span>
         </div>
@@ -283,7 +283,7 @@ $keyEvents = $db->fetchAll(
 </div>
 
 <!-- Commission Management Section -->
-<div class="card" style="margin-bottom: 24px;">
+<div class="card">
     <div class="card-header">
         <div>
             <h3><i class="ri-percent-line"></i> Commission Terms</h3>
@@ -292,9 +292,9 @@ $keyEvents = $db->fetchAll(
     </div>
     <div class="card-body">
         <?php if ($car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
-            <form method="POST" class="inline-entry-form" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+            <form method="POST" class="inline-entry-form">
                 <?= csrfField() ?><input type="hidden" name="action" value="update_commission">
-                <div class="form-group" style="margin-bottom: 0; min-width: 250px;">
+                <div class="form-group inline-entry-main">
                     <label class="form-label">Our Agreed Commission (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
@@ -304,7 +304,7 @@ $keyEvents = $db->fetchAll(
                 <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Save Commission</button>
             </form>
         <?php else: ?>
-            <div style="font-size: 16px;">
+            <div class="text-lg">
                 Current Commission: <strong><?= $car['expected_commission_amount'] > 0 ? formatAmount($car['expected_commission_amount']) : 'Not set' ?></strong>
             </div>
         <?php endif; ?>
@@ -317,19 +317,19 @@ $keyEvents = $db->fetchAll(
         <div class="card-header"><h3><i class="ri-car-line"></i> Car Details</h3></div>
         <div class="card-body">
             <div class="table-container table-container-inline table-columns-compact">
-            <table style="width: 100%;">
-                <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Date Received</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td><span class="badge <?= $car['status'] === 'IN_STOCK' ? 'badge-blue' : ($car['status'] === 'SOLD' ? 'badge-green' : 'badge-yellow') ?>"><?= CAR_STATUS[$car['status']] ?></span></td></tr>
-                <?php if ($car['sold_date']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
-                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Gross Sale Value</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?> <small class="text-muted">(memo)</small></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount flow-in text-bold"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
-                <?php if ($car['buyer_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
-                <tr><td class="text-muted" style="padding: 8px 0;">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Notes</td><td><?= clean($car['notes'] ?: '-') ?></td></tr>
+            <table class="detail-table">
+                <tr><td class="text-muted">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
+                <tr><td class="text-muted">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
+                <tr><td class="text-muted">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
+                <tr><td class="text-muted">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
+                <tr><td class="text-muted">Date Received</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
+                <tr><td class="text-muted">Status</td><td><span class="badge <?= $car['status'] === 'IN_STOCK' ? 'badge-blue' : ($car['status'] === 'SOLD' ? 'badge-green' : 'badge-yellow') ?>"><?= CAR_STATUS[$car['status']] ?></span></td></tr>
+                <?php if ($car['sold_date']): ?><tr><td class="text-muted">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
+                <?php if ($car['sale_price']): ?><tr><td class="text-muted">Gross Sale Value</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?> <small class="text-muted">(memo)</small></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Commission Income</td><td class="amount flow-in text-bold"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
+                <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
+                <tr><td class="text-muted">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
+                <tr><td class="text-muted">Notes</td><td><?= clean($car['notes'] ?: '-') ?></td></tr>
             </table>
             </div>
         </div>
@@ -340,9 +340,9 @@ $keyEvents = $db->fetchAll(
         <div class="card-header"><h3><i class="ri-user-shared-line"></i> Source Entity Account</h3></div>
         <div class="card-body">
             <div class="table-container table-container-inline table-columns-compact">
-            <table style="width: 100%;">
+            <table class="detail-table">
                 <tr>
-                    <td class="text-muted" style="padding: 8px 0; width: 40%;">Entity Name</td>
+                    <td class="text-muted">Entity Name</td>
                     <td class="text-bold">
                         <?php if (!empty($car['commission_owner_party_id'])): ?>
                             <a href="../parties/view.php?id=<?= urlencode($car['commission_owner_party_id']) ?>"><?= clean($car['owner_name']) ?></a>
@@ -351,19 +351,19 @@ $keyEvents = $db->fetchAll(
                         <?php endif; ?>
                     </td>
                 </tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Phone</td><td><?= clean($car['owner_phone'] ?: '-') ?></td></tr>
+                <tr><td class="text-muted">Phone</td><td><?= clean($car['owner_phone'] ?: '-') ?></td></tr>
                 <?php if (!empty($car['owner_account_id'])): ?>
                     <?php
                         $ownerAcc = $db->fetch("SELECT current_balance, current_balance_type FROM accounts WHERE id = ?", [$car['owner_account_id']]);
                     ?>
                     <?php if ($ownerAcc): ?>
-                        <tr><td class="text-muted" style="padding: 8px 0;">Ledger Balance</td><td class="amount text-bold"><?= formatAmount($ownerAcc['current_balance']) ?> <?= clean($ownerAcc['current_balance_type']) ?></td></tr>
+                        <tr><td class="text-muted">Ledger Balance</td><td class="amount text-bold"><?= formatAmount($ownerAcc['current_balance']) ?> <?= clean($ownerAcc['current_balance_type']) ?></td></tr>
                     <?php endif; ?>
                 <?php endif; ?>
-                <tr><td class="text-muted" style="padding: 8px 0;">Owner Payable</td><td class="amount flow-out"><?= formatAmount($ownerOutstanding) ?></td></tr>
+                <tr><td class="text-muted">Owner Payable</td><td class="amount flow-out"><?= formatAmount($ownerOutstanding) ?></td></tr>
             </table>
             </div>
-            <div style="margin-top: 16px;">
+            <div class="detail-subsection">
                 <?php if (!empty($car['commission_owner_party_id'])): ?>
                     <a href="../parties/view.php?id=<?= urlencode($car['commission_owner_party_id']) ?>" class="btn btn-outline btn-sm"><i class="ri-book-read-line"></i> Open Entity Ledger</a>
                 <?php endif; ?>
@@ -373,10 +373,10 @@ $keyEvents = $db->fetchAll(
 </div>
 
 <?php if ($settlement): ?>
-<div class="card" style="margin-top: 24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-scales-3-line"></i> Sale &amp; Owner Settlement Summary</h3></div>
     <div class="card-body detail-list">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+        <div class="partner-summary-grid">
             <div><span class="text-muted">Buyer:</span> <strong><?= clean($settlement['buyer_name']) ?></strong></div>
             <div><span class="text-muted">Handling:</span> <strong><?= $settlement['payment_handling'] === 'FULL_AMOUNT' ? 'Business collected full amount' : 'Owner collected sale amount directly' ?></strong></div>
             <div><span class="text-muted">Gross Sale:</span> <strong><?= formatAmount($settlement['gross_sale_amount']) ?></strong></div>
@@ -391,7 +391,7 @@ $keyEvents = $db->fetchAll(
 
 <!-- Record Sale Card (if IN_STOCK) -->
 <?php if ($car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
-<form method="POST" id="record-sale-card" class="card commission-sale-card" style="margin-top: 24px;" data-confirm-submit="Record sale for this outside car? Only our commission will be posted as income.">
+<form method="POST" id="record-sale-card" class="card commission-sale-card" data-confirm-submit="Record sale for this outside car? Only our commission will be posted as income.">
     <?= csrfField() ?><input type="hidden" name="action" value="sell">
     <div class="card-header"><h3><i class="ri-money-rupee-circle-line"></i> Record Outside Car Sale</h3></div>
     <div class="card-body">
@@ -415,7 +415,7 @@ $keyEvents = $db->fetchAll(
         <?php $buyerMode = $buyers ? 'existing' : 'new'; ?>
         <div class="exclusive-choice" data-exclusive-choice data-default-mode="<?= clean($buyerMode) ?>">
             <input type="hidden" name="buyer_mode" value="<?= clean($buyerMode) ?>" data-exclusive-mode data-keep-enabled="1">
-            <div class="exclusive-choice-header" style="margin-bottom: 12px;">
+            <div class="exclusive-choice-header">
                 <div><strong>Buyer / Customer *</strong><span>Select customer ledger or add a new customer.</span></div>
                 <div class="exclusive-choice-options" role="group" aria-label="Buyer source">
                     <?php if ($buyers): ?><button type="button" class="exclusive-choice-option" data-exclusive-option="existing"><i class="ri-search-line"></i> Select Existing</button><?php endif; ?>
@@ -443,7 +443,7 @@ $keyEvents = $db->fetchAll(
             </div>
         </div>
 
-        <div class="form-group" style="margin-top: 16px;">
+        <div class="form-group detail-subsection">
             <label class="form-label">How Buyer Payment Was Handled *</label>
             <select name="payment_handling" class="form-control">
                 <option value="COMMISSION_ONLY">Owner received car sale amount directly; business received commission only</option>
@@ -478,7 +478,7 @@ $keyEvents = $db->fetchAll(
 
 <!-- Pay Vehicle Owner Card (if outstanding) -->
 <?php if ($ownerOutstanding > 0.009 && Auth::hasEntityAccess('car', 'write')): ?>
-<form method="POST" id="pay-owner-card" class="card commission-owner-payment-card" style="margin-top: 24px;" data-confirm-submit="Pay this amount to source entity <?= clean($car['owner_name']) ?>?">
+<form method="POST" id="pay-owner-card" class="card commission-owner-payment-card" data-confirm-submit="Pay this amount to source entity <?= clean($car['owner_name']) ?>?">
     <?= csrfField() ?><input type="hidden" name="action" value="pay_owner">
     <div class="card-header"><h3><i class="ri-user-received-2-line"></i> Pay Source Entity (Owner)</h3></div>
     <div class="card-body">
@@ -511,7 +511,7 @@ $keyEvents = $db->fetchAll(
 <?php endif; ?>
 
 <!-- File Attachments Card -->
-<div class="card car-images-card" style="margin-top: 24px;">
+<div class="card car-images-card">
     <div class="card-header">
         <h3><i class="ri-attachment-2"></i> Car Files &amp; Documents</h3>
     </div>
@@ -561,7 +561,7 @@ $keyEvents = $db->fetchAll(
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <?php if (Auth::hasEntityAccess('car', 'delete')): ?>
-                                        <form method="POST" data-confirm-submit="Delete this file?" style="display:inline-flex;">
+                                        <form method="POST" data-confirm-submit="Delete this file?" class="inline-form">
                                             <?= csrfField() ?>
                                             <input type="hidden" name="action" value="delete_car_image">
                                             <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
@@ -580,7 +580,7 @@ $keyEvents = $db->fetchAll(
 </div>
 
 <!-- Key Movements & Token History -->
-<div class="grid-2 car-support-grid" style="margin-top:24px;">
+<div class="grid-2 car-support-grid">
     <!-- Second Key -->
     <div class="card">
         <div class="card-header"><h3><i class="ri-key-2-line"></i> Second Key Log</h3></div>
@@ -591,13 +591,13 @@ $keyEvents = $db->fetchAll(
                 <select name="event_type" class="form-control"><option value="RECEIVED">Second Key Received</option><option value="GIVEN">Second Key Given</option></select>
                 <input type="date" name="event_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
                 <input type="text" name="narration" class="form-control" placeholder="Notes">
-                <button class="btn btn-primary btn-sm">Save</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
             </form>
             <?php endif; ?>
             <?php if (empty($keyEvents)): ?>
-                <p class="text-muted" style="margin-top:12px;">No key movement logged.</p>
+                <p class="text-muted detail-subsection">No key movement logged.</p>
             <?php else: ?>
-                <table class="table-compact" style="margin-top:12px;">
+                <table class="table-compact detail-subsection">
                     <thead><tr><th>Date</th><th>Event</th><th>Notes</th></tr></thead>
                     <tbody>
                         <?php foreach ($keyEvents as $event): ?>
@@ -641,13 +641,13 @@ $keyEvents = $db->fetchAll(
 
 <!-- Return Sold Car Card (if sold) -->
 <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?>
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-arrow-go-back-line"></i> Return Outside Car</h3></div>
     <div class="card-body">
         <form method="POST" class="inline-entry-form" onsubmit="return confirm('Return this outside car and reverse sale entry?');">
             <?= csrfField() ?><input type="hidden" name="action" value="return_car">
             <input type="text" name="return_reason" class="form-control" placeholder="Reason for car return" required>
-            <button class="btn btn-outline btn-sm"><i class="ri-arrow-go-back-line"></i> Return Car</button>
+            <button type="submit" class="btn btn-outline btn-sm"><i class="ri-arrow-go-back-line"></i> Return Car</button>
         </form>
         <div class="form-hint">Returns the car to IN_STOCK status and reverses sale accounting entry.</div>
     </div>
@@ -655,20 +655,20 @@ $keyEvents = $db->fetchAll(
 <?php endif; ?>
 
 <!-- Car Timeline / Ledger -->
-<div class="card" style="margin-top: 24px;">
+<div class="card">
     <div class="card-header">
         <div>
             <h3><i class="ri-book-2-line"></i> Car Timeline &amp; Ledger Activity</h3>
             <div class="card-header-note">All expenses, RTO transactions, token receipts, and sale entries logged against this car.</div>
         </div>
     </div>
-    <div class="card-body" style="padding: 0;">
+    <div class="card-body card-body-flush">
         <div class="table-container">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th>Status</th><th class="text-right flow-in">Money In</th><th class="text-right flow-out">Money Out</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
-                    <tr><td colspan="7" class="text-center text-muted" style="padding: 30px;">No ledger entries for this car yet.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted empty-table-cell">No ledger entries for this car yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($ledger as $l):
                         $displayMoneyIn = '';
@@ -692,7 +692,7 @@ $keyEvents = $db->fetchAll(
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td>
-                        <td><span class="badge badge-blue" style="font-size: 10px;"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
+                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
                         <td><?= clean($l['narration'] ?? '') ?></td>
                         <td>
                             <?php if (!empty($l['is_reversal'])): ?>

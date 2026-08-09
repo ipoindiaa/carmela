@@ -278,7 +278,7 @@ $archiveFilterParams = array_filter([
     <i class="ri-information-line"></i>
     <div><strong>RTO is included in company profit.</strong><span>RTO money received is income and RTO money paid is expense. Only the net affects Profit &amp; Loss; the Cash/Bank movement remains visible on the Dashboard and in All Entries for a complete audit trail.</span></div>
 </div>
-<?php if ($hasCaseFilter): ?><div class="form-hint" style="margin:-8px 0 16px;">Summary and transaction history are limited to the matching RTO cases. Clear filters to see the complete RTO book.</div><?php endif; ?>
+<?php if ($hasCaseFilter): ?><div class="filter-context-note">Summary and transaction history are limited to the matching RTO cases. Clear filters to see the complete RTO book.</div><?php endif; ?>
 
 <div class="entry-menu-legend page-helper-strip">
     <span><i class="ri-arrow-down-circle-line"></i> Buyer gives RTO money = income in that car</span>
@@ -292,7 +292,7 @@ $archiveFilterParams = array_filter([
         <?php if ($selectedCarId !== ''): ?><input type="hidden" name="car_id" value="<?= clean($selectedCarId) ?>"><?php endif; ?>
         <div><label class="form-label">Specific Day</label><input type="date" name="date" class="form-control" value="<?= clean($filterDate) ?>"></div>
         <div><label class="form-label">Search</label><input type="search" name="q" class="form-control" value="<?= clean($q) ?>" placeholder="Car, buyer, agent, RTO narration"></div>
-        <button class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
         <a href="list.php<?= $clearFilterParams ? '?' . clean(http_build_query($clearFilterParams)) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
         <a href="list.php?<?= clean(http_build_query($archiveFilterParams)) ?>" class="btn btn-outline btn-sm"><i class="ri-archive-line"></i> <?= $showDeleted ? 'Active Records' : 'Deleted Records' ?></a>
     </form>
@@ -365,7 +365,7 @@ $archiveFilterParams = array_filter([
                 <input type="file" name="rto_docs[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
                 <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
-            <div class="form-group rto-actions"><button class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Money</button></div>
+            <div class="form-group rto-actions"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Save RTO Money</button></div>
         </form>
     </div>
 </div>
@@ -389,7 +389,7 @@ $archiveFilterParams = array_filter([
             </thead>
             <tbody>
                 <?php if (empty($records)): ?>
-                    <tr><td colspan="7" class="text-center text-muted" style="padding:28px;">No RTO money history found.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted empty-table-cell">No RTO money history found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($records as $record):
                     $attachments = fetchEntityAttachments($businessId, 'RTO_RECORD', $record['id'], 'RTO_DOC');
@@ -415,7 +415,7 @@ $archiveFilterParams = array_filter([
                             $url = attachmentUrl($attachment);
                             $shareUrl = attachmentUrl($attachment, true);
                         ?>
-                            <a href="<?= clean($url) ?>" target="_blank" class="mini-pill mini-pill-neutral"><i class="ri-attachment-line"></i> Open</a>
+                            <a href="<?= clean($url) ?>" target="_blank" rel="noopener noreferrer" class="mini-pill mini-pill-neutral"><i class="ri-attachment-line"></i> Open</a>
                             <button type="button" class="mini-pill mini-pill-neutral" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
                         <?php endforeach; ?>
                     </td>
@@ -447,7 +447,7 @@ $archiveFilterParams = array_filter([
             </thead>
             <tbody>
                 <?php if (empty($rtoEntries)): ?>
-                    <tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO transactions posted yet.</td></tr>
+                    <tr><td colspan="5" class="text-center text-muted empty-table-cell">No RTO transactions posted yet.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($rtoEntries as $entry): ?>
                     <tr>

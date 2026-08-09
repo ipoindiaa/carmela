@@ -158,7 +158,7 @@ $accounts = $db->fetchAll(
     </div>
 </div>
 
-<div class="card" style="margin-bottom: 18px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-add-line"></i> Add Account</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Create this account and save its opening balance?">
@@ -209,7 +209,7 @@ $accounts = $db->fetchAll(
 
 <div class="card">
     <div class="card-header"><h3><i class="ri-list-check"></i> Business Accounts</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
                 <thead>
@@ -253,7 +253,7 @@ $accounts = $db->fetchAll(
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($accounts)): ?>
-                        <tr><td colspan="6" class="text-center text-muted" style="padding: 32px;">No primary accounts found.</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted empty-table-cell">No primary accounts found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -261,13 +261,13 @@ $accounts = $db->fetchAll(
     </div>
 </div>
 
-<div class="card" style="margin-top: 18px; border: 1px solid var(--danger, #dc2626);">
+<div class="card danger-zone">
     <div class="card-header">
         <h3 class="text-red"><i class="ri-alarm-warning-line"></i> Danger Zone</h3>
     </div>
-    <div class="card-body">
-        <h4 style="margin-bottom: 8px;">Clear all business data</h4>
-        <p class="text-muted" style="margin-bottom: 14px;">
+    <div class="card-body danger-zone-content">
+        <h4>Clear all business data</h4>
+        <p class="text-muted">
             Permanently erase transactions, cars, parties, partners, employees, RTO records, accounts, audit history, alerts, categories, and attachments.
             Your business profile, user logins, and book permissions will be kept. Clean default accounts and the current financial year will be recreated.
         </p>
@@ -284,12 +284,14 @@ $accounts = $db->fetchAll(
             <button type="button" class="modal-close" onclick="closeModal('clearDatabaseWarningModal')" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-            <div class="alert alert-error" style="margin-bottom: 14px;">
+            <div class="alert alert-error">
                 <i class="ri-alarm-warning-line"></i>
                 <span>This action cannot be undone. There is no recovery option inside the application.</span>
             </div>
-            <p>This will remove all accounting and operational data for <strong><?= clean(Auth::user('business_name')) ?></strong>, including uploaded attachments.</p>
-            <p class="text-muted" style="margin-top: 10px;">Only the business profile, user logins, and their permissions will remain.</p>
+            <div class="stack stack-sm">
+                <p>This will remove all accounting and operational data for <strong><?= clean(Auth::user('business_name')) ?></strong>, including uploaded attachments.</p>
+                <p class="text-muted">Only the business profile, user logins, and their permissions will remain.</p>
+            </div>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closeModal('clearDatabaseWarningModal')">Cancel</button>
@@ -314,7 +316,7 @@ $accounts = $db->fetchAll(
                     <label class="form-label" for="clearDatabasePassword">Your current password *</label>
                     <input type="password" id="clearDatabasePassword" name="current_password" class="form-control" autocomplete="current-password" required>
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group form-group-last">
                     <label class="form-label" for="clearDatabasePhrase">Type CLEAR to confirm *</label>
                     <input type="text" id="clearDatabasePhrase" name="confirmation_phrase" class="form-control" placeholder="CLEAR" pattern="CLEAR" autocomplete="off" required>
                 </div>

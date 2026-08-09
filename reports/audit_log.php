@@ -75,21 +75,21 @@ $auditUsers = $db->fetchAll("SELECT id,full_name FROM users WHERE business_id=? 
             $actionBadge = ['CREATE' => 'badge-green', 'UPDATE' => 'badge-blue', 'DELETE' => 'badge-red', 'LOGIN' => 'badge-purple', 'LOGOUT' => 'badge-gray', 'REVERSE' => 'badge-yellow'];
         ?>
         <tr>
-            <td style="white-space:nowrap;"><?= formatDate($log['created_at'], 'd M Y, H:i:s') ?></td>
+            <td class="nowrap"><?= formatDate($log['created_at'], 'd M Y, H:i:s') ?></td>
             <td><?= clean($log['full_name'] ?? 'System') ?></td>
             <td><span class="badge <?= $actionBadge[$log['action']] ?? 'badge-gray' ?>"><?= $log['action'] ?></span></td>
-            <td><?= clean($log['entity_type'] ?? '-') ?><?php if (!empty($log['entity_id'])): ?><div class="text-muted" style="font-size:10px;"><?= clean($log['entity_id']) ?></div><?php endif; ?></td>
-            <td><?= clean($log['module'] ?? '-') ?><?php if (!empty($log['request_uri'])): ?><div class="text-muted" style="font-size:10px;max-width:220px;word-break:break-all;"><?= clean($log['request_uri']) ?></div><?php endif; ?></td>
-            <td style="max-width:360px;">
+            <td><?= clean($log['entity_type'] ?? '-') ?><?php if (!empty($log['entity_id'])): ?><div class="table-secondary"><?= clean($log['entity_id']) ?></div><?php endif; ?></td>
+            <td><?= clean($log['module'] ?? '-') ?><?php if (!empty($log['request_uri'])): ?><div class="audit-uri"><?= clean($log['request_uri']) ?></div><?php endif; ?></td>
+            <td class="audit-detail-cell">
                 <?= clean(mb_substr($log['description'] ?? '', 0, 120)) ?>
                 <?php $fieldChanges = !empty($log['changed_fields']) ? json_decode($log['changed_fields'], true) : []; ?>
-                <?php if (is_array($fieldChanges) && !empty($fieldChanges)): ?><div class="text-muted" style="font-size:10px;margin-top:4px;">Fields: <?= clean(implode(', ', array_keys($fieldChanges))) ?></div><?php endif; ?>
-                <?php if (!empty($log['entity_id']) && Auth::hasEntityAccess($log['entity_type'], 'read')): ?><a href="change_history.php?entity_type=<?= urlencode($log['entity_type']) ?>&amp;entity_id=<?= urlencode($log['entity_id']) ?>" style="font-size:11px;">View history</a><?php endif; ?>
+                <?php if (is_array($fieldChanges) && !empty($fieldChanges)): ?><div class="table-note table-note-compact">Fields: <?= clean(implode(', ', array_keys($fieldChanges))) ?></div><?php endif; ?>
+                <?php if (!empty($log['entity_id']) && Auth::hasEntityAccess($log['entity_type'], 'read')): ?><a href="change_history.php?entity_type=<?= urlencode($log['entity_type']) ?>&amp;entity_id=<?= urlencode($log['entity_id']) ?>" class="text-xs">View history</a><?php endif; ?>
             </td>
             <td class="text-muted"><?= $log['ip_address'] ?? '-' ?></td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($logs)): ?><tr><td colspan="7" class="text-center text-muted" style="padding: 40px;">No audit log entries</td></tr><?php endif; ?>
+        <?php if (empty($logs)): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No audit log entries</td></tr><?php endif; ?>
         </tbody>
     </table>
 </div>

@@ -50,11 +50,11 @@ require_once __DIR__ . '/includes/header.php';
     <a href="<?= clean(APP_URL . $description['returnUrl']) ?>" class="btn btn-outline" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
-<div class="card" style="max-width:760px;">
+<div class="card content-medium">
     <div class="card-header"><h3><?= clean($description['recordLabel']) ?></h3></div>
     <div class="card-body">
         <div class="alert alert-warning"><i class="ri-alert-line"></i><div class="alert-copy"><strong>Safe deletion</strong><span><?= clean($description['effect']) ?></span></div></div>
-        <div class="detail-list" style="margin:20px 0;">
+        <div class="detail-list block-y">
             <div><span>Record Type</span><strong><?= clean($description['typeLabel']) ?></strong></div>
             <div><span>Record</span><strong><?= clean($description['recordLabel']) ?></strong></div>
             <div><span>Deleted By</span><strong><?= clean(Auth::user('full_name')) ?></strong></div>

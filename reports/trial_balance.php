@@ -21,15 +21,16 @@ $balanced = abs($totalDr - $totalCr) < 0.01;
 
 <div class="page-header">
     <h1><i class="ri-scales-3-line"></i> Trial Balance</h1>
-    <div style="display:flex;gap:10px;">
-        <form method="GET" style="display:flex;gap:10px;align-items:center;">
-            <input type="date" name="as_on" class="form-control" value="<?= clean($asOnDate) ?>">
+    <div class="page-actions">
+        <form method="GET" class="inline-form">
+            <label class="sr-only" for="trial-balance-date">Trial balance date</label>
+            <input type="date" id="trial-balance-date" name="as_on" class="form-control" value="<?= clean($asOnDate) ?>">
             <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
         </form>
-        <span class="badge <?= $balanced ? 'badge-green' : 'badge-red' ?>" style="font-size: 13px; padding: 8px 16px;">
-            <?= $balanced ? '✓ Balanced' : '✗ IMBALANCED' ?>
+        <span class="badge badge-lg <?= $balanced ? 'badge-green' : 'badge-red' ?>">
+            <?= $balanced ? '✓ Balanced' : '✗ Imbalanced' ?>
         </span>
-        <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+        <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>
 </div>
 

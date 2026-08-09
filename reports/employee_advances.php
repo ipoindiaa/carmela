@@ -25,11 +25,11 @@ $employees = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> Employee Advances</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+    <form method="GET" class="filter-form">
         <div class="filter-main-field">
             <label class="form-label">Search employee</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type employee name or role">
@@ -44,7 +44,7 @@ $employees = $db->fetchAll(
         <thead><tr><th>Employee</th><th>Role</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Status</th><th class="text-center">Action</th></tr></thead>
         <tbody>
             <?php if (empty($employees)): ?>
-                <tr><td colspan="6" class="text-center text-muted" style="padding: 32px;">No employees found.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted empty-table-cell">No employees found.</td></tr>
             <?php else: ?>
                 <?php foreach ($employees as $employee): ?>
                     <?php $advanceOutstanding = (($employee['current_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($employee['current_balance'] ?? 0)) : 0; ?>

@@ -22,11 +22,11 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
 
 <div class="page-header">
     <h1><i class="ri-group-2-line"></i> Partner Accounts</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+    <form method="GET" class="filter-form">
         <div class="filter-main-field">
             <label class="form-label">Search partner</label>
             <input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Type partner name">
@@ -36,13 +36,13 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
     </form>
 </div>
 
-<div class="table-container table-container-fill" style="margin-bottom:20px;">
-    <div style="padding:16px 16px 0;font-weight:700;">Main Partner Accounts</div>
+<div class="table-container table-container-fill">
+    <div class="table-section-title">Main Partner Accounts</div>
     <table>
         <thead><tr><th>Partner</th><th class="text-right">Capital</th><th class="text-right">Current A/c</th><th class="text-right">Committed Funding</th><th class="text-right">Pending Payable</th><th class="text-right">Pending Receivable</th><th class="text-center">Action</th></tr></thead>
         <tbody>
             <?php if (empty($mainPartners)): ?>
-                <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No main partners found.</td></tr>
+                <tr><td colspan="7" class="text-center text-muted empty-table-cell">No main partners found.</td></tr>
             <?php else: ?>
                 <?php foreach ($mainPartners as $partner): ?>
                     <?php $position = $engine->getPartnerPosition($partner['id']); ?>
@@ -66,12 +66,12 @@ $carWisePartners = array_values(array_filter($partners, static fn($partner) => (
 </div>
 
 <div class="table-container table-container-fill">
-    <div style="padding:16px 16px 0;font-weight:700;">Car-wise Partner Accounts</div>
+    <div class="table-section-title">Car-wise Partner Accounts</div>
     <table>
         <thead><tr><th>Partner</th><th class="text-right">Capital</th><th class="text-right">Current A/c</th><th class="text-right">Committed Funding</th><th class="text-right">Pending Payable</th><th class="text-right">Pending Receivable</th><th class="text-center">Action</th></tr></thead>
         <tbody>
             <?php if (empty($carWisePartners)): ?>
-                <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No car-wise partners found.</td></tr>
+                <tr><td colspan="7" class="text-center text-muted empty-table-cell">No car-wise partners found.</td></tr>
             <?php else: ?>
                 <?php foreach ($carWisePartners as $partner): ?>
                     <?php $position = $engine->getPartnerPosition($partner['id']); ?>

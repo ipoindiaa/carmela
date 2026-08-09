@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a href="../reports/change_history.php?entity_type=business&amp;entity_id=<?= clean($businessId) ?>" class="btn btn-outline"><i class="ri-history-line"></i> History</a>
 </div>
 
-<div class="card" style="max-width: 600px;">
+<div class="card content-narrow">
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these business profile changes?">
             <?= csrfField() ?>

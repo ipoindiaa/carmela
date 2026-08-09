@@ -84,11 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($formError) ?></div>
 <?php endif; ?>
 
-<div class="card" style="max-width: 800px;">
+<div class="card form-card">
     <div class="card-body">
         <form method="POST" enctype="multipart/form-data" data-confirm-submit="Add this outside car to the system?">
             <?= csrfField() ?>
-            <div class="alert alert-info" style="margin-bottom: 20px;">
+            <div class="alert alert-info">
                 <i class="ri-information-line"></i>
                 <div>
                     <strong>Outside Car (Commission Basis)</strong>
@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-blue);"><i class="ri-car-line"></i> Vehicle Details</h3>
+            <h3 class="form-section-title form-section-title-standalone section-accent-blue"><i class="ri-car-line"></i> Vehicle Details</h3>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Registration No. *</label>
@@ -139,13 +139,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <hr style="border-color: var(--border); margin: 24px 0;">
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-purple);"><i class="ri-user-shared-line"></i> Source Entity (Owner / Provider)</h3>
+            <hr class="form-divider">
+            <h3 class="form-section-title form-section-title-standalone section-accent-purple"><i class="ri-user-shared-line"></i> Source Entity (Owner / Provider)</h3>
 
             <?php $ownerMode = $owners ? 'existing' : 'new'; ?>
             <div class="exclusive-choice" data-exclusive-choice data-default-mode="<?= clean($ownerMode) ?>">
                 <input type="hidden" name="owner_mode" value="<?= clean($ownerMode) ?>" data-exclusive-mode data-keep-enabled="1">
-                <div class="exclusive-choice-header" style="margin-bottom: 12px;">
+                <div class="exclusive-choice-header">
                     <div><strong>Select or Add Source Entity *</strong><span>This entity will have a ledger account in our system.</span></div>
                     <div class="exclusive-choice-options" role="group" aria-label="Owner source">
                         <?php if ($owners): ?><button type="button" class="exclusive-choice-option" data-exclusive-option="existing"><i class="ri-search-line"></i> Select Existing Party</button><?php endif; ?>
@@ -179,8 +179,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <hr style="border-color: var(--border); margin: 24px 0;">
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-green);"><i class="ri-percent-line"></i> Commission Terms</h3>
+            <hr class="form-divider">
+            <h3 class="form-section-title form-section-title-standalone section-accent-green"><i class="ri-percent-line"></i> Commission Terms</h3>
 
             <div class="form-group">
                 <label class="form-label">Agreed Commission (₹) <span class="text-muted">(Optional)</span></label>
@@ -191,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-hint">Commission does not need to be decided now. You can add or edit the commission anytime inside this car's detail page before selling.</div>
             </div>
 
-            <div class="form-group" style="margin-top: 20px;">
+            <div class="form-group detail-subsection">
                 <label class="form-label">Vehicle Files / RC Documents</label>
                 <input type="file" name="seller_images[]" class="form-control" accept="<?= clean(attachmentAcceptAttribute('documents')) ?>" multiple>
                 <div class="form-hint">Photos, RC copy, agreement docs, PDF, or archives. Maximum 10 MB each.</div>
@@ -202,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <textarea name="notes" class="form-control" rows="2" placeholder="Any additional details about this outside car or terms"><?= clean(post('notes')) ?></textarea>
             </div>
 
-            <div class="form-actions form-actions-start" style="margin-top: 24px;">
+            <div class="form-actions form-actions-start form-actions-spaced">
                 <button type="submit" class="btn btn-primary btn-lg"><i class="ri-save-line"></i> Save Outside Car</button>
                 <a href="list.php" class="btn btn-outline">Cancel</a>
             </div>

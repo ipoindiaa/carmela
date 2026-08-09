@@ -167,23 +167,19 @@ $tokenSummary = $engine->getCarTokenSummary($id);
 
 $carSummaryValue = 'In Stock';
 $carSummaryLabel = 'Sale Price: N/A';
-$carSummaryTone = 'var(--accent-green)';
-$carSummaryGlow = 'var(--accent-green-glow)';
+$carSummaryClass = 'green';
 if ($car['status'] === 'SOLD') {
     $carSummaryValue = formatAmount($profit ?? 0, true);
     $carSummaryLabel = 'Profit / Loss';
-    $carSummaryTone = ($profit ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-    $carSummaryGlow = ($profit ?? 0) >= 0 ? 'var(--accent-green-glow)' : 'var(--accent-red-glow)';
+    $carSummaryClass = ($profit ?? 0) >= 0 ? 'green' : 'red';
 } elseif ($car['status'] === 'PENDING_PAYMENT') {
     $carSummaryValue = formatAmount((float) ($car['sale_price'] ?? 0));
     $carSummaryLabel = 'Sale Agreed - Payment Pending';
-    $carSummaryTone = 'var(--accent-yellow)';
-    $carSummaryGlow = 'var(--accent-yellow-glow)';
+    $carSummaryClass = 'amber';
 } elseif ($car['status'] === 'CANCELLED') {
     $carSummaryValue = 'Cancelled';
     $carSummaryLabel = 'Purchase Reversed';
-    $carSummaryTone = 'var(--text-muted)';
-    $carSummaryGlow = 'var(--bg-muted)';
+    $carSummaryClass = 'neutral';
 }
 
 // Includes direct car entries and the car's exact allocation from multi-account bills.
@@ -252,23 +248,23 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
 <!-- Car Summary Cards -->
 <div class="stats-grid car-detail-stats-grid">
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-blue-glow); color: var(--accent-blue);"><i class="ri-shopping-cart-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-blue"><i class="ri-shopping-cart-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($car['purchase_price']) ?></div>
         <div class="stat-label">Purchase Price</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-yellow-glow); color: var(--accent-yellow);"><i class="ri-tools-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-amber"><i class="ri-tools-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount(max(0, $expenses)) ?></div>
         <div class="stat-label">Total Expenses</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: var(--accent-purple-glow); color: var(--accent-purple);"><i class="ri-calculator-line"></i></div></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-purple"><i class="ri-calculator-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($carTotalCost) ?></div>
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="stat-card">
-        <div class="stat-header"><div class="stat-icon" style="background: <?= $carSummaryGlow ?>; color: <?= $carSummaryTone ?>;"><i class="ri-line-chart-line"></i></div></div>
-        <div class="stat-value" style="color: <?= $carSummaryTone ?>;"><?= $carSummaryValue ?></div>
+        <div class="stat-header"><div class="stat-icon stat-icon-<?= clean($carSummaryClass) ?>"><i class="ri-line-chart-line"></i></div></div>
+        <div class="stat-value text-<?= clean($carSummaryClass) ?>"><?= $carSummaryValue ?></div>
         <div class="stat-label"><?= $carSummaryLabel ?></div>
     </div>
 </div>
@@ -288,25 +284,25 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
         <div class="card-header"><h3><i class="ri-car-line"></i> Car Details</h3></div>
         <div class="card-body">
             <div class="table-container table-container-inline table-columns-compact">
-            <table style="width: 100%;">
-                <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td>
+            <table class="detail-table">
+                <tr><td class="text-muted">Registration</td><td class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></td></tr>
+                <tr><td class="text-muted">Make / Model</td><td><?= clean($car['make'] . ' ' . $car['model']) ?></td></tr>
+                <tr><td class="text-muted">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
+                <tr><td class="text-muted">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
+                <tr><td class="text-muted">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
+                <tr><td class="text-muted">Status</td><td>
                     <?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                     <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
                 </td></tr>
-                <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted" style="padding: 8px 0;">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
-                <?php if ($car['sold_date']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
-                <?php if ($car['sale_price']): ?><tr><td class="text-muted" style="padding: 8px 0;">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
-                <?php if ($car['buyer_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
-                <?php if ($buyerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
-                <?php if ($sellerParty): ?><tr><td class="text-muted" style="padding: 8px 0;">Seller Payable</td><td class="amount flow-out"><?= formatAmount($sellerOutstanding) ?></td></tr><?php endif; ?>
-                <tr><td class="text-muted" style="padding: 8px 0;">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
+                <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
+                <?php if ($car['sold_date']): ?><tr><td class="text-muted">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
+                <?php if ($car['sale_price']): ?><tr><td class="text-muted">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
+                <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
+                <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
+                <?php if ($buyerParty): ?><tr><td class="text-muted">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
+                <?php if ($sellerParty): ?><tr><td class="text-muted">Seller Payable</td><td class="amount flow-out"><?= formatAmount($sellerOutstanding) ?></td></tr><?php endif; ?>
+                <tr><td class="text-muted">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
             </table>
             </div>
         </div>
@@ -369,7 +365,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
                         <?php endforeach; ?>
                     </div>
                     <button type="button" class="btn btn-outline btn-sm partner-add-row" onclick="addFundingEditRow()"><i class="ri-add-line"></i> Add Partner</button>
-                    <div class="form-hint" id="partner-funding-total-status" aria-live="polite" style="margin-top:10px;"></div>
+                    <div class="form-hint field-status" id="partner-funding-total-status" aria-live="polite"></div>
                     <div class="form-row partner-correction-meta">
                         <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean($partnerFundingDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
                         <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" value="<?= clean($partnerFundingDraft['correction_reason'] ?? '') ?>" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
@@ -484,7 +480,7 @@ updateFundingEditTotal();
 </script>
 <?php endif; ?>
 
-<div class="card car-images-card" style="margin-top: 24px;">
+<div class="card car-images-card">
     <div class="card-header">
         <h3><i class="ri-attachment-2"></i> Car Files</h3>
     </div>
@@ -534,7 +530,7 @@ updateFundingEditTotal();
                                     <div class="attachment-actions">
                                         <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                                         <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                                        <?php if (Auth::hasEntityAccess('car', 'delete')): ?><form method="POST" data-confirm-submit="Delete this file? The deletion will be recorded in History." style="display:inline-flex;">
+                                        <?php if (Auth::hasEntityAccess('car', 'delete')): ?><form method="POST" data-confirm-submit="Delete this file? The deletion will be recorded in History." class="inline-form">
                                             <?= csrfField() ?>
                                             <input type="hidden" name="action" value="delete_car_image">
                                             <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">
@@ -551,7 +547,7 @@ updateFundingEditTotal();
     </div>
 </div>
 
-<div class="grid-2 car-support-grid" style="margin-top:24px;">
+<div class="grid-2 car-support-grid">
     <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?>
     <div class="card" id="payment-history">
         <div class="card-header"><h3><i class="ri-wallet-3-line"></i> Buyer / Seller Payment History</h3></div>
@@ -561,7 +557,7 @@ updateFundingEditTotal();
             <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th class="text-right">Amount</th></tr></thead><tbody>
                 <?php foreach ($buyerHistory as $row): ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td class="text-right amount <?= $row['entry_type'] === 'DR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
-            <h4 class="attachment-group-title" style="margin-top:16px;">Seller Payments</h4>
+            <h4 class="attachment-group-title detail-subsection">Seller Payments</h4>
             <?php if (empty($sellerHistory)): ?><p class="text-muted">No seller payable history.</p><?php else: ?>
             <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th class="text-right">Amount</th></tr></thead><tbody>
                 <?php foreach ($sellerHistory as $row): ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td class="text-right amount <?= $row['entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
@@ -577,22 +573,22 @@ updateFundingEditTotal();
                 <select name="event_type" class="form-control"><option value="RECEIVED">Second Key Received</option><option value="GIVEN">Second Key Given</option></select>
                 <input type="date" name="event_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
                 <input type="text" name="narration" class="form-control" placeholder="Narration">
-                <button class="btn btn-primary btn-sm">Save</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
             </form><?php endif; ?>
-            <?php if (empty($keyEvents)): ?><p class="text-muted" style="margin-top:12px;">No key movement recorded.</p><?php else: ?>
-            <table class="table-compact" style="margin-top:12px;"><thead><tr><th>Date / Time</th><th>Event</th><th>Narration</th><th class="text-center">Action</th></tr></thead><tbody>
+            <?php if (empty($keyEvents)): ?><p class="text-muted detail-subsection">No key movement recorded.</p><?php else: ?>
+            <table class="table-compact detail-subsection"><thead><tr><th>Date / Time</th><th>Event</th><th>Narration</th><th class="text-center">Action</th></tr></thead><tbody>
                 <?php foreach ($keyEvents as $event): ?><tr><td><?= renderDateTimeStack($event['event_date'], $event['created_at']) ?></td><td><span class="badge <?= $event['event_type'] === 'RECEIVED' ? 'badge-green' : 'badge-yellow' ?>"><?= clean($event['event_type']) ?></span></td><td><?= clean($event['narration'] ?: '-') ?></td><td class="text-center"><?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=second_key_event&amp;id=<?= clean($event['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete second key event"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
         </div>
     </div>
 </div>
 
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header">
         <div><h3><i class="ri-hand-coin-line"></i> Buyer Token History</h3><div class="card-header-note">Advances received for this car and how they were adjusted.</div></div>
         <?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-add-line"></i> Receive Token</a><?php endif; ?>
     </div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
                 <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Available</th><th>Status</th></tr></thead>
@@ -615,11 +611,11 @@ updateFundingEditTotal();
     </div>
 </div>
 
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <table><thead><tr><th>RTO Narration</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
-            <?php if (empty($rtoHistory)): ?><tr><td colspan="5" class="text-center text-muted" style="padding:24px;">No RTO money history for this car.</td></tr><?php else: ?>
+            <?php if (empty($rtoHistory)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No RTO money history for this car.</td></tr><?php else: ?>
             <?php foreach ($rtoHistory as $rto): ?><tr>
                 <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= ($rto['money_type'] === 'RECEIVE') ? 'badge-green' : 'badge-red' ?>"><?= $rto['money_type'] === 'RECEIVE' ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['received_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['spent_amount']) ?></td>
             </tr><?php endforeach; ?><?php endif; ?>
@@ -628,13 +624,13 @@ updateFundingEditTotal();
 </div>
 
 <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?>
-<div class="card" style="margin-top:24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-arrow-go-back-line"></i> Return Car</h3></div>
     <div class="card-body">
         <form method="POST" class="inline-entry-form" onsubmit="return confirm('Return this car and reverse sale entry?');">
             <?= csrfField() ?><input type="hidden" name="action" value="return_car">
             <input type="text" name="return_reason" class="form-control" placeholder="Reason for return" required>
-            <button class="btn btn-outline btn-sm"><i class="ri-arrow-go-back-line"></i> Return Car</button>
+            <button type="submit" class="btn btn-outline btn-sm"><i class="ri-arrow-go-back-line"></i> Return Car</button>
         </form>
         <div class="form-hint">If later buyer receipts exist, system blocks return until those entries are reversed first.</div>
     </div>
@@ -642,15 +638,15 @@ updateFundingEditTotal();
 <?php endif; ?>
 
 <!-- Car Timeline -->
-<div class="card" style="margin-top: 24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-book-2-line"></i> Car Timeline</h3></div>
-    <div class="card-body" style="padding: 0;">
+    <div class="card-body card-body-flush">
         <div class="table-container">
         <table>
             <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right flow-in">Money In</th><th class="text-right flow-out">Money Out</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
-                    <tr><td colspan="7" class="text-center text-muted" style="padding: 30px;">No ledger entries</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted empty-table-cell">No ledger entries</td></tr>
                 <?php else: ?>
                     <?php foreach ($ledger as $l):
                         $displayMoneyIn = '';
@@ -692,11 +688,11 @@ updateFundingEditTotal();
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td>
-                        <td><span class="badge badge-blue" style="font-size: 10px;"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
+                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
                         <td>
                             <div><?= clean(mb_substr($l['narration'] ?? '', 0, 90)) ?></div>
                             <?php if (!empty($l['voucher_id'])): ?>
-                                <div class="text-muted" style="font-size:12px;margin-top:5px;line-height:1.45;">
+                                <div class="table-note">
                                     <i class="ri-bill-line"></i>
                                     <strong><?= clean($l['voucher_reference_no']) ?></strong>
                                     &middot; This car: <?= formatAmount($l['voucher_allocation_amount']) ?>
@@ -706,7 +702,7 @@ updateFundingEditTotal();
                                     <?php endif; ?>
                                 </div>
                                 <?php if (!empty($l['voucher_allocation_note'])): ?>
-                                    <div class="text-muted" style="font-size:12px;margin-top:3px;"><?= clean($l['voucher_allocation_note']) ?></div>
+                                    <div class="table-note table-note-compact"><?= clean($l['voucher_allocation_note']) ?></div>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </td>

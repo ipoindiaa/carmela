@@ -254,7 +254,7 @@ function entryTypeSummaryUrl(array $changes = []) {
                         <td class="text-center"><a href="../transactions/view.php?id=<?= urlencode($entry['id']) ?>" class="btn btn-outline btn-sm" title="View"><i class="ri-eye-line"></i></a><?php if ($entry['status'] === 'POSTED' && Auth::canAccessTransactionEntry($entry['id'], $businessId, 'write')): ?> <a href="../transactions/edit.php?id=<?= urlencode($entry['id']) ?>" class="btn btn-outline btn-sm" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$detailRows): ?><tr><td colspan="9" class="text-center text-muted" style="padding:40px;">No transactions match these filters.</td></tr><?php endif; ?>
+                <?php if (!$detailRows): ?><tr><td colspan="9" class="text-center text-muted empty-table-cell">No transactions match these filters.</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>

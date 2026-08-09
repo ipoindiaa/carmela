@@ -178,7 +178,7 @@ $categories = $db->fetchAll(
     </div>
 </div>
 
-<div class="card" style="margin-bottom: 18px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-add-line"></i> Add Custom Entry Type</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Create this custom entry type?">
@@ -208,7 +208,7 @@ $categories = $db->fetchAll(
 
 <div class="card">
     <div class="card-header"><h3><i class="ri-list-check"></i> Custom Money In / Money Out Types</h3></div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
                 <thead>
@@ -242,7 +242,7 @@ $categories = $db->fetchAll(
                                 </select>
                             </td>
                             <td class="text-center">
-                                <form method="POST" id="<?= clean($formId) ?>" style="display:inline-block; margin:0;" data-confirm-submit="Save this entry type change?">
+                                <form method="POST" id="<?= clean($formId) ?>" class="inline-form" data-confirm-submit="Save this entry type change?">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="update">
                                     <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
@@ -252,20 +252,20 @@ $categories = $db->fetchAll(
                                 <a href="../reports/entry_types.php?entry_type_id=<?= urlencode(customEntryTypeId($category['id'])) ?>#entry-type-details" class="btn btn-outline btn-sm" title="View entry type summary"><i class="ri-bar-chart-box-line"></i></a>
                                 <a href="../reports/change_history.php?entity_type=account&amp;entity_id=<?= clean($category['id']) ?>" class="btn btn-outline btn-sm" title="Change history"><i class="ri-history-line"></i></a>
                                 <?php if (intval($category['linked_entries'] ?? 0) === 0): ?>
-                                    <form method="POST" style="display:inline-block; margin-left: 6px;" data-confirm="Delete this entry type? This is allowed only because no transactions are connected.">
+                                    <form method="POST" class="inline-form" data-confirm="Delete this entry type? This is allowed only because no transactions are connected.">
                                         <?= csrfField() ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="account_id" value="<?= clean($category['id']) ?>">
                                         <button type="submit" class="btn btn-outline btn-sm text-red"><i class="ri-delete-bin-line"></i> Delete</button>
                                     </form>
                                 <?php else: ?>
-                                    <span class="text-muted" style="display:inline-block; margin-left: 6px; font-size: 12px;">Used</span>
+                                    <span class="badge badge-gray">Used</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($categories)): ?>
-                        <tr><td colspan="7" class="text-center text-muted" style="padding: 32px;">No custom entry types yet.</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted empty-table-cell">No custom entry types yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

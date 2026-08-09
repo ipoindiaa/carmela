@@ -79,7 +79,7 @@ $isRtoOpening = ($selectedAccount['code'] ?? '') === 'RTO-OPEN';
     </div>
 </div>
 
-<div class="card" style="margin-bottom:18px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-edit-2-line"></i> Add or Update Opening Balance</h3></div>
     <div class="card-body">
         <form method="POST" data-confirm-submit="Update this opening balance? The previous opening entry will be reversed and retained in history.">

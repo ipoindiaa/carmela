@@ -61,14 +61,14 @@ require_once __DIR__ . '/../includes/header.php';
     <a href="view.php?id=<?= $party['id'] ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
-<div class="card" style="max-width: 760px;">
+<div class="card content-medium">
     <div class="card-body">
         <div class="alert alert-warning">
             <i class="ri-alert-line"></i>
             Use this only when the balance is genuinely unrecoverable. The system will debit `Bad Debt Expense` and credit this party account.
         </div>
 
-        <div class="stats-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 20px;">
+        <div class="stats-grid stats-grid-3 block-end">
             <div class="stat-card"><div class="stat-value"><?= clean($party['name']) ?></div><div class="stat-label">Party</div></div>
             <div class="stat-card"><div class="stat-value"><?= clean($party['type']) ?></div><div class="stat-label">Type</div></div>
             <div class="stat-card"><div class="stat-value text-red"><?= formatAmount($outstanding) ?></div><div class="stat-label">Current Outstanding</div></div>

@@ -70,12 +70,12 @@ $displayEntries = array_reverse($displayEntries);
 
 <div class="page-header">
     <h1><i class="ri-file-text-line"></i> General Ledger</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;">
-        <div style="min-width:250px;">
+    <form method="GET" class="filter-form">
+        <div class="filter-main-field">
             <label class="form-label">Account</label>
             <input type="hidden" name="account_id" id="ledger_account_id" value="<?= clean($accountId) ?>" required>
             <button type="button" class="picker-trigger picker-trigger-wide" id="ledger-account-trigger">
@@ -90,8 +90,8 @@ $displayEntries = array_reverse($displayEntries);
 </div>
 
 <?php if ($selectedAccount): ?>
-<div class="card" style="margin-bottom:16px;">
-    <div class="card-body" style="display:flex;gap:40px;">
+<div class="card">
+    <div class="card-body summary-strip">
         <div><span class="text-muted">Account:</span> <strong><?= clean($selectedAccount['name']) ?></strong></div>
         <div><span class="text-muted">Balance As On <?= formatDate($dateTo) ?>:</span> <strong class="amount <?= ($balanceAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($balanceAsOn['amount']) ?> <?= $balanceAsOn['type'] ?></strong></div>
     </div>
@@ -104,14 +104,14 @@ $displayEntries = array_reverse($displayEntries);
         <?php foreach ($displayEntries as $e): ?>
         <tr>
             <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($e['entry_id']) ?>"><?= clean($e['reference_no']) ?></a></td>
-            <td><span class="badge badge-blue" style="font-size:10px;"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
+            <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount <?= $e['running_balance'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($e['running_balance'])) ?> <?= $e['running_balance'] >= 0 ? 'Dr' : 'Cr' ?></td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($entries)): ?><tr><td colspan="7" class="text-center text-muted" style="padding:30px;">No entries for this period</td></tr><?php endif; ?>
+        <?php if (empty($entries)): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No entries for this period</td></tr><?php endif; ?>
         </tbody>
     </table>
 </div>

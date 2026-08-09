@@ -63,13 +63,13 @@ function renderPartyRows($parties, $snapshots) {
         <td><?= clean($p['phone'] ?: '-') ?></td>
         <td class="text-right">
             <div class="amount <?= $amountClass ?>"><?= formatAmount($outstandingAmount) ?></div>
-            <div class="text-muted" style="font-size: 11px;"><?= clean($outstandingLabel) ?></div>
+            <div class="table-secondary"><?= clean($outstandingLabel) ?></div>
         </td>
         <td><?= $p['is_bad_debt'] ? '<span class="badge badge-red">Bad Debt</span>' : '-' ?></td>
         <td class="text-center"><a href="view.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="View"><i class="ri-eye-line"></i></a><?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $p['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="<?= !empty($p['is_active']) ? 'Edit' : 'Restore' ?>"><i class="<?= !empty($p['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i></a><?php endif; ?><a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $p['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a><?php if (!empty($p['is_active']) && Auth::hasEntityAccess('party', 'delete')): ?><a href="../delete_record.php?entity_type=party&amp;id=<?= clean($p['id']) ?>" class="btn btn-sm btn-outline text-red" title="Delete"><i class="ri-delete-bin-line"></i></a><?php endif; ?></td>
     </tr>
     <?php endforeach; ?>
-    <?php if (empty($parties)): ?><tr><td colspan="6" class="text-center text-muted" style="padding: 40px;">No parties yet</td></tr><?php endif; ?>
+    <?php if (empty($parties)): ?><tr><td colspan="6" class="text-center text-muted empty-table-cell">No parties yet</td></tr><?php endif; ?>
     <?php
     return trim(ob_get_clean());
 }
@@ -135,7 +135,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> Debtors & Creditors</h1>
-    <?php if (Auth::hasEntityAccess('party', 'write')): ?><button onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button><?php endif; ?>
+    <?php if (Auth::hasEntityAccess('party', 'write')): ?><button type="button" onclick="openModal('add-party')" class="btn btn-primary"><i class="ri-add-line"></i> Add Party</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -177,7 +177,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
 
 <div class="modal-overlay" id="add-party">
     <div class="modal">
-        <div class="modal-header"><h3>Add Party</h3><button class="modal-close" onclick="closeModal('add-party')">×</button></div>
+        <div class="modal-header"><h3>Add Party</h3><button type="button" class="modal-close" onclick="closeModal('add-party')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Add this party and create its ledger account?">
                 <?= csrfField() ?><input type="hidden" name="action" value="add">

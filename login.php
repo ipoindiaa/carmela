@@ -35,18 +35,21 @@ if ($needsSetup) {
 }
 
 $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
+$uiCssVersion = @filemtime(__DIR__ . '/assets/css/ui-system.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <?php if (APP_IS_TESTING): ?><meta name="robots" content="noindex, nofollow, noarchive"><?php endif; ?>
     <title><?= APP_IS_TESTING ? '[TEST] ' : '' ?>Login — <?= APP_NAME ?></title>
     <meta name="description" content="Login to <?= APP_NAME ?> — Car Trading Accounting System">
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="apple-touch-icon" href="logo.png">
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
+    <link rel="stylesheet" href="assets/css/ui-system.css?v=<?= $uiCssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body class="<?= APP_IS_TESTING ? 'env-testing' : '' ?>">
@@ -62,28 +65,26 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: APP_VERSION;
         </div>
 
         <?php if ($error): ?>
-            <div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($error) ?></div>
+            <div class="alert alert-error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i> <?= clean($error) ?></div>
         <?php endif; ?>
 
         <form method="POST" action="">
             <?= csrfField() ?>
             <div class="form-group">
-                <label class="form-label" for="identifier"><i class="ri-mail-line"></i> Email or Username</label>
-                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="Enter your email or username" value="<?= clean(post('identifier')) ?>" autofocus required>
+                <label class="form-label" for="identifier"><i class="ri-mail-line" aria-hidden="true"></i> Email or Username</label>
+                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="Enter your email or username" value="<?= clean(post('identifier')) ?>" autocomplete="username" autofocus required>
             </div>
             <div class="form-group">
-                <label class="form-label" for="password"><i class="ri-lock-line"></i> Password</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
+                <label class="form-label" for="password"><i class="ri-lock-line" aria-hidden="true"></i> Password</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" autocomplete="current-password" required>
             </div>
-            <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 8px;">
-                <i class="ri-login-box-line"></i> Sign In
+            <button type="submit" class="btn btn-primary btn-block btn-lg auth-submit">
+                <i class="ri-login-box-line" aria-hidden="true"></i> Sign In
             </button>
         </form>
 
-        <div style="text-align: center; margin-top: 24px;">
-            <p style="font-size: 12px; color: var(--text-muted);">
-                <?= APP_NAME ?> v<?= APP_VERSION ?> &bull; FY <?= getFYLabel() ?>
-            </p>
+        <div class="auth-footer">
+            <?= APP_NAME ?> v<?= APP_VERSION ?> &bull; FY <?= getFYLabel() ?>
         </div>
     </div>
 </div>
