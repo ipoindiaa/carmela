@@ -83,8 +83,10 @@ switch ($kind) {
             $statusFilterSql = "AND status IN ('IN_STOCK', 'PENDING_PAYMENT', 'SOLD')";
         }
         $ownershipFilterSql = '';
-        if (in_array($context, ['CAR_SALE', 'CAR_EXPENSE'], true) || ($kind === 'payment_car' && $context === 'LOAN_REPAID')) {
+        if ($context === 'CAR_SALE') {
             $ownershipFilterSql = "AND COALESCE(ownership_type, 'OWNED') = 'OWNED'";
+        } elseif ($context === 'CAR_EXPENSE' || ($kind === 'payment_car' && $context === 'LOAN_REPAID')) {
+            $ownershipFilterSql = "AND COALESCE(ownership_type, 'OWNED') IN ('OWNED','OUTSIDE')";
         }
         $rows = $db->fetchAll(
             "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,

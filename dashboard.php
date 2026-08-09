@@ -95,6 +95,7 @@ $bookViewMoreUrl = match ($activeBookKey) {
 };
 
 $totalCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND COALESCE(ownership_type, 'OWNED') = 'OWNED' AND status = 'IN_STOCK'", [$businessId]);
+$totalOutsideCars = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND COALESCE(ownership_type, 'OWNED') = 'OUTSIDE' AND status = 'IN_STOCK'", [$businessId]);
 $totalSold = $db->fetch("SELECT COUNT(*) as cnt FROM cars WHERE business_id = ? AND COALESCE(ownership_type, 'OWNED') = 'OWNED' AND status = 'SOLD'", [$businessId]);
 
 $recentTxns = [];
@@ -188,6 +189,13 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
             <div>
                 <small>Ready Cars</small>
                 <strong><?= intval($totalCars['cnt'] ?? 0) ?></strong>
+            </div>
+        </a>
+        <a href="outside-cars/list.php?status=IN_STOCK" class="dashboard-kpi-card">
+            <span class="dashboard-kpi-icon neutral"><i class="ri-steering-2-line"></i></span>
+            <div>
+                <small>Outside Cars</small>
+                <strong><?= intval($totalOutsideCars['cnt'] ?? 0) ?></strong>
             </div>
         </a>
         <a href="cars/list.php?status=SOLD" class="dashboard-kpi-card">

@@ -34,7 +34,8 @@ if (!$car) {
 }
 
 $status = ucwords(strtolower(str_replace('_', ' ', (string) ($car['status'] ?? ''))));
-$ownership = strtoupper((string) ($car['ownership_type'] ?? 'OWNED')) === 'COMMISSION' ? 'Commission car' : 'Business car';
+$ownershipType = strtoupper((string) ($car['ownership_type'] ?? 'OWNED'));
+$ownership = $ownershipType === 'COMMISSION' ? 'Commission car' : ($ownershipType === 'OUTSIDE' ? 'Outside car' : 'Business car');
 $vehicle = trim((string) ($car['make'] ?? '') . ' ' . (string) ($car['model'] ?? ''));
 
 echo json_encode([
@@ -48,8 +49,10 @@ echo json_encode([
         'vehicle' => $vehicle,
         'status' => $status,
         'ownership' => $ownership,
-        'url' => APP_URL . (strtoupper((string) ($car['ownership_type'] ?? 'OWNED')) === 'COMMISSION'
+        'url' => APP_URL . ($ownershipType === 'COMMISSION'
             ? 'cars/commission_view.php?id=' . rawurlencode($car['id'])
-            : 'cars/view.php?id=' . rawurlencode($car['id'])),
+            : ($ownershipType === 'OUTSIDE'
+                ? 'outside-cars/view.php?id=' . rawurlencode($car['id'])
+                : 'cars/view.php?id=' . rawurlencode($car['id']))),
     ],
 ]);

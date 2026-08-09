@@ -142,7 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-car-line"></i> Add New Car</h1>
-    <a href="list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back</a>
+    <div class="page-actions">
+        <a href="../outside-cars/add.php" class="btn btn-outline"><i class="ri-steering-2-line"></i> Add Outside Car</a>
+        <a href="list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> Back</a>
+    </div>
 </div>
 
 <?php if ($formError !== ''): ?>

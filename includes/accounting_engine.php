@@ -613,6 +613,14 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `profit_share_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `funding_pct`");
             }
 
+            // Extend ownership_type ENUM to include OUTSIDE for outside/commission cars with expense tracking
+            $ownershipCol = $this->db->fetch(
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cars' AND COLUMN_NAME = 'ownership_type'"
+            );
+            if ($ownershipCol && strpos($ownershipCol['COLUMN_TYPE'] ?? '', 'OUTSIDE') === false) {
+                $this->db->query("ALTER TABLE `cars` MODIFY COLUMN `ownership_type` ENUM('OWNED','COMMISSION','OUTSIDE') NOT NULL DEFAULT 'OWNED'");
+            }
+
             $this->addIndexIfMissing('accounts', 'idx_accounts_business_search', '`business_id`, `entity_type`, `is_active`, `code`, `name`');
             $this->addIndexIfMissing('cars', 'idx_cars_business_search', '`business_id`, `status`, `registration_no`, `make`, `model`');
             $this->addIndexIfMissing('employees', 'idx_employees_business_search', '`business_id`, `is_active`, `name`, `role`, `phone`');
@@ -1500,10 +1508,98 @@ class AccountingEngine {
         }
     }
 
+    /**
+     * Create an outside car — taken from external entity on commission basis.
+     * Unlike commission cars, outside cars get a car asset account for expense tracking.
+     */
+    public function createOutsideCar(array $data) {
+        $registrationNo = normalizeRegistrationNo($data['registration_no'] ?? '');
+        if (!isValidRegistrationNo($registrationNo)) {
+            throw new Exception('Registration number must be like GJ05AA0001, with exactly 4 digits at the end.');
+        }
+        $existing = findCarByRegistrationNo($this->db, $this->businessId, $registrationNo);
+        if ($existing) throw new Exception('A car with this registration number already exists.');
+
+        $receivedDate = trim((string) ($data['received_date'] ?? ''));
+        $date = DateTime::createFromFormat('!Y-m-d', $receivedDate);
+        if (!$date || $date->format('Y-m-d') !== $receivedDate) throw new Exception('A valid received date is required.');
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $owner = $this->resolveParty(
+                $data['owner_party_id'] ?? '',
+                $data['owner_name'] ?? '',
+                $data['owner_phone'] ?? '',
+                'SELLER',
+                ['SELLER', 'CREDITOR']
+            );
+            $expectedCommission = round(floatval($data['expected_commission_amount'] ?? 0), 2);
+            if ($expectedCommission < 0) throw new Exception('Commission amount cannot be negative.');
+
+            $year = intval($data['year'] ?? 0) ?: null;
+            if ($year && ($year < 1900 || $year > intval(date('Y')) + 1)) throw new Exception('Enter a valid vehicle year.');
+
+            $carId = Database::uuid();
+
+            // Create car asset account for expense tracking (unlike commission cars)
+            $carAccountCode = 'CAR-' . strtoupper(str_replace(' ', '', $registrationNo));
+            $carAccountId = $this->createAccount($carAccountCode, "Car A/c - $registrationNo", 'ASSET', 'Inventory', 'CAR', $carId);
+
+            $record = [
+                'id' => $carId,
+                'business_id' => $this->businessId,
+                'registration_no' => $registrationNo,
+                'make' => trim((string) ($data['make'] ?? '')),
+                'model' => trim((string) ($data['model'] ?? '')),
+                'year' => $year,
+                'color' => trim((string) ($data['color'] ?? '')),
+                'purchase_date' => $receivedDate,
+                'purchase_price' => 0,
+                'purchase_paid_amount' => 0,
+                'ownership_type' => 'OUTSIDE',
+                'commission_owner_party_id' => $owner['id'],
+                'seller_party_id' => $owner['id'],
+                'expected_sale_price' => 0,
+                'expected_commission_amount' => $expectedCommission,
+                'has_second_key' => !empty($data['has_second_key']) ? 1 : 0,
+                'account_id' => $carAccountId,
+                'notes' => trim((string) ($data['notes'] ?? '')),
+            ];
+            $this->db->insert('cars', $record);
+            Auth::auditCreate('car', $carId, $record, "Outside car $registrationNo received from {$owner['name']}", 'outside_cars');
+            if ($ownsTransaction) $this->db->commit();
+            return $carId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Update the expected commission amount for an outside car.
+     * Commission is metadata only — becomes actual income at sale time.
+     */
+    public function updateOutsideCarCommission($carId, $commissionAmount) {
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception('Car not found.');
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OUTSIDE') throw new Exception('This is not an outside car.');
+        if (!in_array($car['status'], ['IN_STOCK', 'PENDING_PAYMENT'], true)) throw new Exception('Commission can only be updated on in-stock or pending-payment cars.');
+        $commissionAmount = round(floatval($commissionAmount), 2);
+        if ($commissionAmount < 0) throw new Exception('Commission amount cannot be negative.');
+        $old = ['expected_commission_amount' => $car['expected_commission_amount']];
+        $this->db->query(
+            "UPDATE cars SET expected_commission_amount = ? WHERE id = ? AND business_id = ?",
+            [$commissionAmount, $carId, $this->businessId]
+        );
+        $new = ['expected_commission_amount' => $commissionAmount];
+        Auth::auditUpdate('car', $carId, $old, $new, 'Outside car commission updated', 'outside_cars');
+    }
+
     public function commissionCarSale($carId, $grossSaleAmount, $commissionAmount, $date, $receivingAccount, $paymentHandling, $narration, $buyerPartyId = null, $buyerName = null, $buyerPhone = null, $amountReceived = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ? FOR UPDATE", [$carId, $this->businessId]);
         if (!$car) throw new Exception('Commission car not found.');
-        if (($car['ownership_type'] ?? 'OWNED') !== 'COMMISSION') throw new Exception('This is not a commission car.');
+        if (!in_array(($car['ownership_type'] ?? 'OWNED'), ['COMMISSION', 'OUTSIDE'], true)) throw new Exception('This is not a commission or outside car.');
         if ($car['status'] !== 'IN_STOCK') throw new Exception('Only an in-stock commission car can be sold.');
 
         $grossSaleAmount = round(floatval($grossSaleAmount), 2);

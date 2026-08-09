@@ -69,9 +69,13 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 
             <div class="nav-section">
                 <div class="nav-section-title">Management</div>
-                <a href="<?= APP_URL ?>cars/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'cars/') !== false && strpos($_SERVER['PHP_SELF'], 'commission') === false ? 'active' : '' ?>">
+                <a href="<?= APP_URL ?>cars/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'cars/') !== false && strpos($_SERVER['PHP_SELF'], 'commission') === false && strpos($_SERVER['PHP_SELF'], 'outside-cars') === false ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-car-line"></i></span>
                     Cars
+                </a>
+                <a href="<?= APP_URL ?>outside-cars/list.php" class="nav-link <?= strpos($_SERVER['PHP_SELF'], 'outside-cars/') !== false ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-steering-2-line"></i></span>
+                    Outside Cars
                 </a>
                 <?php if (Auth::hasBookAccess('car_profitability', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/car_inventory.php" class="nav-link <?= $currentPage === 'car_inventory' ? 'active' : '' ?>">

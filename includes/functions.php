@@ -72,9 +72,10 @@ function transactionTypeLabel($transactionType, array $context = []) {
     }
     $hasCarLink = !empty($context['car_id']) || !empty($context['car_reg']);
 
+    $carOwnershipType = $context['car_ownership_type'] ?? $context['ownership_type'] ?? '';
     return match ($transactionType) {
-        'CAR_SALE' => (($context['car_ownership_type'] ?? $context['ownership_type'] ?? '') === 'COMMISSION') ? 'Commission Car Sale' : (TXN_TYPES[$transactionType] ?? $transactionType),
-        'LOAN_REPAID' => (($context['car_ownership_type'] ?? $context['ownership_type'] ?? '') === 'COMMISSION') ? 'Commission Owner Payment' : ($hasCarLink ? 'Seller Payment Clearing' : 'Payment Clearing Paid'),
+        'CAR_SALE' => in_array($carOwnershipType, ['COMMISSION', 'OUTSIDE'], true) ? ($carOwnershipType === 'OUTSIDE' ? 'Outside Car Sale' : 'Commission Car Sale') : (TXN_TYPES[$transactionType] ?? $transactionType),
+        'LOAN_REPAID' => in_array($carOwnershipType, ['COMMISSION', 'OUTSIDE'], true) ? ($carOwnershipType === 'OUTSIDE' ? 'Outside Car Owner Payment' : 'Commission Owner Payment') : ($hasCarLink ? 'Seller Payment Clearing' : 'Payment Clearing Paid'),
         'LOAN_RECEIVED' => $hasCarLink ? 'Car Payment Clearing' : 'Payment Clearing Received',
         default => TXN_TYPES[$transactionType] ?? $transactionType,
     };
