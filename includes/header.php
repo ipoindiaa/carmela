@@ -13,6 +13,7 @@ $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'writ
 $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read');
 $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
 $uiCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-system.css') ?: APP_VERSION;
+$polishCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-polish.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -25,8 +26,12 @@ $uiCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-system.css') ?: APP_VERS
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
     <link rel="icon" type="image/png" href="<?= APP_URL ?>logo.png">
     <link rel="apple-touch-icon" href="<?= APP_URL ?>logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css?v=<?= $cssVersion ?>">
     <link rel="stylesheet" href="<?= APP_URL ?>assets/css/ui-system.css?v=<?= $uiCssVersion ?>">
+    <link rel="stylesheet" href="<?= APP_URL ?>assets/css/ui-polish.css?v=<?= $polishCssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body class="<?= APP_IS_TESTING ? 'env-testing' : '' ?>">
