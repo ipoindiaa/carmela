@@ -114,6 +114,12 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-book-2-line"></i></span>
                     Cash Book
                 </a>
+                <?php if (Auth::hasBookAccess('cash_book', 'read')): ?>
+                <a href="<?= APP_URL ?>reports/cash_reconciliation.php" class="nav-link <?= $currentPage === 'cash_reconciliation' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
+                    End-of-Day Cash Count
+                </a>
+                <?php endif; ?>
                 <?php endif; ?>
                 <?php if (Auth::hasBookAccess('bank_book', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/bankbook.php" class="nav-link <?= $currentPage === 'bankbook' ? 'active' : '' ?>">
