@@ -201,12 +201,12 @@ foreach ($users as $user) {
 
 <div class="page-header">
     <h1><i class="ri-user-settings-line"></i> User Management</h1>
-    <button onclick="openModal('add-user')" class="btn btn-primary"><i class="ri-add-line"></i> Add User</button>
+    <button type="button" onclick="openModal('add-user')" class="btn btn-primary"><i class="ri-add-line"></i> Add User</button>
 </div>
 
-<div class="card" style="margin-bottom: 20px;">
+<div class="card">
     <div class="card-body">
-        <div class="text-muted" style="font-size: 13px;">
+        <div class="text-muted text-base">
             Admins create each user with an email and password. Read access lets the user view a book, write access lets them post entries, and delete access lets them reverse wrong entries in that book safely.
         </div>
     </div>
@@ -237,7 +237,7 @@ foreach ($users as $user) {
                 <td><?= clean($permissionSummary) ?></td>
                 <td class="text-center"><span class="badge <?= $u['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $u['is_active'] ? 'Active' : 'Disabled' ?></span></td>
                 <td><?= $u['last_login'] ? formatDate($u['last_login'], 'd M, H:i') : 'Never' ?></td>
-                <td class="text-center" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">
+                <td class="text-center table-actions">
                     <?php $editableUser = ['id' => $u['id'], 'full_name' => $u['full_name'], 'email' => $u['email'], 'role' => $u['role']]; ?>
                     <button type="button" class="btn btn-sm btn-outline" title="Edit user" onclick='openUserEditModal(<?= json_encode($editableUser, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'><i class="ri-edit-line"></i></button>
                     <a href="../reports/change_history.php?entity_type=user&amp;entity_id=<?= clean($u['id']) ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>
@@ -251,7 +251,7 @@ foreach ($users as $user) {
                             <i class="ri-book-open-line"></i>
                         </button>
                     <?php endif; ?>
-                    <form method="POST" style="display:inline;" data-confirm-submit="Change this user's active status?">
+                    <form method="POST" class="inline-form" data-confirm-submit="Change this user's active status?">
                         <?= csrfField() ?>
                         <input type="hidden" name="action" value="toggle">
                         <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
@@ -272,7 +272,7 @@ foreach ($users as $user) {
 
 <div class="modal-overlay" id="edit-user">
     <div class="modal">
-        <div class="modal-header"><h3>Edit User</h3><button class="modal-close" onclick="closeModal('edit-user')">×</button></div>
+        <div class="modal-header"><h3>Edit User</h3><button type="button" class="modal-close" onclick="closeModal('edit-user')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Save these user details and role?">
                 <?= csrfField() ?><input type="hidden" name="action" value="update_profile"><input type="hidden" name="user_id" id="edit-user-id">
@@ -286,8 +286,8 @@ foreach ($users as $user) {
 </div>
 
 <div class="modal-overlay" id="add-user">
-    <div class="modal" style="max-width: 900px;">
-        <div class="modal-header"><h3>Add User</h3><button class="modal-close" onclick="closeModal('add-user')">×</button></div>
+    <div class="modal modal-wide">
+        <div class="modal-header"><h3>Add User</h3><button type="button" class="modal-close" onclick="closeModal('add-user')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Create this user with the selected role and book permissions?">
                 <?= csrfField() ?>
@@ -324,7 +324,7 @@ foreach ($users as $user) {
                 </div>
 
                 <div id="new-user-permissions">
-                    <h4 style="margin: 20px 0 12px;">Book Access</h4>
+                    <h4 class="modal-section-title">Book Access</h4>
                     <div class="table-container">
                         <table>
                             <thead>
@@ -364,10 +364,10 @@ foreach ($users as $user) {
 </div>
 
 <div class="modal-overlay" id="edit-access">
-    <div class="modal" style="max-width: 900px;">
+    <div class="modal modal-wide">
         <div class="modal-header">
             <h3 id="access-modal-title">Edit Book Access</h3>
-            <button class="modal-close" onclick="closeModal('edit-access')">×</button>
+            <button type="button" class="modal-close" onclick="closeModal('edit-access')">×</button>
         </div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Save these book permissions?">
@@ -414,7 +414,7 @@ foreach ($users as $user) {
 
 <div class="modal-overlay" id="reset-password">
     <div class="modal">
-        <div class="modal-header"><h3>Reset Password</h3><button class="modal-close" onclick="closeModal('reset-password')">×</button></div>
+        <div class="modal-header"><h3>Reset Password</h3><button type="button" class="modal-close" onclick="closeModal('reset-password')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Reset this user's password?">
                 <?= csrfField() ?>

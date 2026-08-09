@@ -23,7 +23,12 @@ Useful commands:
 ./scripts/testing-env.sh status       # Show database and login details
 ./scripts/testing-env.sh reset empty  # Fresh schema without demo records
 ./scripts/testing-env.sh fresh        # Reset with demo records and start the site
+php scripts/test-ui-contract.php      # Audit shared UI tokens and template rules
 ```
+
+## UI system
+
+The shared visual contract is documented in [`docs/UI_GUIDELINES.md`](docs/UI_GUIDELINES.md), with the system-wide findings in [`docs/UI_AUDIT.md`](docs/UI_AUDIT.md). `assets/css/ui-system.css` is the authoritative token and component layer and must remain loaded after the feature stylesheet. New templates must use shared layout classes and may not introduce inline spacing or layout styles.
 
 `APP_ENV=testing` includes a database-name safety guard: the application refuses to start unless the selected database name contains `test`. Testing pages also show a visible TEST badge and `[TEST]` in the browser title.
 

@@ -37,7 +37,7 @@ function renderCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
-        <tr><td colspan="11" class="text-center text-muted" style="padding: 40px;">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
+        <tr><td colspan="11" class="text-center text-muted empty-table-cell">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
         <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -60,7 +60,7 @@ function renderCarRows($cars, $engine) {
             <td class="text-right amount flow-in">
                 <?php if ($car['sale_price']): ?>
                     <?= formatAmount($totalSaleRealisation) ?>
-                    <?php if (!empty($carProfitability['sale_commission_amount'])): ?><div class="flow-in" style="font-size:11px;">+ Comm <?= formatAmount($carProfitability['sale_commission_amount']) ?></div><?php endif; ?>
+                    <?php if (!empty($carProfitability['sale_commission_amount'])): ?><div class="table-secondary flow-in">+ Comm <?= formatAmount($carProfitability['sale_commission_amount']) ?></div><?php endif; ?>
                 <?php else: ?>
                     -
                 <?php endif; ?>
@@ -174,7 +174,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+    <form method="GET" class="filter-form">
         <?php if ($filter !== ''): ?><input type="hidden" name="status" value="<?= clean($filter) ?>"><?php endif; ?>
         <div class="filter-main-field filter-main-field-wide">
             <label class="form-label">Search Cars</label>

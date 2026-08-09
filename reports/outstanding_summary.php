@@ -21,7 +21,7 @@ foreach ($partners as $partner) {
 
 <div class="page-header">
     <h1><i class="ri-survey-line"></i> Outstanding Summary</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="stats-grid">

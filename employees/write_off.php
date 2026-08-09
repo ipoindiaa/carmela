@@ -56,14 +56,14 @@ require_once __DIR__ . '/../includes/header.php';
     <a href="view.php?id=<?= $employee['id'] ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
 </div>
 
-<div class="card" style="max-width: 760px;">
+<div class="card content-medium">
     <div class="card-body">
         <div class="alert alert-warning">
             <i class="ri-alert-line"></i>
             Use this only when the employee advance cannot realistically be recovered. The system will debit `Employee Advance Write-Off Expense` and credit the employee advance account.
         </div>
 
-        <div class="stats-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 20px;">
+        <div class="stats-grid stats-grid-3 block-end">
             <div class="stat-card"><div class="stat-value"><?= clean($employee['name']) ?></div><div class="stat-label">Employee</div></div>
             <div class="stat-card"><div class="stat-value"><?= clean($employee['is_active'] ? 'Active' : 'Left') ?></div><div class="stat-label">Status</div></div>
             <div class="stat-card"><div class="stat-value text-yellow"><?= formatAmount($outstanding) ?></div><div class="stat-label">Advance Outstanding</div></div>

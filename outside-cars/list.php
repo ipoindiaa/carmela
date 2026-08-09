@@ -37,7 +37,7 @@ function renderOutsideCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
-        <tr><td colspan="10" class="text-center text-muted" style="padding: 40px;">No outside cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add an outside car</a><?php endif; ?></td></tr>
+        <tr><td colspan="10" class="text-center text-muted empty-table-cell">No outside cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add an outside car</a><?php endif; ?></td></tr>
     <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -52,7 +52,7 @@ function renderOutsideCarRows($cars, $engine) {
         <tr>
             <td>
                 <a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a>
-                <div><span class="badge badge-purple" style="font-size: 10px;">Outside Car</span></div>
+                <div><span class="badge badge-purple">Outside Car</span></div>
             </td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
@@ -161,7 +161,7 @@ $nextUrl = $page < $pagination['total_pages'] ? outsideCarsListUrl($page + 1, $f
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;width:100%;">
+    <form method="GET" class="filter-form">
         <?php if ($filter !== ''): ?><input type="hidden" name="status" value="<?= clean($filter) ?>"><?php endif; ?>
         <div class="filter-main-field filter-main-field-wide">
             <label class="form-label">Search Outside Cars</label>

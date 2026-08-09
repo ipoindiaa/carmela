@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const type = this.value;
             // Hide all optional sections
             document.querySelectorAll('.txn-section').forEach((section) => {
-                section.style.display = 'none';
+                section.hidden = true;
                 setConditionalControls(section, false);
             });
             
@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sections.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
-                    el.style.display = 'block';
+                    el.hidden = false;
                     setConditionalControls(el, true);
                 }
             });
@@ -192,14 +192,27 @@ function initResponsiveSidebar() {
     const toggle = document.getElementById('sidebar-toggle');
     if (!sidebar || !backdrop || !toggle) return;
 
+    const syncExpandedState = () => {
+        const isMobile = window.innerWidth <= 768;
+        const expanded = isMobile
+            ? sidebar.classList.contains('open')
+            : !document.body.classList.contains('sidebar-collapsed');
+        toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        sidebar.inert = isMobile && !expanded;
+        if (isMobile) sidebar.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        else sidebar.removeAttribute('aria-hidden');
+    };
+
     const closeSidebar = () => {
         sidebar.classList.remove('open');
         document.body.classList.remove('sidebar-open');
+        syncExpandedState();
     };
 
     const openSidebar = () => {
         sidebar.classList.add('open');
         document.body.classList.add('sidebar-open');
+        syncExpandedState();
     };
 
     toggle.addEventListener('click', () => {
@@ -207,6 +220,7 @@ function initResponsiveSidebar() {
             const nextState = !document.body.classList.contains('sidebar-collapsed');
             document.body.classList.toggle('sidebar-collapsed', nextState);
             localStorage.setItem('autobooks.sidebar.collapsed', nextState ? '1' : '0');
+            syncExpandedState();
             return;
         }
         if (sidebar.classList.contains('open')) {
@@ -217,6 +231,11 @@ function initResponsiveSidebar() {
     });
 
     backdrop.addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || window.innerWidth > 768 || !sidebar.classList.contains('open')) return;
+        closeSidebar();
+        toggle.focus();
+    });
 
     document.querySelectorAll('.sidebar .nav-link').forEach((link) => {
         link.addEventListener('click', () => {
@@ -230,8 +249,14 @@ function initResponsiveSidebar() {
         if (window.innerWidth > 768) {
             closeSidebar();
             document.body.classList.toggle('sidebar-collapsed', localStorage.getItem('autobooks.sidebar.collapsed') === '1');
+        } else {
+            document.body.classList.remove('sidebar-collapsed');
         }
+        syncExpandedState();
     }, { passive: true });
+
+    if (window.innerWidth <= 768) document.body.classList.remove('sidebar-collapsed');
+    syncExpandedState();
 }
 
 function initCurrencyInputs(scope = document) {
@@ -518,6 +543,9 @@ function classifyTableShell(table, wrapper) {
 function prepareTableShell(table, wrapper) {
     if (wrapper.dataset.tableShellReady === '1') return;
     wrapper.dataset.tableShellReady = '1';
+    table.querySelectorAll('thead th').forEach((headingCell) => {
+        if (!headingCell.hasAttribute('scope')) headingCell.setAttribute('scope', 'col');
+    });
 
     const heading = wrapper.closest('.card')?.querySelector('.card-header h3')?.textContent.trim()
         || document.querySelector('.page-title')?.textContent.trim()
@@ -1002,23 +1030,91 @@ window.initExclusiveChoices = initExclusiveChoices;
 window.setConditionalControls = setConditionalControls;
 
 // Modal helpers
+const modalReturnFocus = new WeakMap();
+const modalFocusableSelector = [
+    'a[href]',
+    'button:not(:disabled)',
+    'input:not(:disabled):not([type="hidden"])',
+    'select:not(:disabled)',
+    'textarea:not(:disabled)',
+    '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 function openModal(id) {
-    const modal = document.getElementById(id);
-    if (!modal) return;
+    const overlay = document.getElementById(id);
+    if (!overlay) return;
     if (activeCustomSelect) closeCustomSelect(activeCustomSelect);
-    modal.classList.add('active');
+    const trigger = document.activeElement;
+    modalReturnFocus.set(overlay, trigger);
+    if (trigger instanceof HTMLElement && trigger.getAttribute('aria-controls') === id) {
+        trigger.setAttribute('aria-expanded', 'true');
+    }
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open');
-    enhanceSelects(modal);
-    modal.querySelectorAll('select').forEach((select) => refreshCustomSelect(select));
+    enhanceSelects(overlay);
+    overlay.querySelectorAll('select').forEach((select) => refreshCustomSelect(select));
+    initAccessibleControls(overlay);
+
+    const dialog = overlay.getAttribute('role') === 'dialog'
+        ? overlay
+        : (overlay.querySelector('.modal') || overlay);
+    if (!dialog.hasAttribute('role')) dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    if (!dialog.hasAttribute('aria-label') && !dialog.hasAttribute('aria-labelledby')) {
+        const heading = dialog.querySelector('.modal-header h2, .modal-header h3');
+        if (heading) {
+            if (!heading.id) heading.id = `${id}-title`;
+            dialog.setAttribute('aria-labelledby', heading.id);
+        }
+    }
+    const autofocus = dialog.querySelector('[autofocus]');
+    const firstControl = dialog.querySelector(modalFocusableSelector);
+    if (!autofocus && !firstControl && !dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
+    requestAnimationFrame(() => (autofocus || firstControl || dialog).focus());
 }
 
-function closeModal(id) {
-    const modal = document.getElementById(id);
-    if (!modal) return;
-    if (activeCustomSelect && modal.contains(activeCustomSelect.wrapper)) closeCustomSelect(activeCustomSelect);
-    modal.classList.remove('active');
+function closeModal(id, restoreFocus = true) {
+    const overlay = document.getElementById(id);
+    if (!overlay) return;
+    if (activeCustomSelect && overlay.contains(activeCustomSelect.wrapper)) closeCustomSelect(activeCustomSelect);
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
     if (!document.querySelector('.modal-overlay.active')) document.body.classList.remove('modal-open');
+    const trigger = modalReturnFocus.get(overlay);
+    if (trigger instanceof HTMLElement && trigger.getAttribute('aria-controls') === id) {
+        trigger.setAttribute('aria-expanded', 'false');
+    }
+    if (restoreFocus && trigger instanceof HTMLElement && document.contains(trigger)) trigger.focus();
 }
+
+document.addEventListener('keydown', (event) => {
+    const overlay = document.querySelector('.modal-overlay.active');
+    if (!overlay) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal(overlay.id);
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const controls = Array.from(overlay.querySelectorAll(modalFocusableSelector))
+        .filter((control) => control.getClientRects().length > 0);
+    if (!controls.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+});
+
+document.addEventListener('click', (event) => {
+    const overlay = event.target.closest('.modal-overlay.active');
+    if (overlay && event.target === overlay && overlay.id) closeModal(overlay.id);
+});
 
 // Toast notification
 function showToast(message, type = 'success') {
@@ -1161,12 +1257,13 @@ function initBreadcrumbs() {
     const currentTitle = h1.textContent.trim();
     const currentIconClass = h1.querySelector('i')?.className || '';
 
-    const breadcrumb = document.createElement('div');
+    const breadcrumb = document.createElement('nav');
     breadcrumb.className = 'breadcrumb-trail';
+    breadcrumb.setAttribute('aria-label', 'Breadcrumb');
 
     const homeLink = document.createElement('a');
-    homeLink.href = '../dashboard.php';
-    homeLink.innerHTML = '<i class="ri-home-4-line"></i> Home';
+    homeLink.href = document.querySelector('.sidebar a[href$="dashboard.php"]')?.href || '/dashboard.php';
+    homeLink.innerHTML = '<i class="ri-home-4-line" aria-hidden="true"></i> Home';
     breadcrumb.appendChild(homeLink);
 
     if (parentName) {
@@ -1175,13 +1272,10 @@ function initBreadcrumbs() {
         sep1.textContent = '/';
         breadcrumb.appendChild(sep1);
 
-        const parentLink = document.createElement('a');
-        parentLink.href = parentUrl;
+        const parentLink = document.createElement(parentUrl === '#' ? 'span' : 'a');
+        if (parentUrl !== '#') parentLink.href = parentUrl;
         parentLink.textContent = parentName;
-        if (parentUrl === '#') {
-            parentLink.style.pointerEvents = 'none';
-            parentLink.style.color = 'var(--text-muted)';
-        }
+        if (parentUrl === '#') parentLink.className = 'breadcrumb-parent';
         breadcrumb.appendChild(parentLink);
     }
 
@@ -1220,9 +1314,51 @@ window.initBreadcrumbs = initBreadcrumbs;
 
 function initAccessibleControls(scope = document) {
     scope.querySelectorAll('a.btn, button.btn, .header-btn').forEach((control) => {
-        if (control.hasAttribute('aria-label') || control.textContent.trim()) return;
-        const label = control.getAttribute('title');
-        if (label) control.setAttribute('aria-label', label);
+        if (!control.hasAttribute('aria-label') && !control.textContent.trim()) {
+            const label = control.getAttribute('title');
+            if (label) control.setAttribute('aria-label', label);
+        }
+    });
+
+    scope.querySelectorAll('label.form-label:not([for])').forEach((label, index) => {
+        const fieldContainer = label.parentElement;
+        const control = fieldContainer?.querySelector([
+            '.custom-select-trigger',
+            'input:not([type="hidden"])',
+            'select:not(.custom-select-native)',
+            'textarea',
+            'button.picker-trigger',
+        ].join(','));
+        if (!control) return;
+        if (!control.id) control.id = `ui-field-${index}-${Math.random().toString(36).slice(2, 7)}`;
+        label.htmlFor = control.id;
+    });
+
+    scope.querySelectorAll('.nav-link').forEach((link) => {
+        const label = link.textContent.replace(/\s+/g, ' ').trim();
+        if (label && !link.hasAttribute('title')) link.setAttribute('title', label);
+        if (link.classList.contains('active')) link.setAttribute('aria-current', 'page');
+    });
+    scope.querySelectorAll('.btn i, .header-btn i, .nav-icon i, .title-icon i').forEach((icon) => {
+        if (!icon.hasAttribute('aria-label')) icon.setAttribute('aria-hidden', 'true');
+    });
+    scope.querySelectorAll('[onclick*="openModal("]').forEach((trigger) => {
+        const match = trigger.getAttribute('onclick')?.match(/openModal\(['"]([^'"]+)['"]\)/);
+        if (!match) return;
+        trigger.setAttribute('aria-haspopup', 'dialog');
+        trigger.setAttribute('aria-controls', match[1]);
+        trigger.setAttribute('aria-expanded', document.getElementById(match[1])?.classList.contains('active') ? 'true' : 'false');
+    });
+    scope.querySelectorAll('.modal-overlay').forEach((overlay) => {
+        overlay.setAttribute('aria-hidden', overlay.classList.contains('active') ? 'false' : 'true');
+    });
+    scope.querySelectorAll('.modal-close').forEach((button) => {
+        if (button.tagName === 'BUTTON' && !button.hasAttribute('type')) button.type = 'button';
+        if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', 'Close dialog');
+    });
+    scope.querySelectorAll('.alert-close').forEach((button) => {
+        if (button.tagName === 'BUTTON' && !button.hasAttribute('type')) button.type = 'button';
+        if (!button.hasAttribute('aria-label')) button.setAttribute('aria-label', 'Dismiss message');
     });
 }
 
@@ -1251,12 +1387,21 @@ function initQuickTableFilters(scope = document) {
                 <label for="${controlId}">Filter visible rows</label>
                 <div class="table-quick-search-control"><i class="ri-search-line" aria-hidden="true"></i><input id="${controlId}" type="search" class="form-control" placeholder="Search ${headings.filter(Boolean).slice(0, 4).join(', ').toLowerCase() || 'this table'}" autocomplete="off"><button type="button" class="table-filter-clear" aria-label="Clear table filter" title="Clear filter"><i class="ri-close-line"></i></button></div>
             </div>
-            ${statusValues.length > 1 && statusValues.length <= 12 ? `<div class="table-quick-status"><label>Status</label><select class="form-control"><option value="">All statuses</option>${statusValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}</select></div>` : ''}
+            ${statusValues.length > 1 && statusValues.length <= 12 ? `<div class="table-quick-status"><label for="${controlId}-status">Status</label><select id="${controlId}-status" class="form-control"><option value="">All statuses</option>${statusValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}</select></div>` : ''}
             <div class="table-filter-result" role="status" aria-live="polite"></div>`;
 
         const container = table.closest('.table-container');
         if (!container?.parentNode) return;
-        container.parentNode.insertBefore(bar, container);
+        const parent = container.parentNode;
+        const scrollCue = container.previousElementSibling?.classList.contains('table-scroll-cue')
+            ? container.previousElementSibling
+            : null;
+        const region = document.createElement('div');
+        region.className = 'table-region';
+        parent.insertBefore(region, scrollCue || container);
+        region.appendChild(bar);
+        if (scrollCue) region.appendChild(scrollCue);
+        region.appendChild(container);
         const search = bar.querySelector('input[type="search"]');
         const status = bar.querySelector('select');
         const result = bar.querySelector('.table-filter-result');

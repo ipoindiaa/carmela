@@ -30,10 +30,10 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
 
 <div class="page-header">
     <h1><i class="ri-car-washing-line"></i> Car Profitability Report</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="filter-bar"><form method="get"><div><label class="form-label">Car or Partner</label><input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Registration, make, model, partner"></div><div><label class="form-label">Status</label><select name="status" class="form-control"><option value="">All statuses</option><?php foreach(['IN_STOCK'=>'In Stock','PENDING_PAYMENT'=>'Payment Pending','SOLD'=>'Sold','CANCELLED'=>'Cancelled'] as $value=>$label): ?><option value="<?= $value ?>" <?= $statusFilter===$value?'selected':'' ?>><?= $label ?></option><?php endforeach; ?></select></div><button class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button><?php if($search!==''||$statusFilter!==''): ?><a href="car_profitability.php" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?></form></div>
+<div class="filter-bar"><form method="get"><div><label class="form-label">Car or Partner</label><input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Registration, make, model, partner"></div><div><label class="form-label">Status</label><select name="status" class="form-control"><option value="">All statuses</option><?php foreach(['IN_STOCK'=>'In Stock','PENDING_PAYMENT'=>'Payment Pending','SOLD'=>'Sold','CANCELLED'=>'Cancelled'] as $value=>$label): ?><option value="<?= $value ?>" <?= $statusFilter===$value?'selected':'' ?>><?= $label ?></option><?php endforeach; ?></select></div><button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button><?php if($search!==''||$statusFilter!==''): ?><a href="car_profitability.php" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?></form></div>
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
@@ -67,14 +67,14 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
             <td class="text-right amount">
                 <?php if ($grossSalePrice): ?>
                     <?= formatAmount($totalSaleRealisation) ?>
-                    <?php if ($commissionAmount > 0): ?><div class="text-muted" style="font-size:11px;">Includes commission <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
+                    <?php if ($commissionAmount > 0): ?><div class="table-secondary">Includes commission <?= formatAmount($commissionAmount) ?></div><?php endif; ?>
                 <?php else: ?>
                     -
                 <?php endif; ?>
             </td>
             <td class="text-right amount <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>">
                 <?= abs($rtoNet) > 0.009 ? formatAmount($rtoNet, true) : '-' ?>
-                <?php if ($rtoRecovered > 0 || $rtoExpense > 0): ?><div class="text-muted" style="font-size:11px;">In <?= formatAmount($rtoRecovered) ?> · Out <?= formatAmount($rtoExpense) ?></div><?php endif; ?>
+                <?php if ($rtoRecovered > 0 || $rtoExpense > 0): ?><div class="table-secondary">In <?= formatAmount($rtoRecovered) ?> · Out <?= formatAmount($rtoExpense) ?></div><?php endif; ?>
             </td>
             <td class="text-right amount flow-in"><?= $loanCommissionIncome > 0 ? formatAmount($loanCommissionIncome) : '-' ?></td>
             <td class="text-right amount <?= $tokenForfeitNet > 0 ? 'flow-in' : ($tokenForfeitNet < 0 ? 'flow-out' : '') ?>"><?= abs($tokenForfeitNet) > 0.009 ? formatAmount($tokenForfeitNet, true) : '-' ?></td>

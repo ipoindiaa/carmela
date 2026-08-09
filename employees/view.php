@@ -189,7 +189,7 @@ $advanceLedger = $db->fetchAll(
     </div>
 </div>
 
-<div class="card" style="margin-top: 16px;">
+<div class="card">
     <div class="card-header"><h3>Advance Ledger</h3></div>
     <div class="card-body card-body-flush table-container">
         <table><thead><tr><th>Date / Time</th><th>Ref</th><th>Narration</th><th class="text-right debit-amount">Given</th><th class="text-right credit-amount">Recovered</th></tr></thead>

@@ -675,12 +675,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
             <!-- OUTSIDE CAR RECEIPT SECTION: no financial entry is posted at receipt. -->
-            <div class="txn-section" id="outside-car-section" style="display:none;">
-                <div class="alert alert-info" style="margin-top:20px;">
+            <div class="txn-section" id="outside-car-section" hidden>
+                <div class="alert alert-info detail-subsection">
                     <i class="ri-information-line"></i>
                     <div><strong>Outside car — commission basis</strong><br>This car belongs to the source entity, not to our business. It will appear only in <strong>Outside Cars</strong>, never in owned-car inventory. No purchase, stock value, or commission income is recorded now.</div>
                 </div>
-                <h4 style="margin:20px 0 16px;padding-top:20px;border-top:1px solid var(--border);color:var(--accent-purple);"><i class="ri-steering-2-line"></i> Outside Car Details</h4>
+                <h4 class="txn-section-title section-accent-purple"><i class="ri-steering-2-line"></i> Outside Car Details</h4>
                 <div class="form-row-3">
                     <div class="form-group"><label class="form-label">Registration No. *</label><input type="text" name="outside_car_reg_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" data-registration-check-url="<?= clean(APP_URL . 'cars/check_registration.php') ?>"><div class="form-hint">This car is received from an outside entity.</div></div>
                     <div class="form-group"><label class="form-label">Make</label><input type="text" name="outside_car_make" class="form-control" placeholder="e.g., Maruti"></div>
@@ -703,8 +703,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- CAR PURCHASE SECTION -->
-            <div class="txn-section" id="car-section" style="display:none;">
-                <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-blue);">
+            <div class="txn-section" id="car-section" hidden>
+                <h4 class="txn-section-title section-accent-blue">
                     <i class="ri-car-line"></i> Car Details
                 </h4>
                 <div class="form-row-3">
@@ -765,11 +765,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="txn-section" id="partner-funding-section" style="display:none;">
-                <div style="border-top:1px solid var(--border);padding-top:20px;margin-top:20px;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+            <div class="txn-section" id="partner-funding-section" hidden>
+                <div class="form-section">
+                    <div class="form-section-heading form-section-heading-spaced">
                         <div>
-                            <h4 style="color:var(--accent-purple);"><i class="ri-group-line"></i> Car Partners <span class="text-muted" style="font-weight:500;">(Optional)</span></h4>
+                            <h4 class="form-section-title section-accent-purple"><i class="ri-group-line"></i> Car Partners <span class="section-optional">(Optional)</span></h4>
                             <div class="form-hint">The first partner is the Primary Partner shown in car reports. Contribution and profit share apply only to this car.</div>
                         </div>
                         <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button type="button" class="btn btn-outline btn-sm" id="quick-car-partner-toggle" onclick="toggleQuickCarPartner()"><i class="ri-user-add-line"></i> Create New Partner</button><?php endif; ?>
@@ -792,18 +792,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label class="form-label">Profit Share %</label>
                                 <input type="number" name="pf_profit_share_pct[]" class="form-control" placeholder="Auto if blank" step="0.01" min="0" max="100">
                             </div>
-                            <div class="form-group partner-row-action is-placeholder" style="display:flex;visibility:hidden;align-self:end;">
+                            <div class="form-group partner-row-action is-placeholder">
                                 <button type="button" class="btn btn-outline btn-icon" title="Remove partner" onclick="removePartnerFundingRow(this)"><i class="ri-delete-bin-line"></i></button>
                             </div>
                         </div>
-                        <div class="partner-funding-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <div class="partner-funding-actions inline-note-list">
                             <button type="button" class="btn btn-outline btn-sm" onclick="addPartnerFundingRow()"><i class="ri-add-line"></i> Add Partner</button>
                             <span class="form-hint">Partner shares may total up to 100%. The business keeps the remainder.</span>
                         </div>
                     </div>
                     <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
-                    <div id="quick-car-partner-fields" class="alert alert-info" style="display:none;margin-top:12px;">
-                        <div class="form-row" style="width:100%;margin-bottom:0;">
+                    <div id="quick-car-partner-fields" class="alert alert-info conditional-block" hidden>
+                        <div class="form-row w-full">
                             <div class="form-group"><label class="form-label">New Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
                             <div class="form-group"><label class="form-label">Phone</label><input type="text" name="new_car_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                         </div>
@@ -813,12 +813,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- CAR SELECT SECTION (for expenses / sale) -->
-            <div class="txn-section" id="car-select-section" style="display:none;" data-preselected-expense-car="<?= clean($preselectedCarId) ?>">
-                <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-blue);">
+            <div class="txn-section" id="car-select-section" hidden data-preselected-expense-car="<?= clean($preselectedCarId) ?>">
+                <h4 class="txn-section-title section-accent-blue">
                     <i class="ri-car-line"></i> Select Car
                 </h4>
                 <?php if ($preselectedCar): ?>
-                    <div class="alert alert-info" id="preselected-car-note" style="display:none; margin-bottom: 14px;">
+                    <div class="alert alert-info" id="preselected-car-note" hidden>
                         <i class="ri-car-line"></i>
                         Expense will be added in <strong><?= clean($preselectedCar['registration_no']) ?></strong><?= !empty(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) ? ' - ' . clean(trim(($preselectedCar['make'] ?? '') . ' ' . ($preselectedCar['model'] ?? ''))) : '' ?>.
                     </div>
@@ -837,7 +837,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- BUYER IDENTITY (sale and token) -->
-            <div class="txn-section" id="buyer-identity-section" style="display:none;">
+            <div class="txn-section" id="buyer-identity-section" hidden>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
                         <div><strong>Buyer / Customer *</strong><span>Select an existing ledger or create it here once.</span></div>
@@ -848,7 +848,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span><?= clean($preselectedTokenSummary['party_name'] ?? 'Select existing buyer / customer') ?></span>
                         <i class="ri-search-line"></i>
                     </button>
-                    <div class="form-row" id="buyer-new-fields" style="display:none;margin-top:12px;">
+                    <div class="form-row conditional-row" id="buyer-new-fields" hidden>
                         <div class="form-group"><label class="form-label">New Buyer / Company Name *</label><input type="text" name="buyer_name" class="form-control" placeholder="Full name or company name"></div>
                         <div class="form-group"><label class="form-label">Phone</label><input type="text" name="buyer_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                     </div>
@@ -861,7 +861,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- BUYER SECTION -->
-            <div class="txn-section" id="buyer-section" style="display:none;">
+            <div class="txn-section" id="buyer-section" hidden>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Sell Car Amount (₹) *</label>
@@ -897,7 +897,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="txn-section" id="token-section" style="display:none;">
+            <div class="txn-section" id="token-section" hidden>
                 <div class="alert alert-info token-accounting-note">
                     <i class="ri-shield-check-line"></i>
                     <div><strong>This is a buyer advance, not income.</strong><span>It stays in Customer Token Advances and will be adjusted automatically when this car is sold.</span></div>
@@ -905,7 +905,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- PARTNER SECTION -->
-            <div class="txn-section" id="partner-section" style="display:none;">
+            <div class="txn-section" id="partner-section" hidden>
                 <div class="form-group">
                     <label class="form-label">Partner *</label>
                     <input type="hidden" name="partner_id" id="partner_id" value="<?= clean($preselectedPartnerId) ?>">
@@ -916,7 +916,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="txn-section" id="partner-withdraw-override-section" style="display:none;">
+            <div class="txn-section" id="partner-withdraw-override-section" hidden>
                 <label class="partner-overdraw-option" for="allow_partner_overdraw">
                     <input type="checkbox" name="allow_partner_overdraw" id="allow_partner_overdraw" value="1" <?= post('allow_partner_overdraw') === '1' ? 'checked' : '' ?>>
                     <span>
@@ -928,7 +928,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
             <!-- EMPLOYEE SECTION -->
-            <div class="txn-section" id="employee-section" style="display:none;">
+            <div class="txn-section" id="employee-section" hidden>
                 <div class="form-group">
                     <label class="form-label">Employee *</label>
                     <input type="hidden" name="employee_id" id="employee_id" value="<?= clean($preselectedEmployeeId) ?>">
@@ -940,7 +940,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- EMPLOYEE COMMISSION SECTION -->
-            <div class="txn-section" id="employee-commission-section" style="display:none;">
+            <div class="txn-section" id="employee-commission-section" hidden>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
                         <div><strong>Related Car <span class="text-muted">(Optional)</span></strong><span>Select a car for sale-related commission, or leave blank for a general incentive.</span></div>
@@ -955,7 +955,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- SALARY SECTION -->
-            <div class="txn-section" id="salary-section" style="display:none;">
+            <div class="txn-section" id="salary-section" hidden>
                 <div class="form-row-3">
                     <div class="form-group">
                         <label class="form-label">Gross Salary (₹)</label>
@@ -980,7 +980,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- COUNTERPARTY SECTION (existing or new debtor/creditor) -->
-            <div class="txn-section" id="counterparty-section" style="display:none;">
+            <div class="txn-section" id="counterparty-section" hidden>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
                         <div><strong id="counterparty-heading">Person / Company *</strong><span id="counterparty-help">The correct ledger account will be used automatically.</span></div>
@@ -991,7 +991,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span>Select existing person / company</span>
                         <i class="ri-search-line"></i>
                     </button>
-                    <div class="form-row" id="counterparty-new-fields" style="display:none;margin-top:12px;">
+                    <div class="form-row conditional-row" id="counterparty-new-fields" hidden>
                         <div class="form-group"><label class="form-label">New Person / Company Name *</label><input type="text" name="party_name" class="form-control" placeholder="Full name or company name"></div>
                         <div class="form-group"><label class="form-label">Phone</label><input type="text" name="party_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                     </div>
@@ -999,7 +999,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- PARTY SELECT SECTION (existing debtor/creditor) -->
-            <div class="txn-section" id="party-select-section" style="display:none;">
+            <div class="txn-section" id="party-select-section" hidden>
                 <div class="form-group" id="debtor-select-wrapper">
                     <label class="form-label" id="debtor-label">Select Debtor *</label>
                     <input type="hidden" name="debtor_id" id="debtor_id" value="<?= clean($preselectedType === 'LOAN_RECEIVED' ? $preselectedPartyId : '') ?>">
@@ -1028,8 +1028,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- RTO SECTION -->
-            <div class="txn-section" id="rto-section" style="display:none;">
-                <h4 style="margin: 20px 0 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent-blue);">
+            <div class="txn-section" id="rto-section" hidden>
+                <h4 class="txn-section-title section-accent-blue">
                     <i class="ri-file-shield-2-line"></i> RTO Entry
                 </h4>
                 <div class="form-row">
@@ -1064,7 +1064,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- CONTRA SECTION -->
-            <div class="txn-section" id="contra-section" style="display:none;">
+            <div class="txn-section" id="contra-section" hidden>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Transfer From *</label>
@@ -1082,7 +1082,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <!-- SPLIT BILL / JV SECTION -->
-            <div class="txn-section" id="split-bill-section" style="display:none;">
+            <div class="txn-section" id="split-bill-section" hidden>
                 <div class="split-entry-panel">
                     <div>
                         <h4><i class="ri-bill-line"></i> Large Bill Split</h4>
@@ -1099,7 +1099,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-hint">This saves one main daily transaction. On open, user will see the full bill split summary and every related account impact.</div>
 
-                <div class="split-guide" style="margin-top:16px;">
+                <div class="split-guide detail-subsection">
                     <div><strong>1.</strong> Enter the full bill amount above.</div>
                     <div><strong>2.</strong> Add where this bill should go: cars or other accounts.</div>
                     <div><strong>3.</strong> Save only when remaining amount is zero.</div>
@@ -1164,7 +1164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div class="form-actions form-actions-start">
                     <button type="button" class="btn btn-outline btn-sm" onclick="addSplitLine()"><i class="ri-add-line"></i> Add Another Line</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="focusFirstSplitLine()"><i class="ri-focus-3-line"></i> Continue Split</button>
                 </div>
@@ -1194,7 +1194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
 </section>
 
-<div class="modal-overlay" id="split-entry-modal-legacy" style="display:none;">
+<div class="modal-overlay" id="split-entry-modal-legacy" hidden>
     <div class="modal modal-wide">
         <div class="modal-header">
             <div>
@@ -1426,10 +1426,10 @@ function syncPreselectedExpenseCarState(type) {
         }
     }
     if (carPickerRow) {
-        carPickerRow.style.display = isLockedExpenseCar ? 'none' : '';
+        carPickerRow.hidden = isLockedExpenseCar;
     }
     if (carPickerNote) {
-        carPickerNote.style.display = isLockedExpenseCar ? 'flex' : 'none';
+        carPickerNote.hidden = !isLockedExpenseCar;
     }
 }
 
@@ -1469,9 +1469,9 @@ function toggleQuickCarPartner() {
     const nameInput = panel?.querySelector('input[name="new_car_partner_name"]');
     if (!panel || !button || !pickerGroup || !nameInput) return;
 
-    const opening = panel.style.display === 'none';
-    panel.style.display = opening ? 'flex' : 'none';
-    pickerGroup.style.display = opening ? 'none' : '';
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    pickerGroup.hidden = opening;
     if (typeof setConditionalControls === 'function') {
         setConditionalControls(panel, opening, { clear: !opening });
         setConditionalControls(pickerGroup, !opening, { clear: opening });
@@ -1503,9 +1503,9 @@ function toggleNewParty(scope) {
     const hidden = document.getElementById(isBuyer ? 'buyer_party_id' : 'counterparty_id');
     const toggle = document.getElementById(isBuyer ? 'buyer-new-toggle' : 'counterparty-new-toggle');
     if (!fields || !trigger || !hidden || !toggle) return;
-    const opening = fields.style.display === 'none';
-    fields.style.display = opening ? 'flex' : 'none';
-    trigger.style.display = opening ? 'none' : '';
+    const opening = fields.hidden;
+    fields.hidden = !opening;
+    trigger.hidden = opening;
     if (typeof setConditionalControls === 'function') {
         setConditionalControls(fields, opening, { clear: !opening });
     }
@@ -1540,11 +1540,11 @@ document.getElementById('transaction_type')?.addEventListener('change', function
     const debtorActive = type === 'LOAN_RECEIVED';
     const creditorActive = type === 'LOAN_REPAID';
     if (debtorWrapper) {
-        debtorWrapper.style.display = debtorActive ? 'block' : 'none';
+        debtorWrapper.hidden = !debtorActive;
         if (typeof setConditionalControls === 'function') setConditionalControls(debtorWrapper, debtorActive);
     }
     if (creditorWrapper) {
-        creditorWrapper.style.display = creditorActive ? 'block' : 'none';
+        creditorWrapper.hidden = !creditorActive;
         if (typeof setConditionalControls === 'function') setConditionalControls(creditorWrapper, creditorActive);
     }
 });
@@ -1553,7 +1553,7 @@ function syncEntryExclusiveControls() {
     const quickPartnerFields = document.getElementById('quick-car-partner-fields');
     const primaryPartnerPicker = document.querySelector('#partner-funding-rows .partner-funding-row .partner-picker-group');
     if (quickPartnerFields && primaryPartnerPicker && typeof setConditionalControls === 'function') {
-        const addingPartner = quickPartnerFields.style.display !== 'none';
+        const addingPartner = !quickPartnerFields.hidden;
         setConditionalControls(quickPartnerFields, addingPartner);
         setConditionalControls(primaryPartnerPicker, !addingPartner);
     }
@@ -1566,7 +1566,7 @@ function syncEntryExclusiveControls() {
         const trigger = document.getElementById(triggerId);
         const hidden = document.getElementById(hiddenId);
         if (!fields || !trigger || !hidden || typeof setConditionalControls !== 'function') return;
-        const addingNew = fields.style.display !== 'none';
+        const addingNew = !fields.hidden;
         setConditionalControls(fields, addingNew);
         trigger.disabled = addingNew;
         hidden.disabled = addingNew;
@@ -1826,7 +1826,7 @@ function syncDynamicCategoryEntryState() {
     if (select?.value !== 'CATEGORY_ENTRY') return;
 
     document.querySelectorAll('.txn-section').forEach((section) => {
-        section.style.display = 'none';
+        section.hidden = true;
         if (typeof setConditionalControls === 'function') setConditionalControls(section, false);
     });
     const paymentAccountGroup = document.getElementById('payment-account-group');
@@ -2088,11 +2088,11 @@ function applyCarTokenContext(partyId, partyLabel, available) {
         if (buyerTrigger?.querySelector('span')) buyerTrigger.querySelector('span').textContent = partyLabel || 'Selected token buyer';
         const newFields = document.getElementById('buyer-new-fields');
         if (newFields) {
-            newFields.style.display = 'none';
+            newFields.hidden = true;
             if (typeof setConditionalControls === 'function') setConditionalControls(newFields, false, { clear: true });
         }
         if (buyerTrigger) {
-            buyerTrigger.style.display = '';
+            buyerTrigger.hidden = false;
             buyerTrigger.disabled = false;
         }
         if (buyerInput) buyerInput.disabled = false;

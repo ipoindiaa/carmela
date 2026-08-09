@@ -67,7 +67,7 @@ $employees = $db->fetchAll(
 
 <div class="page-header">
     <h1><i class="ri-user-star-line"></i> Employees</h1>
-    <?php if (Auth::hasEntityAccess('employee', 'write')): ?><button onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button><?php endif; ?>
+    <?php if (Auth::hasEntityAccess('employee', 'write')): ?><button type="button" onclick="openModal('add-employee')" class="btn btn-primary"><i class="ri-add-line"></i> Add Employee</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -88,7 +88,7 @@ $employees = $db->fetchAll(
         <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th class="text-right">Monthly Salary</th><th class="text-right">Advance Outstanding</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($employees)): ?>
-                <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No employees yet</td></tr>
+                <tr><td colspan="8" class="text-center text-muted empty-table-cell">No employees yet</td></tr>
             <?php else: ?>
                 <?php foreach ($employees as $e): ?>
                 <?php $advanceOutstanding = (($e['advance_balance_type'] ?? 'DR') === 'DR') ? abs((float) ($e['advance_balance'] ?? 0)) : 0; ?>
@@ -115,7 +115,7 @@ $employees = $db->fetchAll(
 
 <div class="modal-overlay" id="add-employee">
     <div class="modal">
-        <div class="modal-header"><h3>Add Employee</h3><button class="modal-close" onclick="closeModal('add-employee')">×</button></div>
+        <div class="modal-header"><h3>Add Employee</h3><button type="button" class="modal-close" onclick="closeModal('add-employee')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Add this employee with the entered salary and contact details?">
                 <?= csrfField() ?>

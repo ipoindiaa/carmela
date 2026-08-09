@@ -24,7 +24,7 @@ $grandTotal = 0;
 
 <div class="page-header">
     <h1><i class="ri-timer-line"></i> Debtor Ageing Report</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
@@ -53,7 +53,7 @@ $grandTotal = 0;
                 <?php if (!empty($d['car_pending_items'])): ?>
                     <div class="compact-pending-stack">
                         <?php foreach ($d['car_pending_items'] as $carPending): ?>
-                            <a href="../cars/view.php?id=<?= clean($carPending['car_id']) ?>" class="mini-pill mini-pill-in" style="display:inline-flex; margin:0 8px 8px 0; text-decoration:none;">
+                            <a href="../cars/view.php?id=<?= clean($carPending['car_id']) ?>" class="mini-pill mini-pill-in ageing-car-pill">
                                 <?= clean(formatRegistrationNo($carPending['registration_no'] ?: 'Car')) ?>
                                 <?php if (!empty(trim(($carPending['make'] ?? '') . ' ' . ($carPending['model'] ?? '')))): ?>
                                     — <?= clean(trim(($carPending['make'] ?? '') . ' ' . ($carPending['model'] ?? ''))) ?>
@@ -77,7 +77,7 @@ $grandTotal = 0;
             </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($debtors)): ?><tr><td colspan="9" class="text-center text-muted" style="padding:40px;">No outstanding debtors.</td></tr><?php endif; ?>
+        <?php if (empty($debtors)): ?><tr><td colspan="9" class="text-center text-muted empty-table-cell">No outstanding debtors.</td></tr><?php endif; ?>
         </tbody>
         <tfoot>
             <tr>

@@ -38,7 +38,7 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
 
 <div class="page-header">
     <h1><i class="ri-calendar-line"></i> Financial Year</h1>
-    <button onclick="openModal('add-fy')" class="btn btn-primary"><i class="ri-add-line"></i> New FY</button>
+    <button type="button" onclick="openModal('add-fy')" class="btn btn-primary"><i class="ri-add-line"></i> New FY</button>
 </div>
 
 <div class="table-container table-container-fill">
@@ -54,7 +54,7 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
             <td><span class="badge <?= $fy['is_locked'] ? 'badge-red' : 'badge-blue' ?>"><?= $fy['is_locked'] ? 'Closed' : 'Open' ?></span></td>
             <td class="text-center">
                 <?php if (!$fy['is_active']): ?>
-                <form method="POST" style="display:inline;"><?= csrfField() ?><input type="hidden" name="action" value="activate"><input type="hidden" name="fy_id" value="<?= $fy['id'] ?>">
+                <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="activate"><input type="hidden" name="fy_id" value="<?= $fy['id'] ?>">
                     <button type="submit" class="btn btn-sm btn-outline" data-confirm="Activate this FY?"><i class="ri-check-line"></i> Activate</button>
                 </form>
                 <?php else: ?>
@@ -71,7 +71,7 @@ $fyList = $db->fetchAll("SELECT * FROM financial_years WHERE business_id = ? ORD
 
 <div class="modal-overlay" id="add-fy">
     <div class="modal">
-        <div class="modal-header"><h3>New Financial Year</h3><button class="modal-close" onclick="closeModal('add-fy')">×</button></div>
+        <div class="modal-header"><h3>New Financial Year</h3><button type="button" class="modal-close" onclick="closeModal('add-fy')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Create this financial year with the entered date range?"><?= csrfField() ?><input type="hidden" name="action" value="add">
                 <div class="form-group"><label class="form-label">Label *</label><input type="text" name="year_label" class="form-control" placeholder="e.g., 2024-25" required></div>

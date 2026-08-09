@@ -87,7 +87,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 
 <div class="page-header">
     <h1><i class="ri-file-list-3-line"></i> <?= $entry['reference_no'] ?></h1>
-    <div style="display: flex; gap: 10px;">
+    <div class="page-actions">
         <?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && $canEditEntry): ?>
             <a href="edit.php?id=<?= $entry['id'] ?>" class="btn btn-primary btn-sm"><i class="ri-edit-line"></i> Edit</a>
         <?php endif; ?>
@@ -95,7 +95,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
         <?php if ($entry['status'] === 'POSTED' && empty($entry['is_reversal']) && $canReverseEntry): ?>
             <a href="reverse.php?id=<?= $entry['id'] ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete Entry</a>
         <?php endif; ?>
-        <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+        <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
         <a href="list.php" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
@@ -117,16 +117,16 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
 <?php endif; ?>
 
 <?php if ($voucherDetails): ?>
-<div class="card" style="margin-bottom:24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-bill-line"></i> Large Bill Summary</h3></div>
     <div class="card-body">
-        <div class="stats-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
+        <div class="stats-grid stats-grid-4">
             <div class="stat-card"><div class="stat-value amount <?= $voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($voucherDetails['voucher']['primary_amount']) ?></div><div class="stat-label">Bill Total</div></div>
             <div class="stat-card"><div class="stat-value <?= $voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= clean($voucherDetails['voucher']['primary_entry_type'] === 'CR' ? 'Payment' : 'Receipt') ?></div><div class="stat-label">Bill Direction</div></div>
             <div class="stat-card"><div class="stat-value"><?= count($voucherDetails['lines']) ?></div><div class="stat-label">Split Lines</div></div>
             <div class="stat-card"><div class="stat-value"><?= clean($voucherDetails['voucher']['primary_account_name']) ?></div><div class="stat-label">Main Book</div></div>
         </div>
-        <div class="table-container" style="margin-top:16px;">
+        <div class="table-container detail-subsection">
             <table>
                 <thead>
                     <tr><th>Split To</th><th>Type</th><th>Note</th><th class="text-right">Amount</th></tr>
@@ -158,31 +158,31 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
     <div class="card">
         <div class="card-header"><h3>Entry Details</h3></div>
         <div class="card-body">
-            <table style="width: 100%;">
-                <tr><td class="text-muted" style="padding: 8px 0; width: 40%;">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Type</td><td><span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span> <span class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type'], $entry) ?>" style="margin-left:8px;display:inline-flex;"><?= clean(match (transactionBusinessFlow($entry['transaction_type'], $entry)) { 'in' => 'Money In', 'out' => 'Money Out', default => 'Transfer / Internal' }) ?></span></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Status</td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= $entry['status'] ?></span></td></tr>
-                <tr><td class="text-muted" style="padding: 8px 0;">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
-	                <tr><td class="text-muted" style="padding: 8px 0;">Created By</td><td><?= clean($entry['created_by_name']) ?></td></tr>
-	                <tr><td class="text-muted" style="padding: 8px 0;">Created At</td><td><?= renderDateTimeStack($entry['created_at'], $entry['created_at']) ?></td></tr>
-	                <?php if (!empty($entry['journal_voucher_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Voucher</td><td><a href="../reports/jv_register.php"><?= clean($entry['voucher_reference_no'] ?: $entry['journal_voucher_id']) ?></a></td></tr><?php endif; ?>
-		                <?php if ($entry['car_reg']): ?><tr><td class="text-muted" style="padding: 8px 0;">Car</td><td><a href="../cars/view.php?id=<?= $entry['car_id'] ?>"><?= formatRegistrationNo($entry['car_reg']) ?></a></td></tr><?php endif; ?>
-                <?php if ($entry['party_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Person / Company</td><td><a href="../parties/view.php?id=<?= urlencode($entry['party_id']) ?>"><?= clean($entry['party_name']) ?></a> <span class="badge badge-gray"><?= clean($entry['party_type']) ?></span></td></tr><?php endif; ?>
+            <table class="detail-table">
+                <tr><td class="text-muted">Reference</td><td class="text-bold"><?= $entry['reference_no'] ?></td></tr>
+                <tr><td class="text-muted">Date / Time</td><td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td></tr>
+                <tr><td class="text-muted">Type</td><td><span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span> <span class="transaction-context-chip <?= transactionFlowColorClass($entry['transaction_type'], $entry) ?>" ><?= clean(match (transactionBusinessFlow($entry['transaction_type'], $entry)) { 'in' => 'Money In', 'out' => 'Money Out', default => 'Transfer / Internal' }) ?></span></td></tr>
+                <tr><td class="text-muted">Status</td><td><span class="badge <?= $entry['status'] === 'POSTED' ? 'badge-green' : 'badge-red' ?>"><?= $entry['status'] ?></span></td></tr>
+                <tr><td class="text-muted">Narration</td><td><?= clean($entry['narration']) ?></td></tr>
+	                <tr><td class="text-muted">Created By</td><td><?= clean($entry['created_by_name']) ?></td></tr>
+	                <tr><td class="text-muted">Created At</td><td><?= renderDateTimeStack($entry['created_at'], $entry['created_at']) ?></td></tr>
+	                <?php if (!empty($entry['journal_voucher_id'])): ?><tr><td class="text-muted">Voucher</td><td><a href="../reports/jv_register.php"><?= clean($entry['voucher_reference_no'] ?: $entry['journal_voucher_id']) ?></a></td></tr><?php endif; ?>
+		                <?php if ($entry['car_reg']): ?><tr><td class="text-muted">Car</td><td><a href="../cars/view.php?id=<?= $entry['car_id'] ?>"><?= formatRegistrationNo($entry['car_reg']) ?></a></td></tr><?php endif; ?>
+                <?php if ($entry['party_name']): ?><tr><td class="text-muted">Person / Company</td><td><a href="../parties/view.php?id=<?= urlencode($entry['party_id']) ?>"><?= clean($entry['party_name']) ?></a> <span class="badge badge-gray"><?= clean($entry['party_type']) ?></span></td></tr><?php endif; ?>
                 <?php if ($tokenRecord): ?>
-                    <tr><td class="text-muted" style="padding: 8px 0;">Token Status</td><td><span class="badge <?= $tokenRecord['status'] === 'APPLIED' ? 'badge-green' : ($tokenRecord['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($tokenRecord['status']) ?></span></td></tr>
-                    <tr><td class="text-muted" style="padding: 8px 0;">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']))) ?></td></tr>
-                    <?php if (!empty($tokenRecord['applied_sale_entry_id'])): ?><tr><td class="text-muted" style="padding: 8px 0;">Adjusted In Sale</td><td><a href="view.php?id=<?= urlencode($tokenRecord['applied_sale_entry_id']) ?>"><?= clean($tokenRecord['sale_reference'] ?: 'View sale entry') ?></a></td></tr><?php endif; ?>
+                    <tr><td class="text-muted">Token Status</td><td><span class="badge <?= $tokenRecord['status'] === 'APPLIED' ? 'badge-green' : ($tokenRecord['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($tokenRecord['status']) ?></span></td></tr>
+                    <tr><td class="text-muted">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']))) ?></td></tr>
+                    <?php if (!empty($tokenRecord['applied_sale_entry_id'])): ?><tr><td class="text-muted">Adjusted In Sale</td><td><a href="view.php?id=<?= urlencode($tokenRecord['applied_sale_entry_id']) ?>"><?= clean($tokenRecord['sale_reference'] ?: 'View sale entry') ?></a></td></tr><?php endif; ?>
                 <?php endif; ?>
-                <?php if ($entry['partner_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Partner</td><td><a href="../partners/view.php?id=<?= urlencode($entry['partner_id']) ?>"><?= clean($entry['partner_name']) ?></a></td></tr><?php endif; ?>
-                <?php if ($entry['employee_name']): ?><tr><td class="text-muted" style="padding: 8px 0;">Employee</td><td><a href="../employees/view.php?id=<?= urlencode($entry['employee_id']) ?>"><?= clean($entry['employee_name']) ?></a></td></tr><?php endif; ?>
+                <?php if ($entry['partner_name']): ?><tr><td class="text-muted">Partner</td><td><a href="../partners/view.php?id=<?= urlencode($entry['partner_id']) ?>"><?= clean($entry['partner_name']) ?></a></td></tr><?php endif; ?>
+                <?php if ($entry['employee_name']): ?><tr><td class="text-muted">Employee</td><td><a href="../employees/view.php?id=<?= urlencode($entry['employee_id']) ?>"><?= clean($entry['employee_name']) ?></a></td></tr><?php endif; ?>
             </table>
         </div>
     </div>
 
     <div class="card">
         <div class="card-header"><h3>Journal Entry Lines</h3></div>
-        <div class="card-body" style="padding: 0;">
+        <div class="card-body card-body-flush">
             <table>
                 <thead>
                     <tr><th>Account</th><th class="text-right debit-amount">Debit (₹)</th><th class="text-right credit-amount">Credit (₹)</th></tr>
@@ -192,7 +192,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                     <tr>
                         <td>
                             <div class="text-bold"><?php if ($canViewLedger): ?><a href="<?= clean(accountLedgerUrl($line['account_id'], getCurrentFY($entry['entry_date']) . '-04-01', $entry['entry_date'])) ?>"><?= clean($line['account_name']) ?></a><?php else: ?><?= clean($line['account_name']) ?><?php endif; ?></div>
-                            <div class="text-muted" style="font-size: 11px;"><?= $line['account_code'] ?><?= $line['narration'] ? ' — ' . clean($line['narration']) : '' ?></div>
+                            <div class="table-secondary"><?= $line['account_code'] ?><?= $line['narration'] ? ' — ' . clean($line['narration']) : '' ?></div>
                         </td>
                         <td class="text-right amount debit-amount"><?= $line['entry_type'] === 'DR' ? formatAmount($line['amount']) : '' ?></td>
                         <td class="text-right amount credit-amount"><?= $line['entry_type'] === 'CR' ? formatAmount($line['amount']) : '' ?></td>
@@ -208,7 +208,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                 </tfoot>
             </table>
             <?php if (abs($totalDr - $totalCr) < 0.01): ?>
-                <div style="padding: 10px 16px; text-align: center; font-size: 12px; color: var(--accent-green);">
+                <div class="posting-status">
                     <i class="ri-check-line"></i> Entry is balanced (Dr = Cr)
                 </div>
             <?php endif; ?>
@@ -216,7 +216,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
     </div>
 </div>
 
-<div class="card" style="margin-top: 24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-attachment-2"></i> Physical Vouchers</h3></div>
     <div class="card-body">
         <?php if ($canEditEntry): ?>
@@ -253,7 +253,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                         <div class="attachment-actions">
                             <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>
                             <button type="button" class="btn btn-sm btn-outline" data-share-url="<?= clean($shareUrl) ?>" data-share-title="<?= clean($attachment['original_name']) ?>"><i class="ri-share-forward-line"></i> Share</button>
-                            <?php if ($canReverseEntry): ?><form method="POST" data-confirm-submit="Delete this voucher file? The deletion will be recorded in History." style="display:inline-flex;">
+                            <?php if ($canReverseEntry): ?><form method="POST" data-confirm-submit="Delete this voucher file? The deletion will be recorded in History." class="inline-form">
                                 <?= csrfField() ?>
                                 <input type="hidden" name="action" value="delete_voucher">
                                 <input type="hidden" name="attachment_id" value="<?= clean($attachment['id']) ?>">

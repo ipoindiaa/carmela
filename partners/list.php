@@ -66,9 +66,9 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="page-header">
     <div>
         <h1><i class="ri-group-line"></i> <?= clean($pageHeading) ?></h1>
-        <div class="text-muted" style="margin-top:4px;"><?= clean($pageDescription) ?></div>
+        <div class="page-subtitle"><?= clean($pageDescription) ?></div>
     </div>
-    <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button><?php endif; ?>
+    <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button type="button" onclick="openModal('add-partner')" class="btn btn-primary"><i class="ri-add-line"></i> Add Partner</button><?php endif; ?>
 </div>
 
 <div class="filter-bar">
@@ -86,8 +86,8 @@ $pageDescription = $requestedType === 'CARWISE'
 </div>
 
 <?php if ($requestedType === ''): ?>
-<div class="card" style="margin-bottom:16px;">
-    <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+<div class="card">
+    <div class="card-body partner-summary-grid">
         <div class="stat-card"><div class="stat-value text-blue"><?= count($mainPartners) ?></div><div class="stat-label">Main Partners</div></div>
         <div class="stat-card"><div class="stat-value text-purple"><?= count($carWisePartners) ?></div><div class="stat-label">Car-wise Partners</div></div>
     </div>
@@ -95,13 +95,13 @@ $pageDescription = $requestedType === 'CARWISE'
 <?php endif; ?>
 
 <?php if ($requestedType !== 'CARWISE'): ?>
-<div class="table-container table-container-fill" style="margin-bottom:20px;">
-    <div style="padding:16px 16px 0;font-weight:700;">Main Partners</div>
+<div class="table-container table-container-fill">
+    <div class="table-section-title">Main Partners</div>
     <table>
         <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($mainPartners)): ?>
-                <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No main partners yet</td></tr>
+                <tr><td colspan="8" class="text-center text-muted empty-table-cell">No main partners yet</td></tr>
             <?php else: ?>
                 <?php foreach ($mainPartners as $p): ?>
                 <tr>
@@ -123,12 +123,12 @@ $pageDescription = $requestedType === 'CARWISE'
 
 <?php if ($requestedType !== 'MAIN'): ?>
 <div class="table-container table-container-fill">
-    <div style="padding:16px 16px 0;font-weight:700;">Car-wise Partners</div>
+    <div class="table-section-title">Car-wise Partners</div>
     <table>
         <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($carWisePartners)): ?>
-                <tr><td colspan="8" class="text-center text-muted" style="padding: 40px;">No car-wise partners yet</td></tr>
+                <tr><td colspan="8" class="text-center text-muted empty-table-cell">No car-wise partners yet</td></tr>
             <?php else: ?>
                 <?php foreach ($carWisePartners as $p): ?>
                 <tr>
@@ -151,7 +151,7 @@ $pageDescription = $requestedType === 'CARWISE'
 <!-- Add Partner Modal -->
 <div class="modal-overlay" id="add-partner">
     <div class="modal">
-        <div class="modal-header"><h3>Add Partner</h3><button class="modal-close" onclick="closeModal('add-partner')">×</button></div>
+        <div class="modal-header"><h3>Add Partner</h3><button type="button" class="modal-close" onclick="closeModal('add-partner')">×</button></div>
         <div class="modal-body">
             <form method="POST" data-confirm-submit="Add this partner and create the related capital accounts?">
                 <?= csrfField() ?>

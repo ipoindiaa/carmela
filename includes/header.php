@@ -12,35 +12,39 @@ $currentPage = basename($_SERVER['PHP_SELF'], '.php');
 $canWritePrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'write');
 $canReadPrimaryBooks = Auth::hasAnyBookAccess(Auth::getPrimaryBookKeys(), 'read');
 $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
+$uiCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-system.css') ?: APP_VERSION;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <?php if (APP_IS_TESTING): ?><meta name="robots" content="noindex, nofollow, noarchive"><?php endif; ?>
     <title><?= APP_IS_TESTING ? '[TEST] ' : '' ?><?= $pageTitle ?? 'Dashboard' ?> — <?= APP_NAME ?></title>
     <meta name="description" content="<?= APP_NAME ?> — Car Trading Accounting System">
     <link rel="icon" type="image/png" href="<?= APP_URL ?>logo.png">
     <link rel="apple-touch-icon" href="<?= APP_URL ?>logo.png">
     <link rel="stylesheet" href="<?= APP_URL ?>assets/css/style.css?v=<?= $cssVersion ?>">
+    <link rel="stylesheet" href="<?= APP_URL ?>assets/css/ui-system.css?v=<?= $uiCssVersion ?>">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body class="<?= APP_IS_TESTING ? 'env-testing' : '' ?>">
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-container">
     <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-brand">
+    <aside class="sidebar" id="sidebar" aria-label="Application sidebar">
+        <a class="sidebar-brand" href="<?= APP_URL ?>dashboard.php" aria-label="<?= APP_NAME ?> dashboard">
             <div class="brand-icon">
-                <img src="<?= APP_URL ?>logo.png" alt="<?= APP_NAME ?> logo">
+                <img src="<?= APP_URL ?>logo.png" alt="">
             </div>
             <div>
                 <div class="brand-text"><?= APP_NAME ?></div>
             </div>
             <span class="brand-version">v<?= APP_VERSION ?></span>
-        </div>
+        </a>
 
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav" aria-label="Primary navigation">
             <div class="nav-section">
                 <div class="nav-section-title">Main</div>
                 <a href="<?= APP_URL ?>dashboard.php" class="nav-link <?= $currentPage === 'dashboard' ? 'active' : '' ?>">
@@ -114,12 +118,10 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
                     <span class="nav-icon"><i class="ri-book-2-line"></i></span>
                     Cash Book
                 </a>
-                <?php if (Auth::hasBookAccess('cash_book', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/cash_reconciliation.php" class="nav-link <?= $currentPage === 'cash_reconciliation' ? 'active' : '' ?>">
                     <span class="nav-icon"><i class="ri-bank-card-line"></i></span>
                     End-of-Day Cash Count
                 </a>
-                <?php endif; ?>
                 <?php endif; ?>
                 <?php if (Auth::hasBookAccess('bank_book', 'read')): ?>
                 <a href="<?= APP_URL ?>reports/bankbook.php" class="nav-link <?= $currentPage === 'bankbook' ? 'active' : '' ?>">
@@ -258,51 +260,53 @@ $cssVersion = @filemtime(__DIR__ . '/../assets/css/style.css') ?: APP_VERSION;
             </a>
         </div>
     </aside>
-    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
 
     <!-- Main Content -->
-    <main class="main-content">
+    <main class="main-content" id="main-content" tabindex="-1">
         <!-- Top Header -->
         <header class="top-header">
-            <div class="header-left">
-                <button class="header-btn" id="sidebar-toggle" type="button" aria-label="Toggle navigation menu">
-                    <i class="ri-menu-line"></i>
-                </button>
-                <div class="page-title">
-                    <span class="title-icon"><?= $pageIcon ?? '<i class="ri-dashboard-3-line"></i>' ?></span>
-                    <?= $pageTitle ?? 'Dashboard' ?>
-                    <?php if (APP_IS_TESTING): ?><span class="environment-badge">TEST</span><?php endif; ?>
+            <div class="top-header-inner">
+                <div class="header-left">
+                    <button class="header-btn" id="sidebar-toggle" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar" aria-expanded="false">
+                        <i class="ri-menu-line" aria-hidden="true"></i>
+                    </button>
+                    <div class="page-title">
+                        <span class="title-icon"><?= $pageIcon ?? '<i class="ri-dashboard-3-line"></i>' ?></span>
+                        <?= $pageTitle ?? 'Dashboard' ?>
+                        <?php if (APP_IS_TESTING): ?><span class="environment-badge">TEST</span><?php endif; ?>
+                    </div>
                 </div>
-            </div>
-            <div class="header-right">
-                <?php if ($canWritePrimaryBooks): ?>
-                <a href="<?= APP_URL ?>transactions/new.php" class="btn btn-primary btn-sm top-entry-btn">
-                    <i class="ri-add-line"></i> New Entry
-                </a>
-                <?php endif; ?>
-                <div class="header-btn" style="font-size:12px; color: var(--text-muted);">
-                    <i class="ri-calendar-line"></i>
-                    FY <?= getFYLabel() ?>
-                </div>
-                <a href="<?= APP_URL ?>dashboard.php#alerts" class="header-btn notification-btn">
-                    <i class="ri-notification-3-line"></i>
-                    <?php if ($unreadAlerts > 0): ?>
-                        <span class="badge"><?= $unreadAlerts ?></span>
+                <div class="header-right">
+                    <?php if ($canWritePrimaryBooks): ?>
+                    <a href="<?= APP_URL ?>transactions/new.php" class="btn btn-primary btn-sm top-entry-btn">
+                        <i class="ri-add-line"></i> New Entry
+                    </a>
                     <?php endif; ?>
-                </a>
-                <a href="<?= APP_URL ?>logout.php" class="header-btn desktop-logout-btn" title="Logout">
-                    <i class="ri-logout-box-r-line"></i>
-                </a>
-            </div>
+                    <div class="header-context" title="Current financial year">
+                        <i class="ri-calendar-line" aria-hidden="true"></i>
+                        FY <?= getFYLabel() ?>
+                    </div>
+                    <a href="<?= APP_URL ?>dashboard.php#alerts" class="header-btn notification-btn" aria-label="View alerts">
+                        <i class="ri-notification-3-line" aria-hidden="true"></i>
+                        <?php if ($unreadAlerts > 0): ?>
+                            <span class="badge"><?= $unreadAlerts ?></span>
+                        <?php endif; ?>
+                    </a>
+                    <a href="<?= APP_URL ?>logout.php" class="header-btn desktop-logout-btn" title="Logout" aria-label="Logout">
+                        <i class="ri-logout-box-r-line" aria-hidden="true"></i>
+                    </a>
+                </div>
+            </div><!-- /.top-header-inner -->
         </header>
 
         <div class="page-content animate-fade">
             <?php if ($flash = getFlash('success')): ?>
-                <div class="alert alert-success" data-auto-dismiss><i class="ri-check-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-success" role="status" aria-live="polite" data-auto-dismiss><i class="ri-check-line" aria-hidden="true"></i> <?= $flash ?> <button type="button" class="alert-close" aria-label="Dismiss message" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>
             <?php if ($flash = getFlash('error')): ?>
-                <div class="alert alert-error" data-auto-dismiss><i class="ri-error-warning-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-error" role="alert" data-auto-dismiss><i class="ri-error-warning-line" aria-hidden="true"></i> <?= $flash ?> <button type="button" class="alert-close" aria-label="Dismiss message" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>
             <?php if ($flash = getFlash('warning')): ?>
-                <div class="alert alert-warning" data-auto-dismiss><i class="ri-alert-line"></i> <?= $flash ?> <button class="alert-close" onclick="this.parentElement.remove()">×</button></div>
+                <div class="alert alert-warning" role="alert" data-auto-dismiss><i class="ri-alert-line" aria-hidden="true"></i> <?= $flash ?> <button type="button" class="alert-close" aria-label="Dismiss message" onclick="this.parentElement.remove()">×</button></div>
             <?php endif; ?>

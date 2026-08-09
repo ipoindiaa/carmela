@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="page-header">
     <h1><i class="ri-bank-card-line"></i> End-of-Day Cash Reconciliation</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
@@ -67,10 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="alert alert-info"><i class="ri-information-line"></i> No cash account found. Create a cash account first.</div>
 <?php else: ?>
 
-<div class="card" style="max-width: 640px; margin-top: 20px;">
+<div class="card content-narrow">
     <div class="card-header"><h3><i class="ri-bank-card-line"></i> Today's Cash Count</h3><div class="card-header-note">Compare the book balance with physical cash in the drawer.</div></div>
     <div class="card-body">
-        <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 16px;">
+        <div class="stats-grid stats-grid-2 block-end">
             <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($bookBalance) ?></div><div class="stat-label">Book Balance</div></div>
             <div class="stat-card"><div class="stat-value flow-neutral"><?= clean($cashAccount['name']) ?></div><div class="stat-label">Cash Account</div></div>
         </div>
@@ -99,14 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-actions form-actions-start">
                 <button type="submit" class="btn btn-primary"><i class="ri-check-double-line"></i> Reconcile Cash</button>
                 <?php if (abs($bookBalance) > 0.01): ?>
-                    <span class="text-muted" style="align-self:center;">Book says <?= formatAmount($bookBalance) ?></span>
+                    <span class="text-muted form-action-note">Book says <?= formatAmount($bookBalance) ?></span>
                 <?php endif; ?>
             </div>
         </form>
     </div>
 </div>
 
-<div class="card" style="margin-top: 24px;">
+<div class="card">
     <div class="card-header"><h3><i class="ri-history-line"></i> Reconciliation History</h3></div>
     <div class="card-body card-body-flush table-container">
         <table>

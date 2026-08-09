@@ -87,11 +87,11 @@ $displayEntries = array_reverse($displayEntries);
 
 <div class="page-header">
     <h1><i class="ri-book-2-line"></i> Cash Book</h1>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
-    <form method="GET" style="display:flex;gap:12px;align-items:end;">
+    <form method="GET" class="filter-form">
         <?php if (count($cashAccounts) > 1): ?>
             <div>
                 <label class="form-label">Cash Account</label>
@@ -112,8 +112,8 @@ $displayEntries = array_reverse($displayEntries);
     <div class="alert alert-info"><i class="ri-information-line"></i> No active cash account found. Add one from Account Settings.</div>
 <?php endif; ?>
 
-<div class="card" style="margin-bottom: 16px;">
-    <div class="card-body" style="display:flex;gap:40px;">
+<div class="card">
+    <div class="card-body summary-strip">
         <div><span class="text-muted">Balance As On <?= formatDate($dateTo) ?>:</span> <strong class="amount <?= ($cashBalanceAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($cashBalanceAsOn['amount'] ?? 0) ?> <?= $cashBalanceAsOn['type'] ?? 'DR' ?></strong></div>
     </div>
 </div>
@@ -125,7 +125,7 @@ $displayEntries = array_reverse($displayEntries);
         <?php foreach ($displayEntries as $e): ?>
         <tr>
             <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($e['entry_id']) ?>"><?= clean($e['reference_no']) ?></a></td>
-            <td><span class="badge badge-blue" style="font-size:10px;"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
+            <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>

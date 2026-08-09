@@ -153,11 +153,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="alert alert-error"><i class="ri-error-warning-line"></i> <?= clean($formError) ?></div>
 <?php endif; ?>
 
-<div class="card" style="max-width: 800px;">
+<div class="card form-card">
     <div class="card-body">
         <form method="POST" enctype="multipart/form-data" data-confirm-submit="Add this car and post the purchase, payment, and partner terms?">
             <?= csrfField() ?>
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-blue);"><i class="ri-car-line"></i> Vehicle Details</h3>
+            <h3 class="form-section-title form-section-title-standalone section-accent-blue"><i class="ri-car-line"></i> Vehicle Details</h3>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Registration No. *</label>
@@ -197,8 +197,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             </div>
-            <hr style="border-color: var(--border); margin: 24px 0;">
-            <h3 style="margin-bottom: 16px; font-size: 15px; color: var(--accent-green);"><i class="ri-bank-card-line"></i> Payment Details</h3>
+            <hr class="form-divider">
+            <h3 class="form-section-title form-section-title-standalone section-accent-green"><i class="ri-bank-card-line"></i> Payment Details</h3>
 
             <div class="form-row">
                 <div class="form-group">
@@ -248,10 +248,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-hint">Photos, PDF, Office documents, text/CSV, or archives. Maximum 10 MB each.</div>
             </div>
 
-            <hr style="border-color: var(--border); margin: 24px 0;">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+            <hr class="form-divider">
+            <div class="form-section-heading form-section-heading-spaced">
                 <div>
-                    <h3 style="font-size:15px;color:var(--accent-purple);"><i class="ri-group-line"></i> Car Partners <span class="text-muted" style="font-weight:500;">(Optional)</span></h3>
+                    <h3 class="form-section-title section-accent-purple"><i class="ri-group-line"></i> Car Partners <span class="section-optional">(Optional)</span></h3>
                     <div class="form-hint">Add the partners funding this car and set each partner's profit share. The business keeps any remaining share.</div>
                 </div>
                 <?php if (Auth::hasEntityAccess('partner', 'write')): ?><button type="button" class="btn btn-outline btn-sm" id="quick-partner-toggle" onclick="toggleQuickPartner()"><i class="ri-user-add-line"></i> Create New Partner</button><?php endif; ?>
@@ -279,18 +279,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">Profit Share %</label>
                         <input type="number" name="partner_profit_share_pcts[]" class="form-control" placeholder="Auto if blank" step="0.01" min="0" max="100">
                     </div>
-                    <div class="form-group partner-row-action is-placeholder" style="display:flex;visibility:hidden;align-self:end;">
+                    <div class="form-group partner-row-action is-placeholder">
                         <button type="button" class="btn btn-outline btn-icon" title="Remove partner" onclick="removePartnerRow(this)"><i class="ri-delete-bin-line"></i></button>
                     </div>
                 </div>
             </div>
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+            <div class="inline-note-list block-end">
                 <button type="button" class="btn btn-outline btn-sm" onclick="addPartnerRow()"><i class="ri-add-line"></i> Add Partner</button>
                 <span class="form-hint">Partner shares may total up to 100%. The business keeps the remainder.</span>
             </div>
             <?php if (Auth::hasEntityAccess('partner', 'write')): ?>
-            <div id="quick-partner-fields" class="alert alert-info" style="display:none;margin-bottom:16px;">
-                <div class="form-row" style="width:100%;margin-bottom:0;">
+            <div id="quick-partner-fields" class="alert alert-info" hidden>
+                <div class="form-row w-full">
                     <div class="form-group"><label class="form-label">New Partner Name *</label><input type="text" name="new_car_partner_name" class="form-control" placeholder="Full name"></div>
                     <div class="form-group"><label class="form-label">Phone</label><input type="text" name="new_car_partner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
@@ -349,9 +349,9 @@ function toggleQuickPartner() {
     const nameInput = panel?.querySelector('input[name="new_car_partner_name"]');
     if (!panel || !button || !selectGroup || !nameInput) return;
 
-    const opening = panel.style.display === 'none';
-    panel.style.display = opening ? 'flex' : 'none';
-    selectGroup.style.display = opening ? 'none' : '';
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    selectGroup.hidden = opening;
     if (typeof setConditionalControls === 'function') {
         setConditionalControls(panel, opening, { clear: !opening });
         setConditionalControls(selectGroup, !opening, { clear: opening });

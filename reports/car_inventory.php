@@ -68,7 +68,7 @@ $clearUrl = 'car_inventory.php';
         <h1><i class="ri-parking-box-line"></i> Car Inventory</h1>
         <p class="page-subtitle">Car-wise inventory ledger balances, separated from the Balance Sheet detail.</p>
     </div>
-    <button onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
 <div class="filter-bar">
@@ -80,7 +80,7 @@ $clearUrl = 'car_inventory.php';
                 <option value="<?= $value ?>" <?= $status === $value ? 'selected' : '' ?>><?= $label ?></option>
             <?php endforeach; ?>
         </select></div>
-        <button class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
+        <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
         <?php if ($search !== '' || $status !== 'INVENTORY' || $asOnDate !== date('Y-m-d')): ?><a href="<?= $clearUrl ?>" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?>
     </form>
 </div>
