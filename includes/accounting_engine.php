@@ -2499,7 +2499,7 @@ class AccountingEngine {
         }
         $narration = trim((string) $narration);
         if ($narration === '') {
-            throw new Exception("Commission reason / narration is required.");
+            $narration = "Commission to {$employee['name']}";
         }
 
         $carId = trim((string) $carId) ?: null;
@@ -2895,7 +2895,7 @@ class AccountingEngine {
         $date = trim((string) $date);
         $narration = trim((string) $narration);
         if ($narration === '') {
-            throw new Exception('Narration is required.');
+            $narration = 'Correction - ' . $entry['reference_no'];
         }
         $this->validateDateNotLocked($entry['entry_date']);
         $this->validateDateNotLocked($date);

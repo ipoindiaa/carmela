@@ -466,8 +466,8 @@ $keyEvents = $db->fetchAll(
                 <div class="form-hint">Blank = full amount due received now.</div>
             </div>
             <div class="form-group">
-                <label class="form-label">Narration *</label>
-                <input name="narration" class="form-control" value="Outside car commission sale - <?= clean($car['registration_no']) ?>" required>
+                <label class="form-label">Narration (Optional)</label>
+                <input name="narration" class="form-control" placeholder="Optional" value="Outside car commission sale - <?= clean($car['registration_no']) ?>">
             </div>
         </div>
 

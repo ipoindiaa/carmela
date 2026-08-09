@@ -181,7 +181,7 @@ $resolveRtoRecord = function () use ($db, $businessId, $userId) {
         throw new Exception('Select a valid car for RTO entry.');
     }
     if ($rtoType === '') {
-        throw new Exception('Enter RTO narration.');
+        $rtoType = 'RTO - ' . $carId;
     }
 
     $record = [
@@ -671,8 +671,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label" id="narration-label">Narration / Description *</label>
-                    <input type="text" name="narration" class="form-control" placeholder="Brief description of this entry" value="<?= clean($preselectedNarration) ?>" required>
+                    <label class="form-label" id="narration-label">Narration / Description (Optional)</label>
+                    <input type="text" name="narration" class="form-control" placeholder="Optional — add a note if needed" value="<?= clean($preselectedNarration) ?>">
                 </div>
             </div>
         </div>
@@ -1045,8 +1045,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </button>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">RTO Narration *</label>
-                        <input type="text" name="rto_type_name" class="form-control" placeholder="Transfer, NOC, passing, tax">
+                        <label class="form-label">RTO Narration (Optional)</label>
+                        <input type="text" name="rto_type_name" class="form-control" placeholder="Transfer, NOC, passing, tax (optional)">
                     </div>
                 </div>
                 <div class="form-row">
@@ -1873,13 +1873,11 @@ function syncSaleAmountUi() {
     amountGroup.style.display = (isCarSale || isOutsideCarReceipt) ? 'none' : '';
     amountInput.required = !(isCarSale || isOutsideCarReceipt);
     if (narrationInput) {
-        narrationInput.required = !(isCarSale || isOutsideCarReceipt);
-        narrationInput.placeholder = (isCarSale || isOutsideCarReceipt)
-            ? (isOutsideCarReceipt ? 'Optional — add operating notes below' : 'Optional — system will use the car number')
-            : 'Brief description of this entry';
+        narrationInput.required = false;
+        narrationInput.placeholder = 'Optional — add a note if needed';
     }
     if (narrationLabel) {
-        narrationLabel.textContent = (isCarSale || isOutsideCarReceipt) ? 'Narration / Description (Optional)' : 'Narration / Description *';
+        narrationLabel.textContent = 'Narration / Description (Optional)';
     }
     const paymentAccountGroup = document.getElementById('payment-account-group');
     const paymentAccount = document.getElementById('payment_account');

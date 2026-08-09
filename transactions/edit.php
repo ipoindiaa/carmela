@@ -164,8 +164,8 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
                 </div>
             </div>
             <div class="form-group">
-                <label class="form-label">Narration *</label>
-                <textarea name="narration" class="form-control" rows="3" required><?= clean($formNarration) ?></textarea>
+                <label class="form-label">Narration (Optional)</label>
+                <textarea name="narration" class="form-control" rows="3" placeholder="Optional"><?= clean($formNarration) ?></textarea>
             </div>
         </div>
     </div>
