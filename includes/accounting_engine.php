@@ -469,19 +469,41 @@ class AccountingEngine {
         );
     }
 
+    /**
+     * Run one schema migration step in isolation so a failure in one step
+     * (lock timeout, permissions, old-data quirk) never blocks the remaining
+     * migrations. Failures are logged; in the testing environment they are
+     * rethrown so the test suite notices them.
+     */
+    private function runMigrationStep(string $label, callable $step): void {
+        try {
+            $step();
+        } catch (\Throwable $e) {
+            error_log("AutoBooks schema migration step '{$label}' failed: " . $e->getMessage());
+            if (defined('APP_IS_TESTING') && APP_IS_TESTING) {
+                throw $e;
+            }
+        }
+    }
+
     private function ensureAdvancedSchema() {
         if (self::$advancedSchemaEnsured) {
             return;
         }
 
-        try {
-            $this->ensureJournalEntryTypeEnum();
-            $this->ensureCarStatusEnum();
-            $this->ensureCarOperationsSchema();
-            $this->ensureCarLoanCommissionSchema();
-            $this->ensureAlertsTypeEnum();
-            $this->ensureCashReconciliationSchema();
+        // Every migration step runs independently (runMigrationStep): a
+        // transient failure in one step (lock timeout, permission quirk,
+        // old-database data) must never silently block the remaining steps.
+        // Otherwise one failed ALTER leaves the schema half-migrated and
+        // later requests fail with 'unknown column' / 'data truncated' errors.
 
+        $this->runMigrationStep('journal-entry-type-enum', fn() => $this->ensureJournalEntryTypeEnum());
+        $this->runMigrationStep('car-status-enum', fn() => $this->ensureCarStatusEnum());
+        $this->runMigrationStep('car-operations-schema', fn() => $this->ensureCarOperationsSchema());
+        $this->runMigrationStep('car-loan-commission-schema', fn() => $this->ensureCarLoanCommissionSchema());
+        $this->runMigrationStep('alerts-type-enum', fn() => $this->ensureAlertsTypeEnum());
+        $this->runMigrationStep('cash-reconciliation-schema', fn() => $this->ensureCashReconciliationSchema());
+        $this->runMigrationStep('create-table-journal_vouchers', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_vouchers` (
                     `id` CHAR(36) NOT NULL,
@@ -504,7 +526,8 @@ class AccountingEngine {
                     KEY `idx_jv_business_status` (`business_id`, `status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-journal_voucher_lines', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `journal_voucher_lines` (
                     `id` CHAR(36) NOT NULL,
@@ -521,7 +544,8 @@ class AccountingEngine {
                     KEY `idx_jvl_entity` (`entity_type`, `entity_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-car_partnerships', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `car_partnerships` (
                     `id` CHAR(36) NOT NULL,
@@ -541,7 +565,8 @@ class AccountingEngine {
                     KEY `idx_cp_business` (`business_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-partner_profit_settlements', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `partner_profit_settlements` (
                     `id` CHAR(36) NOT NULL,
@@ -565,7 +590,8 @@ class AccountingEngine {
                     KEY `idx_pps_partner_status` (`partner_id`, `status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-partner_settlement_applications', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `partner_settlement_applications` (
                     `id` CHAR(36) NOT NULL,
@@ -582,7 +608,8 @@ class AccountingEngine {
                     KEY `idx_psa_settlement` (`partner_profit_settlement_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-car_tokens', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `car_tokens` (
                     `id` CHAR(36) NOT NULL,
@@ -605,7 +632,8 @@ class AccountingEngine {
                     KEY `idx_car_tokens_party` (`business_id`, `party_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-commission_car_settlements', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `commission_car_settlements` (
                     `id` CHAR(36) NOT NULL,
@@ -631,7 +659,8 @@ class AccountingEngine {
                     KEY `idx_commission_owner` (`business_id`, `owner_party_id`, `status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('create-table-commission_owner_payments', function () {
             $this->db->query(
                 "CREATE TABLE IF NOT EXISTS `commission_owner_payments` (
                     `id` CHAR(36) NOT NULL,
@@ -647,21 +676,34 @@ class AccountingEngine {
                     KEY `idx_commission_owner_payment` (`business_id`, `settlement_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
+        });
+        $this->runMigrationStep('add-column-journal_entries.journal_voucher_id', function () {
             if (!$this->columnExists('journal_entries', 'journal_voucher_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `journal_voucher_id` CHAR(36) DEFAULT NULL AFTER `party_id`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_voucher_lines.entity_type', function () {
             if (!$this->columnExists('journal_voucher_lines', 'entity_type')) {
                 $this->db->query("ALTER TABLE `journal_voucher_lines` ADD COLUMN `entity_type` VARCHAR(30) DEFAULT NULL AFTER `narration`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_voucher_lines.entity_id', function () {
             if (!$this->columnExists('journal_voucher_lines', 'entity_id')) {
                 $this->db->query("ALTER TABLE `journal_voucher_lines` ADD COLUMN `entity_id` CHAR(36) DEFAULT NULL AFTER `entity_type`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_lines.source_voucher_line_id', function () {
             if (!$this->columnExists('journal_lines', 'source_voucher_line_id')) {
                 $this->db->query("ALTER TABLE `journal_lines` ADD COLUMN `source_voucher_line_id` CHAR(36) DEFAULT NULL AFTER `narration`");
             }
+        });
+        $this->runMigrationStep('add-index-journal_voucher_lines', function () {
             $this->addIndexIfMissing('journal_voucher_lines', 'idx_jvl_entity', '`entity_type`, `entity_id`');
+        });
+        $this->runMigrationStep('add-index-journal_lines', function () {
             $this->addIndexIfMissing('journal_lines', 'idx_jl_source_voucher_line', '`source_voucher_line_id`');
+        });
+        $this->runMigrationStep('backfill-voucher-line-entities', function () {
             $this->db->query(
                 "UPDATE journal_voucher_lines jvl
                  JOIN accounts a ON a.id = jvl.account_id
@@ -671,6 +713,15 @@ class AccountingEngine {
                     OR jvl.entity_type = ''
                     OR jvl.entity_id IS NULL"
             );
+        });
+        $this->runMigrationStep('backfill-entry-car-links', function () {
+            // Cheap guard: skip the heavy join-backfill entirely when there
+            // are no unlinked entries to fix, so large databases are not
+            // scanned on every request (and cannot hit lock-wait timeouts).
+            $unlinked = $this->db->fetch("SELECT COUNT(*) AS cnt FROM journal_entries WHERE car_id IS NULL");
+            if (intval($unlinked['cnt'] ?? 0) === 0) {
+                return;
+            }
             $this->db->query(
                 "UPDATE journal_entries je
                  JOIN (
@@ -683,54 +734,95 @@ class AccountingEngine {
                  SET je.car_id = linked_car.car_id
                  WHERE je.car_id IS NULL"
             );
+        });
+        $this->runMigrationStep('add-column-journal_entries.corrected_from_id', function () {
             if (!$this->columnExists('journal_entries', 'corrected_from_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `corrected_from_id` CHAR(36) DEFAULT NULL AFTER `journal_voucher_id`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_entries.corrected_by_id', function () {
             if (!$this->columnExists('journal_entries', 'corrected_by_id')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `corrected_by_id` CHAR(36) DEFAULT NULL AFTER `corrected_from_id`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_entries.correction_reason', function () {
             if (!$this->columnExists('journal_entries', 'correction_reason')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `correction_reason` VARCHAR(500) DEFAULT NULL AFTER `corrected_by_id`");
             }
+        });
+        $this->runMigrationStep('add-column-journal_entries.version_no', function () {
             if (!$this->columnExists('journal_entries', 'version_no')) {
                 $this->db->query("ALTER TABLE `journal_entries` ADD COLUMN `version_no` INT NOT NULL DEFAULT 1 AFTER `correction_reason`");
             }
+        });
+        $this->runMigrationStep('add-index-journal_entries', function () {
             $this->addIndexIfMissing('journal_entries', 'idx_correction_from', '`corrected_from_id`');
-
-            // Entry-type backfill reads these car fields. Older databases must
-            // receive them before ensureEntryTypeIdentitySchema() runs.
+        });
+        $this->runMigrationStep('add-column-cars.sale_commission_amount', function () {
             if (!$this->columnExists('cars', 'sale_commission_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `sale_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `sale_price`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.purchase_paid_amount', function () {
             if (!$this->columnExists('cars', 'purchase_paid_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `purchase_price`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.ownership_type', function () {
             if (!$this->columnExists('cars', 'ownership_type')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED' AFTER `purchase_paid_amount`");
             }
+        });
+        $this->runMigrationStep('ownership-type-outside-enum', function () {
+            $ownershipCol = $this->db->fetch(
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cars' AND COLUMN_NAME = 'ownership_type'"
+            );
+            if ($ownershipCol && strpos($ownershipCol['COLUMN_TYPE'] ?? '', 'OUTSIDE') === false) {
+                $this->db->query("ALTER TABLE `cars` MODIFY COLUMN `ownership_type` ENUM('OWNED','COMMISSION','OUTSIDE') NOT NULL DEFAULT 'OWNED'");
+            }
+        });
+        $this->runMigrationStep('entry-type-identity-backfill', function () {
             $this->ensureEntryTypeIdentitySchema();
+        });
+        $this->runMigrationStep('car-tokens-status-enum', function () {
             $this->ensureCarTokensStatusEnum();
+        });
+        $this->runMigrationStep('add-column-cars.buyer_party_id', function () {
             if (!$this->columnExists('cars', 'buyer_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `buyer_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_contact`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.seller_party_id', function () {
             if (!$this->columnExists('cars', 'seller_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `seller_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_party_id`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.commission_owner_party_id', function () {
             if (!$this->columnExists('cars', 'commission_owner_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `commission_owner_party_id` CHAR(36) DEFAULT NULL AFTER `ownership_type`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.expected_sale_price', function () {
             if (!$this->columnExists('cars', 'expected_sale_price')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `expected_sale_price` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `commission_owner_party_id`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.expected_commission_amount', function () {
             if (!$this->columnExists('cars', 'expected_commission_amount')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `expected_commission_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `expected_sale_price`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.has_second_key', function () {
             if (!$this->columnExists('cars', 'has_second_key')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `has_second_key` TINYINT(1) NOT NULL DEFAULT 0 AFTER `seller_party_id`");
             }
+        });
+        $this->runMigrationStep('add-column-cars.partner_id', function () {
             if (!$this->columnExists('cars', 'partner_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `partner_id` CHAR(36) DEFAULT NULL AFTER `seller_party_id`");
             }
+        });
+        $this->runMigrationStep('car-partner-index', function () {
             $partnerIndex = $this->db->fetch(
                 "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cars' AND INDEX_NAME = 'idx_car_partner'"
@@ -738,12 +830,18 @@ class AccountingEngine {
             if (!$partnerIndex) {
                 $this->db->query("ALTER TABLE `cars` ADD INDEX `idx_car_partner` (`partner_id`)");
             }
+        });
+        $this->runMigrationStep('add-column-accounts.opening_balance_date', function () {
             if (!$this->columnExists('accounts', 'opening_balance_date')) {
                 $this->db->query("ALTER TABLE `accounts` ADD COLUMN `opening_balance_date` DATE DEFAULT NULL AFTER `opening_balance_type`");
             }
+        });
+        $this->runMigrationStep('add-column-accounts.opening_entry_id', function () {
             if (!$this->columnExists('accounts', 'opening_entry_id')) {
                 $this->db->query("ALTER TABLE `accounts` ADD COLUMN `opening_entry_id` CHAR(36) DEFAULT NULL AFTER `opening_balance_date`");
             }
+        });
+        $this->runMigrationStep('employee-columns', function () {
             foreach ([
                 'email' => "VARCHAR(100) DEFAULT NULL AFTER `phone`",
                 'exit_date' => "DATE DEFAULT NULL AFTER `join_date`",
@@ -757,39 +855,41 @@ class AccountingEngine {
                     $this->db->query("ALTER TABLE `employees` ADD COLUMN `$employeeColumn` $definition");
                 }
             }
+        });
+        $this->runMigrationStep('add-column-partners.partner_type', function () {
             if (!$this->columnExists('partners', 'partner_type')) {
                 $this->db->query("ALTER TABLE `partners` ADD COLUMN `partner_type` ENUM('MAIN','CARWISE') NOT NULL DEFAULT 'MAIN' AFTER `name`");
             }
+        });
+        $this->runMigrationStep('add-column-car_partner_contributions.funding_pct', function () {
             if (!$this->columnExists('car_partner_contributions', 'funding_pct')) {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `funding_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `amount`");
             }
+        });
+        $this->runMigrationStep('add-column-car_partner_contributions.profit_share_pct', function () {
             if (!$this->columnExists('car_partner_contributions', 'profit_share_pct')) {
                 $this->db->query("ALTER TABLE `car_partner_contributions` ADD COLUMN `profit_share_pct` DECIMAL(7,4) NOT NULL DEFAULT 0.0000 AFTER `funding_pct`");
             }
-
-            // Extend ownership_type ENUM to include OUTSIDE for outside/commission cars with expense tracking
-            $ownershipCol = $this->db->fetch(
-                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cars' AND COLUMN_NAME = 'ownership_type'"
-            );
-            if ($ownershipCol && strpos($ownershipCol['COLUMN_TYPE'] ?? '', 'OUTSIDE') === false) {
-                $this->db->query("ALTER TABLE `cars` MODIFY COLUMN `ownership_type` ENUM('OWNED','COMMISSION','OUTSIDE') NOT NULL DEFAULT 'OWNED'");
-            }
-
+        });
+        $this->runMigrationStep('add-index-accounts', function () {
             $this->addIndexIfMissing('accounts', 'idx_accounts_business_search', '`business_id`, `entity_type`, `is_active`, `code`, `name`');
+        });
+        $this->runMigrationStep('add-index-cars', function () {
             $this->addIndexIfMissing('cars', 'idx_cars_business_search', '`business_id`, `status`, `registration_no`, `make`, `model`');
+        });
+        $this->runMigrationStep('add-index-employees', function () {
             $this->addIndexIfMissing('employees', 'idx_employees_business_search', '`business_id`, `is_active`, `name`, `role`, `phone`');
+        });
+        $this->runMigrationStep('add-index-partners', function () {
             $this->addIndexIfMissing('partners', 'idx_partners_business_search', '`business_id`, `is_active`, `name`, `phone`');
+        });
+        $this->runMigrationStep('add-index-debtors_creditors', function () {
             $this->addIndexIfMissing('debtors_creditors', 'idx_parties_business_search', '`business_id`, `is_active`, `type`, `name`, `phone`');
+        });
 
-            self::$advancedSchemaEnsured = true;
-        } catch (\Throwable $e) {
-            error_log("AutoBooks schema migration failed: " . $e->getMessage());
-            self::$advancedSchemaEnsured = true;
-            if (defined('APP_IS_TESTING') && APP_IS_TESTING) {
-                throw $e;
-            }
-        }
+        self::$advancedSchemaEnsured = true;
     }
+
 
     private function ensureJournalEntryTypeEnum() {
         $column = $this->db->fetch(
@@ -1209,14 +1309,14 @@ class AccountingEngine {
 
         try {
             $entryId = Database::uuid();
-            $refNo = getNextRefNo($this->db, $this->businessId, $date, $extras['reference_prefix'] ?? 'JE');
             $fy = getCurrentFY($date);
+            $refPrefix = $extras['reference_prefix'] ?? 'JE';
 
             $entryData = [
                 'id' => $entryId,
                 'business_id' => $this->businessId,
                 'entry_date' => $date,
-                'reference_no' => $refNo,
+                'reference_no' => '', // assigned in the retry loop below
                 'narration' => $narration,
                 'transaction_type' => $type,
                 'entry_type_id' => $extras['entry_type_id'] ?? systemEntryTypeId($type),
@@ -1233,7 +1333,24 @@ class AccountingEngine {
                 'journal_voucher_id' => $extras['journal_voucher_id'] ?? null,
             ];
 
-            $this->db->insert('journal_entries', $entryData);
+            // Reference numbers are computed as max+1, which can collide when
+            // two users post at the same moment (uk_reference). Instead of
+            // failing the whole entry, regenerate the reference and retry the
+            // insert. A duplicate-key error inside a transaction only aborts
+            // that single statement, so the retry is safe.
+            $inserted = false;
+            for ($attempt = 1; $attempt <= 5 && !$inserted; $attempt++) {
+                $entryData['reference_no'] = getNextRefNo($this->db, $this->businessId, $date, $refPrefix);
+                try {
+                    $this->db->insert('journal_entries', $entryData);
+                    $inserted = true;
+                } catch (Throwable $insertError) {
+                    if (!Database::isDuplicateKeyError($insertError) || $attempt === 5) {
+                        throw $insertError;
+                    }
+                    // Reference collision — regenerate and try again.
+                }
+            }
 
             foreach ($lines as $line) {
                 $lineId = Database::uuid();
@@ -1246,6 +1363,14 @@ class AccountingEngine {
                     'narration' => $line['narration'] ?? null,
                     'source_voucher_line_id' => $line['source_voucher_line_id'] ?? null,
                 ]);
+            }
+
+            // Update running balances in a consistent order (by account id) so
+            // concurrent entries lock account rows in the same sequence and
+            // cannot deadlock each other.
+            $balanceLines = $lines;
+            usort($balanceLines, static fn($a, $b) => strcmp((string) $a['account_id'], (string) $b['account_id']));
+            foreach ($balanceLines as $line) {
                 $this->updateAccountBalance($line['account_id'], $line['amount'], $line['type']);
             }
 
@@ -2762,19 +2887,29 @@ class AccountingEngine {
             $entryId = $this->postJournalEntry('SALARY_PAYMENT', $date, $narration, $lines, ['employee_id' => $employeeId]);
 
         // Record salary
-        $this->db->insert('salary_records', [
-            'id' => Database::uuid(),
-            'employee_id' => $employeeId,
-            'business_id' => $this->businessId,
-            'month' => $month,
-            'year' => $year,
-            'gross_salary' => $grossSalary,
-            'advance_deducted' => $advanceDeduction,
-            'net_paid' => $netPaid,
-            'payment_mode' => $this->getPaymentMode($paymentAccount),
-            'journal_entry_id' => $entryId,
-            'processed_date' => $date,
-        ]);
+        try {
+            $this->db->insert('salary_records', [
+                'id' => Database::uuid(),
+                'employee_id' => $employeeId,
+                'business_id' => $this->businessId,
+                'month' => $month,
+                'year' => $year,
+                'gross_salary' => $grossSalary,
+                'advance_deducted' => $advanceDeduction,
+                'net_paid' => $netPaid,
+                'payment_mode' => $this->getPaymentMode($paymentAccount),
+                'journal_entry_id' => $entryId,
+                'processed_date' => $date,
+            ]);
+        } catch (Throwable $salaryInsertError) {
+            // A second tab/operator may have processed the same month between
+            // our check and this insert (uk_salary_month). Surface a clear
+            // message instead of a raw duplicate-key error.
+            if (Database::isDuplicateKeyError($salaryInsertError)) {
+                throw new Exception("Salary for {$employee['name']} for $month/$year was already processed by another session. Refresh and try again.");
+            }
+            throw $salaryInsertError;
+        }
 
             if ($ownsTransaction) $this->db->commit();
             return $entryId;
@@ -4440,7 +4575,6 @@ class AccountingEngine {
         }
 
         $voucherId = Database::uuid();
-        $referenceNo = $this->getNextVoucherRefNo($date);
         $fy = getCurrentFY($date);
 
         $ownsTransaction = !$this->db->inTransaction();
@@ -4451,17 +4585,34 @@ class AccountingEngine {
                 'id' => $voucherId,
                 'business_id' => $this->businessId,
                 'voucher_date' => $date,
-                'reference_no' => $referenceNo,
+                'reference_no' => '', // assigned in the retry loop below
                 'voucher_type' => $voucherType,
                 'narration' => $narration,
-                'status' => $status === 'POSTED' ? 'DRAFT' : 'DRAFT',
+                // Vouchers are always saved as drafts; posting happens through
+                // postJournalVoucher() so the ledger entry shares the voucher.
+                'status' => 'DRAFT',
                 'primary_account_id' => $primaryAccountId,
                 'primary_entry_type' => $primaryEntryType,
                 'primary_amount' => $primaryAmount,
                 'created_by' => $this->userId,
                 'financial_year' => $fy,
             ];
-            $this->db->insert('journal_vouchers', $voucherRecord);
+
+            // Same max+1 race as journal references (uk_jv_reference): retry
+            // with a freshly generated number when two vouchers collide.
+            $inserted = false;
+            for ($attempt = 1; $attempt <= 5 && !$inserted; $attempt++) {
+                $voucherRecord['reference_no'] = $this->getNextVoucherRefNo($date);
+                try {
+                    $this->db->insert('journal_vouchers', $voucherRecord);
+                    $inserted = true;
+                } catch (Throwable $insertError) {
+                    if (!Database::isDuplicateKeyError($insertError) || $attempt === 5) {
+                        throw $insertError;
+                    }
+                    // Reference collision — regenerate and try again.
+                }
+            }
 
             foreach ($allocations as $allocation) {
                 $voucherLineId = Database::uuid();

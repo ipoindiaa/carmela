@@ -462,13 +462,21 @@ class Auth {
     public static function auditLog($action, $entityType, $entityId = null, $description = null, $oldValue = null, $newValue = null, $module = null) {
         $db = Database::getInstance();
         self::ensureAuditLogSchema();
+        $businessId = $_SESSION['business_id'] ?? '';
+        if ($businessId === '') {
+            // Without a business context the audit row cannot satisfy the
+            // NOT NULL + foreign key on audit_log.business_id. Log the event
+            // instead of failing the caller or writing an invalid row.
+            error_log('AutoBooks audit log skipped (no business session): ' . $action . ' ' . $entityType . ' ' . ($entityId ?? ''));
+            return;
+        }
         $changedFields = self::buildChangedFields($oldValue, $newValue);
         $module = $module ?: self::inferAuditModule();
         $requestUri = $_SERVER['REQUEST_URI'] ?? null;
         try {
             $db->insert('audit_log', [
                 'id' => Database::uuid(),
-                'business_id' => $_SESSION['business_id'] ?? '',
+                'business_id' => $businessId,
                 'user_id' => $_SESSION['user_id'] ?? null,
                 'action' => $action,
                 'entity_type' => $entityType,
@@ -487,7 +495,7 @@ class Auth {
             try {
                 $db->insert('audit_log', [
                     'id' => Database::uuid(),
-                    'business_id' => $_SESSION['business_id'] ?? '',
+                    'business_id' => $businessId,
                     'user_id' => $_SESSION['user_id'] ?? null,
                     'action' => $action,
                     'entity_type' => $entityType,
