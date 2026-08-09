@@ -99,6 +99,13 @@ $entryCategories = $db->fetchAll(
      ORDER BY FIELD(group_name, 'INCOME', 'EXPENSE'), code, name",
     array_merge([$businessId], $entryCategorySystemCodes)
 );
+$outsideCarOwners = $db->fetchAll(
+    "SELECT id, name, phone FROM debtors_creditors
+     WHERE business_id = ? AND is_active = 1 AND type IN ('SELLER', 'CREDITOR')
+     ORDER BY name",
+    [$businessId]
+);
+
 $entryCategoryOptions = array_map(static function ($account) {
     $isIncome = ($account['group_name'] ?? '') === 'INCOME';
     return [
@@ -219,6 +226,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         switch ($type) {
+            case 'OUTSIDE_CAR_RECEIVED':
+                $carId = $engine->createOutsideCar([
+                    'registration_no' => post('outside_car_reg_no'),
+                    'received_date' => $date,
+                    'owner_party_id' => post('outside_owner_party_id'),
+                    'owner_name' => post('outside_owner_name'),
+                    'owner_phone' => post('outside_owner_phone'),
+                    'make' => post('outside_car_make'),
+                    'model' => post('outside_car_model'),
+                    'year' => post('outside_car_year'),
+                    'color' => post('outside_car_color'),
+                    'has_second_key' => post('outside_has_second_key') === '1',
+                    'notes' => post('outside_car_notes'),
+                ]);
+                setFlash('success', 'Outside car added. It is separate from owned inventory; set the commission on its car page when it is agreed.');
+                redirect('../outside-cars/view.php?id=' . urlencode($carId));
+
             case 'CATEGORY_ENTRY':
                 $categoryAccountId = post('dynamic_category_account_id');
                 $categoryDirection = post('dynamic_category_direction');
@@ -580,6 +604,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Custom Entry Type" data-desc="Admin-defined money-in or money-out type.">Custom Entry Type</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
+                            <option value="OUTSIDE_CAR_RECEIVED" data-flow="both" data-icon="ri-steering-2-line" data-title="Add Outside Car" data-desc="Receive a source entity's car on commission basis; never adds it to owned stock.">Add Outside Car</option>
                             <option value="CAR_TOKEN_RECEIVED" data-flow="in" data-icon="ri-hand-coin-line" data-title="Car Token Received" data-desc="Buyer advance held for one specific car; not income yet.">Car Token Received</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
@@ -651,6 +676,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
         </div>
+
+            <!-- OUTSIDE CAR RECEIPT SECTION: no financial entry is posted at receipt. -->
+            <div class="txn-section" id="outside-car-section" style="display:none;">
+                <div class="alert alert-info" style="margin-top:20px;">
+                    <i class="ri-information-line"></i>
+                    <div><strong>Outside car — commission basis</strong><br>This car belongs to the source entity, not to our business. It will appear only in <strong>Outside Cars</strong>, never in owned-car inventory. No purchase, stock value, or commission income is recorded now.</div>
+                </div>
+                <h4 style="margin:20px 0 16px;padding-top:20px;border-top:1px solid var(--border);color:var(--accent-purple);"><i class="ri-steering-2-line"></i> Outside Car Details</h4>
+                <div class="form-row-3">
+                    <div class="form-group"><label class="form-label">Registration No. *</label><input type="text" name="outside_car_reg_no" class="form-control registration-input" placeholder="e.g., GJ05AA0001" maxlength="11" pattern="[A-Za-z]{2}[0-9]{2}[A-Za-z]{1,3}[0-9]{4}" data-registration-check-url="<?= clean(APP_URL . 'cars/check_registration.php') ?>"><div class="form-hint">This car is received from an outside entity.</div></div>
+                    <div class="form-group"><label class="form-label">Make</label><input type="text" name="outside_car_make" class="form-control" placeholder="e.g., Maruti"></div>
+                    <div class="form-group"><label class="form-label">Model</label><input type="text" name="outside_car_model" class="form-control" placeholder="e.g., Swift"></div>
+                </div>
+                <div class="form-row-3">
+                    <div class="form-group"><label class="form-label">Year</label><input type="number" name="outside_car_year" class="form-control" min="1900" max="<?= date('Y') + 1 ?>" placeholder="e.g., 2021"></div>
+                    <div class="form-group"><label class="form-label">Color</label><input type="text" name="outside_car_color" class="form-control" placeholder="e.g., White"></div>
+                    <div class="form-group"><label class="form-label">Second Key Available?</label><select name="outside_has_second_key" class="form-control"><option value="0">No</option><option value="1">Yes</option></select></div>
+                </div>
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading"><div><strong>Source Entity / Owner *</strong><span>This party gets a creditor ledger account automatically if new.</span></div></div>
+                    <?php if ($outsideCarOwners): ?>
+                    <div class="form-group"><label class="form-label">Select Existing Source Entity</label><select name="outside_owner_party_id" class="form-control searchable-select"><option value="">Add a new source entity below</option><?php foreach ($outsideCarOwners as $owner): ?><option value="<?= clean($owner['id']) ?>"><?= clean($owner['name']) ?><?= $owner['phone'] ? ' (' . clean($owner['phone']) . ')' : '' ?></option><?php endforeach; ?></select></div>
+                    <?php endif; ?>
+                    <div class="form-row"><div class="form-group"><label class="form-label">New Source Entity Name</label><input type="text" name="outside_owner_name" class="form-control" placeholder="Person or business name"></div><div class="form-group"><label class="form-label">Phone</label><input type="text" name="outside_owner_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div></div>
+                    <div class="form-hint">Choose an existing entity <em>or</em> enter a new one. Commission is intentionally not asked here—set it later inside the outside-car record once agreed.</div>
+                </div>
+                <div class="form-group"><label class="form-label">Notes</label><textarea name="outside_car_notes" class="form-control" rows="2" placeholder="Condition, documents, or special instructions"></textarea></div>
+            </div>
 
             <!-- CAR PURCHASE SECTION -->
             <div class="txn-section" id="car-section" style="display:none;">
@@ -1816,17 +1869,22 @@ function syncSaleAmountUi() {
     if (!amountGroup || !amountInput) return;
 
     const isCarSale = txnType === 'CAR_SALE';
-    amountGroup.style.display = isCarSale ? 'none' : '';
-    amountInput.required = !isCarSale;
+    const isOutsideCarReceipt = txnType === 'OUTSIDE_CAR_RECEIVED';
+    amountGroup.style.display = (isCarSale || isOutsideCarReceipt) ? 'none' : '';
+    amountInput.required = !(isCarSale || isOutsideCarReceipt);
     if (narrationInput) {
-        narrationInput.required = !isCarSale;
-        narrationInput.placeholder = isCarSale
-            ? 'Optional — system will use the car number'
+        narrationInput.required = !(isCarSale || isOutsideCarReceipt);
+        narrationInput.placeholder = (isCarSale || isOutsideCarReceipt)
+            ? (isOutsideCarReceipt ? 'Optional — add operating notes below' : 'Optional — system will use the car number')
             : 'Brief description of this entry';
     }
     if (narrationLabel) {
-        narrationLabel.textContent = isCarSale ? 'Narration / Description (Optional)' : 'Narration / Description *';
+        narrationLabel.textContent = (isCarSale || isOutsideCarReceipt) ? 'Narration / Description (Optional)' : 'Narration / Description *';
     }
+    const paymentAccountGroup = document.getElementById('payment-account-group');
+    const paymentAccount = document.getElementById('payment_account');
+    if (paymentAccountGroup) paymentAccountGroup.style.display = isOutsideCarReceipt ? 'none' : '';
+    if (paymentAccount) paymentAccount.required = !isOutsideCarReceipt;
     if (isCarSale) {
         const salePrice = parseNumericString(salePriceInput?.value || '0');
         const commission = parseNumericString(commissionInput?.value || '0');
