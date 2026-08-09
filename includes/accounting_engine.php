@@ -49,7 +49,15 @@ class AccountingEngine {
         ];
 
         foreach ($defaults as $acc) {
-            $this->createAccount($acc[0], $acc[1], $acc[2], $acc[3], $acc[4]);
+            // Idempotent: skip if already exists (prevents duplicate-key DB errors on retry/race)
+            $exists = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ? LIMIT 1", [$this->businessId, $acc[0]]);
+            if ($exists) continue;
+            try {
+                $this->createAccount($acc[0], $acc[1], $acc[2], $acc[3], $acc[4]);
+            } catch (Throwable $e) {
+                // Race: another request created it concurrently -> ignore duplicate
+                if (stripos($e->getMessage(), 'Duplicate') === false && stripos($e->getMessage(), 'uk_account_code') === false) throw $e;
+            }
         }
     }
 
@@ -57,6 +65,9 @@ class AccountingEngine {
     // ACCOUNT MANAGEMENT
     // ========================================
     public function createAccount($code, $name, $group, $subGroup, $entityType, $entityId = null) {
+        // Return existing if code already exists for this business (idempotent)
+        $existing = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ? LIMIT 1", [$this->businessId, $code]);
+        if ($existing) return $existing['id'];
         $id = Database::uuid();
         $accountRecord = [
             'id' => $id,
@@ -68,7 +79,16 @@ class AccountingEngine {
             'entity_type' => $entityType,
             'entity_id' => $entityId,
         ];
-        $this->db->insert('accounts', $accountRecord);
+        try {
+            $this->db->insert('accounts', $accountRecord);
+        } catch (Throwable $e) {
+            // Handle concurrent duplicate key
+            if (stripos($e->getMessage(), 'Duplicate') !== false || stripos($e->getMessage(), 'uk_account_code') !== false) {
+                $existing = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ? LIMIT 1", [$this->businessId, $code]);
+                if ($existing) return $existing['id'];
+            }
+            throw $e;
+        }
         if (class_exists('Auth') && Auth::isLoggedIn()) {
             Auth::auditCreate('account', $id, $accountRecord, "Account created: $name", 'accounts');
         }
@@ -763,8 +783,11 @@ class AccountingEngine {
 
             self::$advancedSchemaEnsured = true;
         } catch (\Throwable $e) {
-            // Keep existing flows working even if migration permissions are limited.
+            error_log("AutoBooks schema migration failed: " . $e->getMessage());
             self::$advancedSchemaEnsured = true;
+            if (defined('APP_IS_TESTING') && APP_IS_TESTING) {
+                throw $e;
+            }
         }
     }
 
@@ -1251,8 +1274,9 @@ class AccountingEngine {
     // UPDATE: Account running balance
     // ========================================
     private function updateAccountBalance($accountId, $amount, $entryType) {
+        // Lock row to prevent concurrent balance drift
         $account = $this->db->fetch(
-            "SELECT * FROM accounts WHERE id = ? AND business_id = ?",
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? FOR UPDATE",
             [$accountId, $this->businessId]
         );
         if (!$account) throw new Exception("Account not found: $accountId");
@@ -5990,11 +6014,9 @@ class AccountingEngine {
     }
 
     private function getOrCreateSystemAccount($code, $name, $group, $subGroup) {
-        $account = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ?", [$this->businessId, $code]);
-        if ($account) {
-            return $account;
-        }
-
+        $account = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = ? FOR UPDATE", [$this->businessId, $code]);
+        if ($account) return $account;
+        // Double-checked with createAccount idempotency handles race
         return ['id' => $this->createAccount($code, $name, $group, $subGroup, 'GENERAL')];
     }
 
