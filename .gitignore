@@ -1,6 +1,7 @@
 .DS_Store
 node_modules/
 vendor/
+graphify-out/
 *.log
 config/database.local.php
 config/database.testing.local.php

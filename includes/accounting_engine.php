@@ -1506,17 +1506,28 @@ class AccountingEngine {
 
         if ($businessAmount > 0) {
             $lines[] = ['account_id' => $carAccountId, 'amount' => $businessAmount, 'type' => 'DR', 'narration' => 'Car purchase - business funds'];
-            if ($paidNow > 0) {
+
+            if ($sellerParty) {
+                // Always route a sourced-car purchase through the seller ledger.
+                // This preserves the complete source relationship: the purchase
+                // liability and every settlement (including money paid immediately)
+                // are visible on both the car and seller statements.
+                $lines[] = ['account_id' => $sellerParty['account_id'], 'amount' => $businessAmount, 'type' => 'CR', 'narration' => "Car purchased from $sellerName"];
+                if ($paidNow > 0) {
+                    $lines[] = ['account_id' => $sellerParty['account_id'], 'amount' => $paidNow, 'type' => 'DR', 'narration' => "Purchase payment to $sellerName"];
+                    $lines[] = ['account_id' => $paymentAccount, 'amount' => $paidNow, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
+                }
+            } elseif ($paidNow > 0) {
                 $lines[] = ['account_id' => $paymentAccount, 'amount' => $paidNow, 'type' => 'CR', 'narration' => 'Paid for car purchase'];
-            }
-            if ($sellerOutstanding > 0) {
-                $lines[] = ['account_id' => $sellerParty['account_id'], 'amount' => $sellerOutstanding, 'type' => 'CR', 'narration' => "Pending purchase payment to $sellerName"];
             }
         }
 
         $entryId = null;
         if (!empty($lines)) {
-            $entryId = $this->postJournalEntry('CAR_PURCHASE', $date, $narration, $lines, ['car_id' => $carId]);
+            $entryId = $this->postJournalEntry('CAR_PURCHASE', $date, $narration, $lines, [
+                'car_id' => $carId,
+                'party_id' => $sellerPartyId,
+            ]);
         }
 
         // Partner funding entries
@@ -5070,6 +5081,34 @@ class AccountingEngine {
              GROUP BY a.id, a.code, a.name HAVING amount > 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
+
+        // Car stock is closed to the internal P&L clearing account on sale. That
+        // account is deliberately an income-group clearing account so the balance
+        // sheet can carry current earnings, but its debit-side "Close car account"
+        // lines are Cost of Goods Sold and must appear in the period P&L.
+        $cogs = $this->db->fetch(
+            "SELECT a.id, COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS amount
+             FROM accounts a
+             JOIN journal_lines jl ON jl.account_id = a.id
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             WHERE a.business_id = ?
+               AND a.code = 'PNL'
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND je.transaction_type = 'CAR_SALE'
+               AND je.narration LIKE 'Close car account %'
+               AND je.entry_date BETWEEN ? AND ?
+             GROUP BY a.id",
+            [$this->businessId, $fromDate, $toDate]
+        );
+        if (floatval($cogs['amount'] ?? 0) > 0.009) {
+            $expenses[] = [
+                'id' => $cogs['id'],
+                'code' => 'COGS',
+                'name' => 'Cost of Cars Sold',
+                'amount' => round(floatval($cogs['amount']), 2),
+            ];
+        }
 
         $totalIncome = array_sum(array_column($income, 'amount'));
         $totalExpenses = array_sum(array_column($expenses, 'amount'));

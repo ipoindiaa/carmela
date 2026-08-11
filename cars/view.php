@@ -564,15 +564,15 @@ updateFundingEditTotal();
     <div class="card" id="payment-history">
         <div class="card-header"><h3><i class="ri-wallet-3-line"></i> Buyer / Seller Payment History</h3></div>
         <div class="card-body">
-            <h4 class="attachment-group-title">Buyer Receipts</h4>
+            <h4 class="attachment-group-title">Buyer Receivable &amp; Collection History</h4>
             <?php if (empty($buyerHistory)): ?><p class="text-muted">No buyer outstanding history.</p><?php else: ?>
-            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th class="text-right">Amount</th></tr></thead><tbody>
-                <?php foreach ($buyerHistory as $row): ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td class="text-right amount <?= $row['entry_type'] === 'DR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
+            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>Event</th><th class="text-right">Amount</th></tr></thead><tbody>
+                <?php foreach ($buyerHistory as $row): ?><?php $buyerEvent = $row['transaction_type'] === 'CAR_SALE' && $row['entry_type'] === 'DR' ? 'Buyer receivable created' : ($row['transaction_type'] === 'LOAN_RECEIVED' && $row['entry_type'] === 'CR' ? 'Cash / bank collection' : 'Buyer ledger movement'); ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($buyerEvent) ?></td><td class="text-right amount <?= $row['entry_type'] === 'DR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
-            <h4 class="attachment-group-title detail-subsection">Seller Payments</h4>
+            <h4 class="attachment-group-title detail-subsection">Seller Payable &amp; Payment History</h4>
             <?php if (empty($sellerHistory)): ?><p class="text-muted">No seller payable history.</p><?php else: ?>
-            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th class="text-right">Amount</th></tr></thead><tbody>
-                <?php foreach ($sellerHistory as $row): ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td class="text-right amount <?= $row['entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
+            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>Event</th><th class="text-right">Amount</th></tr></thead><tbody>
+                <?php foreach ($sellerHistory as $row): ?><?php $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE' && $row['entry_type'] === 'CR' ? 'Seller payable created' : ($row['entry_type'] === 'DR' ? 'Cash / bank payment to seller' : 'Seller ledger movement'); ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($sellerEvent) ?></td><td class="text-right amount <?= $row['entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
         </div>
     </div>
@@ -694,7 +694,11 @@ updateFundingEditTotal();
                         $flow = transactionBusinessFlow($l['transaction_type'], $l);
                         $eventAmount = round(floatval($l['entry_amount'] ?? 0), 2);
 
-                        if (!empty($l['voucher_id']) && floatval($l['voucher_allocation_amount'] ?? 0) > 0) {
+                        $cashFlowOnly = in_array($l['transaction_type'], ['CAR_SALE', 'CAR_PURCHASE', 'CAR_TOKEN_RECEIVED', 'LOAN_RECEIVED', 'LOAN_REPAID', 'CAR_EXPENSE', 'RTO_EXPENSE', 'RTO_RECOVERY'], true);
+                        if ($cashFlowOnly && (floatval($l['cash_in_amount'] ?? 0) > 0 || floatval($l['cash_out_amount'] ?? 0) > 0)) {
+                            $eventAmount = max(floatval($l['cash_in_amount'] ?? 0), floatval($l['cash_out_amount'] ?? 0));
+                            $flow = floatval($l['cash_in_amount'] ?? 0) > 0 ? 'in' : 'out';
+                        } elseif (!empty($l['voucher_id']) && floatval($l['voucher_allocation_amount'] ?? 0) > 0) {
                             $eventAmount = round(floatval($l['voucher_allocation_amount']), 2);
                             $flow = ($l['voucher_primary_entry_type'] ?? 'CR') === 'DR' ? 'in' : 'out';
                         } elseif ($eventAmount <= 0) {
