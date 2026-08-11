@@ -64,6 +64,31 @@ try {
     );
     assertPartnerCapital(($withdrawLine['entry_type'] ?? '') === 'DR' && floatval($withdrawLine['amount'] ?? 0) === 2500.0, 'Partner Took Money posts to the selected Car-wise partner capital account');
 
+    $creditorPartnerName = 'Creditor Partner ' . $suffix;
+    $creditorPartnerId = $engine->createPartner($creditorPartnerName, 'MAIN', '9933' . $phoneSuffix, '', '', 0, date('Y-m-d'));
+    $engine->loanTaken($creditorPartnerName, 300000, date('Y-m-d'), $cash['id'], 'Partner creditor funding');
+    $creditorParty = $db->fetch(
+        "SELECT * FROM debtors_creditors WHERE business_id = ? AND name = ? AND type = 'CREDITOR'",
+        [$business['id'], $creditorPartnerName]
+    );
+    $creditorWithdrawId = $engine->partnerWithdraw($creditorPartnerId, 50000, date('Y-m-d'), $cash['id'], 'Settle partner creditor payable');
+    $creditorSettlementLine = $db->fetch(
+        "SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? AND account_id = ?",
+        [$creditorWithdrawId, $creditorParty['account_id']]
+    );
+    $creditorCapitalLine = $db->fetch(
+        "SELECT id FROM journal_lines WHERE journal_entry_id = ? AND account_id = ?",
+        [$creditorWithdrawId, $db->fetch("SELECT capital_account_id FROM partners WHERE id = ?", [$creditorPartnerId])['capital_account_id']]
+    );
+    assertPartnerCapital(
+        ($creditorSettlementLine['entry_type'] ?? '') === 'DR' && floatval($creditorSettlementLine['amount'] ?? 0) === 50000.0 && !$creditorCapitalLine,
+        'Partner withdrawal settles the matching creditor payable without making zero capital negative'
+    );
+    assertPartnerCapital(
+        abs($engine->getPartyOutstandingAmount($creditorParty['id']) - 250000.0) < 0.01,
+        'Creditor payable reduces by the partner payment amount'
+    );
+
     $carId = Database::uuid();
     $registration = 'GJ99PF' . substr($suffix, 0, 4);
     $carAccountId = $engine->createAccount('PF-CAR-' . $suffix, 'Partner funding test - ' . $registration, 'ASSET', 'Inventory', 'CAR', $carId);

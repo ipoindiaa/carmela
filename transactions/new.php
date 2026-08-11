@@ -921,7 +921,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="checkbox" name="allow_partner_overdraw" id="allow_partner_overdraw" value="1" <?= post('allow_partner_overdraw') === '1' ? 'checked' : '' ?>>
                     <span>
                         <strong>Allow withdrawal without available partner funds</strong>
-                        <small>The partner account can become negative. Use the narration to record why this withdrawal is approved.</small>
+                        <small>A matching creditor payable for this partner is settled automatically first. Use this only for any remaining amount that is approved to make the partner account negative.</small>
                     </span>
                 </label>
             </div>

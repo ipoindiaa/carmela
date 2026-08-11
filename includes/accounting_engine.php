@@ -2737,6 +2737,40 @@ class AccountingEngine {
     /**
      * PARTNER WITHDRAW
      */
+    private function getPartnerCreditorPayable(array $partner) {
+        $name = trim((string) ($partner['name'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+
+        // A partner can also fund the business as a creditor. When there is one
+        // unambiguous active creditor/seller record with the same name, its
+        // payable is a genuine amount owed by the business and may be settled
+        // through the partner-payment flow. Multiple matches are deliberately
+        // not guessed: an owner must first clean up the duplicate party records.
+        $candidates = $this->db->fetchAll(
+            "SELECT dc.id, dc.name, dc.account_id
+             FROM debtors_creditors dc
+             WHERE dc.business_id = ?
+               AND dc.is_active = 1
+               AND dc.type IN ('CREDITOR', 'SELLER')
+               AND LOWER(TRIM(dc.name)) = LOWER(?)
+             ORDER BY dc.created_at DESC",
+            [$this->businessId, $name]
+        );
+
+        $payableCandidates = [];
+        foreach ($candidates as $candidate) {
+            $outstanding = $this->getPartyOutstandingAmount($candidate['id']);
+            if ($outstanding > 0.009) {
+                $candidate['outstanding_amount'] = round($outstanding, 2);
+                $payableCandidates[] = $candidate;
+            }
+        }
+
+        return count($payableCandidates) === 1 ? $payableCandidates[0] : null;
+    }
+
     public function partnerWithdraw($partnerId, $amount, $date, $paymentAccount, $narration, $allowOverdraw = false) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
         if (!$partner || empty($partner['capital_account_id'])) throw new Exception("Select an active partner with a capital account.");
@@ -2752,29 +2786,57 @@ class AccountingEngine {
         $committedFunding = $this->getCommittedPartnerFunding($partnerId);
         $pendingReceivable = $this->getPendingSettlementAmount($partnerId, 'RECEIVABLE');
         $availableBalance = max(0, $capitalBalance + $currentBalance - $committedFunding - $pendingReceivable);
+        $linkedCreditor = $this->getPartnerCreditorPayable($partner);
+        $linkedCreditorPayable = round(floatval($linkedCreditor['outstanding_amount'] ?? 0), 2);
 
-        $excessAmount = max(0, round($amount - $availableBalance, 2));
+        // Use the partner's available capital/current balance first, then settle
+        // the amount the business already owes the same partner as a creditor.
+        // This is a liability settlement, not a capital overdraw or a loan made
+        // to the partner.
+        $partnerFundPortion = min($amount, $availableBalance);
+        $creditorSettlementPortion = min(max(0, $amount - $partnerFundPortion), $linkedCreditorPayable);
+        $coveredWithoutOverdraw = round($partnerFundPortion + $creditorSettlementPortion, 2);
+
+        $excessAmount = max(0, round($amount - $coveredWithoutOverdraw, 2));
         if ($excessAmount > 0 && !$allowOverdraw) {
+            $availableDescription = formatAmount($availableBalance);
+            if ($linkedCreditorPayable > 0) {
+                $availableDescription .= ' plus linked creditor payable of ' . formatAmount($linkedCreditorPayable);
+            }
             throw new Exception(
-                "Withdrawal amount (" . formatAmount($amount) . ") exceeds available partner funds (" . formatAmount($availableBalance) . ")."
+                "Withdrawal amount (" . formatAmount($amount) . ") exceeds available partner funds (" . $availableDescription . ")."
             );
         }
 
         $this->validateCashAvailable($paymentAccount, $amount);
 
-        $lines = [
-            ['account_id' => $partner['capital_account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Withdrawal by {$partner['name']}"],
-            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid to {$partner['name']}"],
-        ];
+        $capitalWithdrawalPortion = round($amount - $creditorSettlementPortion, 2);
+        $lines = [];
+        if ($capitalWithdrawalPortion > 0.009) {
+            $lines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $capitalWithdrawalPortion, 'type' => 'DR', 'narration' => "Withdrawal by {$partner['name']}" ];
+        }
+        if ($creditorSettlementPortion > 0.009 && $linkedCreditor) {
+            $lines[] = ['account_id' => $linkedCreditor['account_id'], 'amount' => $creditorSettlementPortion, 'type' => 'DR', 'narration' => "Creditor payable settled for partner {$partner['name']}" ];
+        }
+        $lines[] = ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => "Paid to {$partner['name']}" ];
 
         $extras = ['partner_id' => $partnerId];
-        if ($excessAmount > 0) {
+        if ($creditorSettlementPortion > 0.009 && $linkedCreditor) {
+            $extras['party_id'] = $linkedCreditor['id'];
             $extras['audit_metadata'] = [
+                'partner_creditor_settlement' => true,
+                'creditor_party_id' => $linkedCreditor['id'],
+                'creditor_payable_before' => $linkedCreditorPayable,
+                'creditor_settlement_amount' => $creditorSettlementPortion,
+            ];
+        }
+        if ($excessAmount > 0) {
+            $extras['audit_metadata'] = array_merge($extras['audit_metadata'] ?? [], [
                 'partner_fund_override' => true,
                 'available_partner_funds' => round($availableBalance, 2),
                 'withdrawal_amount' => $amount,
                 'excess_amount' => $excessAmount,
-            ];
+            ]);
         }
 
         return $this->postJournalEntry('PARTNER_WITHDRAW', $date, $narration, $lines, $extras);
