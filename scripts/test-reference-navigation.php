@@ -74,6 +74,8 @@ $purchasePaymentChecks = [
     'Purchase payment history details' => ['cars/purchase_payment.php', 'Purchase Payment Details'],
     'Car detail purchase-payment menu' => ['cars/view.php', 'purchase_payment.php?id='],
     'Car list purchase-payment menu' => ['cars/list.php', 'purchase_payment.php?id='],
+    'Car detail permanent purchase-payment menu' => ['cars/view.php', "<a href=\"purchase_payment.php?id="],
+    'Car list permanent purchase-payment menu' => ['cars/list.php', "<a href=\"purchase_payment.php?id="],
 ];
 
 foreach ($purchasePaymentChecks as $surface => [$file, $needle]) {

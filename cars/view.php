@@ -231,9 +231,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
-        <?php if ($sellerParty): ?>
-            <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Purchase Payments<?= $sellerOutstanding > 0.009 ? ' · ' . formatAmount($sellerOutstanding) : '' ?></a>
-        <?php endif; ?>
+        <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Purchase Payments<?= $sellerOutstanding > 0.009 ? ' · ' . formatAmount($sellerOutstanding) : '' ?></a>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
