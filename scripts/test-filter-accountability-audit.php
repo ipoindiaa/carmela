@@ -27,6 +27,12 @@ $assertContains('rto/list.php', 'name="date"', 'RTO Book needs a specific-day fi
 $assertContains('rto/list.php', 'P&amp;L RTO Net', 'RTO Book must show the journal-derived RTO contribution to profit.');
 $assertNotContains('rto/list.php', 'RTO Work', 'RTO Book must use RTO Narration instead of RTO Work.');
 $assertContains('rto/list.php', "\$rtoDraftValue", 'Failed RTO validation must retain submitted fields and account selection.');
+$assertContains('reports/cashbook.php', "get('day', '')", 'Cash Book needs a dedicated single-day report filter.');
+$assertContains('reports/cashbook.php', '$dateFrom = $reportDay;', 'Cash Book day filter must use the selected day as its opening-balance date.');
+$assertContains('reports/cashbook.php', '$dateTo = $reportDay;', 'Cash Book day filter must use the selected day as its closing-balance date.');
+$assertContains('reports/cashbook.php', '<strong>Opening Balance</strong>', 'Cash Book must display opening balance before transactions.');
+$assertContains('reports/cashbook.php', 'Closing Balance as at', 'Cash Book must display closing balance after transactions.');
+$assertNotContains('reports/cashbook.php', '$displayEntries = array_reverse($displayEntries);', 'Cash Book must remain chronological after its opening balance.');
 $assertContains('includes/header.php', 'reports/car_inventory.php', 'Car Inventory must have its own discoverable menu.');
 $assertContains('reports/car_inventory.php', 'Inventory Total', 'Car Inventory report must show the filtered inventory total.');
 $assertContains('reports/balance_sheet.php', 'Vehicle Inventory (Consolidated)', 'Balance Sheet must replace car-wise inventory clutter with one accounting-safe summary.');

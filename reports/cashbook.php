@@ -6,6 +6,19 @@ Auth::requireBookAccess('cash_book', 'read');
 $businessId = Auth::user('business_id');
 $dateFrom = get('from', getCurrentFY() . '-04-01');
 $dateTo = get('to', date('Y-m-d'));
+$reportDay = trim((string) get('day', ''));
+if ($reportDay !== '') {
+    $day = DateTime::createFromFormat('!Y-m-d', $reportDay);
+    if ($day && $day->format('Y-m-d') === $reportDay) {
+        // A day report is simply a one-day ledger period. Keeping the same
+        // journal query means its opening and closing figures reconcile with
+        // every other Cash Book date-range report.
+        $dateFrom = $reportDay;
+        $dateTo = $reportDay;
+    } else {
+        $reportDay = '';
+    }
+}
 $cashAccounts = $db->fetchAll(
     "SELECT * FROM accounts WHERE business_id = ? AND entity_type = 'CASH' AND entity_id IS NULL AND is_active = 1 ORDER BY code, name",
     [$businessId]
@@ -19,7 +32,6 @@ foreach ($cashAccounts as $account) {
     }
 }
 
-$cashBalanceAsOn = ['signed' => 0.0, 'type' => 'DR', 'amount' => 0.0];
 $openingBalanceSigned = 0.0;
 if ($cashAccount) {
     $priorMovement = $db->fetch(
@@ -33,27 +45,10 @@ if ($cashAccount) {
         [$cashAccount['id'], $dateFrom]
     );
 
-    $asOnMovement = $db->fetch(
-        "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS dr_total,
-                COALESCE(SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE 0 END), 0) AS cr_total
-         FROM journal_lines jl
-         JOIN journal_entries je ON je.id = jl.journal_entry_id
-         WHERE jl.account_id = ?
-           AND je.status IN ('POSTED','REVERSED')
-           AND je.entry_date <= ?",
-        [$cashAccount['id'], $dateTo]
-    );
-
     $signedOpening = empty($cashAccount['opening_entry_id'])
         ? signedBalanceValue($cashAccount['opening_balance'] ?? 0, $cashAccount['opening_balance_type'] ?? 'DR')
         : 0.0;
     $openingBalanceSigned = round($signedOpening + floatval($priorMovement['dr_total'] ?? 0) - floatval($priorMovement['cr_total'] ?? 0), 2);
-    $asOnSigned = round($signedOpening + floatval($asOnMovement['dr_total'] ?? 0) - floatval($asOnMovement['cr_total'] ?? 0), 2);
-    $cashBalanceAsOn = [
-        'signed' => $asOnSigned,
-        'type' => $asOnSigned >= 0 ? 'DR' : 'CR',
-        'amount' => abs($asOnSigned),
-    ];
 }
 
 $entries = [];
@@ -85,7 +80,8 @@ foreach ($entries as $entry) {
     $entry['running_balance'] = $bal;
     $displayEntries[] = $entry;
 }
-$displayEntries = array_reverse($displayEntries);
+$openingBalanceType = $openingBalanceSigned >= 0 ? 'DR' : 'CR';
+$closingBalanceType = $bal >= 0 ? 'DR' : 'CR';
 ?>
 
 <div class="page-header">
@@ -105,6 +101,11 @@ $displayEntries = array_reverse($displayEntries);
                 </select>
             </div>
         <?php endif; ?>
+        <div>
+            <label class="form-label">Daily Report</label>
+            <input type="date" name="day" class="form-control" value="<?= clean($reportDay) ?>">
+            <div class="form-hint">For one day, this overrides From and To.</div>
+        </div>
         <div><label class="form-label">From</label><input type="date" name="from" class="form-control" value="<?= $dateFrom ?>"></div>
         <div><label class="form-label">To</label><input type="date" name="to" class="form-control" value="<?= $dateTo ?>"></div>
         <button type="submit" class="btn btn-primary btn-sm"><i class="ri-filter-line"></i> Apply</button>
@@ -117,7 +118,9 @@ $displayEntries = array_reverse($displayEntries);
 
 <div class="card">
     <div class="card-body summary-strip">
-        <div><span class="text-muted">Balance As On <?= formatDate($dateTo) ?>:</span> <strong class="amount <?= ($cashBalanceAsOn['type'] ?? 'DR') === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($cashBalanceAsOn['amount'] ?? 0) ?> <?= $cashBalanceAsOn['type'] ?? 'DR' ?></strong></div>
+        <div><span class="text-muted">Report Period:</span> <strong><?= formatDate($dateFrom) ?><?= $dateFrom !== $dateTo ? ' to ' . formatDate($dateTo) : '' ?></strong></div>
+        <div><span class="text-muted">Opening Balance:</span> <strong class="amount <?= $openingBalanceType === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($openingBalanceSigned)) ?> <?= $openingBalanceType ?></strong></div>
+        <div><span class="text-muted">Closing Balance:</span> <strong class="amount <?= $closingBalanceType === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($bal)) ?> <?= $closingBalanceType ?></strong></div>
     </div>
 </div>
 
@@ -125,6 +128,12 @@ $displayEntries = array_reverse($displayEntries);
     <table class="table-total-room">
         <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Car / Party</th><th>Narration</th><th class="text-right debit-amount">Receipt (Dr)</th><th class="text-right credit-amount">Payment (Cr)</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
+        <tr class="table-summary-row">
+            <td><?= formatDate($dateFrom) ?><div class="table-secondary">Start of report</div></td>
+            <td colspan="4"><strong>Opening Balance</strong></td>
+            <td></td><td></td>
+            <td class="text-right amount <?= $openingBalanceType === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($openingBalanceSigned)) ?> <?= $openingBalanceType ?></td>
+        </tr>
         <?php foreach ($displayEntries as $e): ?>
         <tr>
             <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($e['entry_id']) ?>"><?= clean($e['reference_no']) ?></a></td>
@@ -136,13 +145,14 @@ $displayEntries = array_reverse($displayEntries);
             <td class="text-right amount <?= $e['running_balance'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($e['running_balance']) ?></td>
         </tr>
         <?php endforeach; ?>
+        <?php if (empty($displayEntries)): ?><tr><td colspan="8" class="text-center text-muted empty-table-cell">No cash transactions for this report period.</td></tr><?php endif; ?>
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="5">Total</td>
+                <td colspan="5"><strong>Closing Balance as at <?= formatDate($dateTo) ?></strong></td>
                 <td class="text-right amount debit-amount"><?= formatAmount($totalDr) ?></td>
                 <td class="text-right amount credit-amount"><?= formatAmount($totalCr) ?></td>
-                <td class="text-right amount <?= $bal >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount($bal) ?></td>
+                <td class="text-right amount <?= $closingBalanceType === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($bal)) ?> <?= $closingBalanceType ?></td>
             </tr>
         </tfoot>
     </table>
