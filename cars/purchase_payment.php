@@ -1,8 +1,11 @@
 <?php
-$pageTitle = 'Purchase Payments';
-$pageIcon = '<i class="ri-hand-coin-line"></i>';
-require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
+
+Auth::check();
+$db = Database::getInstance();
 
 $businessId = Auth::user('business_id');
 $carId = get('id');
@@ -98,6 +101,10 @@ $paymentHistory = $sellerParty ? $db->fetchAll(
      ORDER BY je.entry_date ASC, je.created_at ASC",
     [$sellerParty['account_id'], $businessId, $businessId, $carId]
 ) : [];
+
+$pageTitle = 'Purchase Payments';
+$pageIcon = '<i class="ri-hand-coin-line"></i>';
+require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="breadcrumb"><a href="../dashboard.php">Home</a><span>/</span><a href="list.php">Cars</a><span>/</span><a href="view.php?id=<?= clean($carId) ?>"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a><span>/</span><span>Purchase Payments</span></div>
