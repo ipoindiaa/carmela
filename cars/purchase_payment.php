@@ -107,7 +107,7 @@ $pageIcon = '<i class="ri-hand-coin-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="breadcrumb"><a href="../dashboard.php">Home</a><span>/</span><a href="list.php">Cars</a><span>/</span><a href="view.php?id=<?= clean($carId) ?>"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a><span>/</span><span>Purchase Payments</span></div>
+<div class="breadcrumb"><a href="../dashboard.php">Home</a><span>/</span><a href="purchase_payments.php">Car Purchase Payments</a><span>/</span><a href="view.php?id=<?= clean($carId) ?>"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a><span>/</span><span>Purchase Payments</span></div>
 
 <div class="page-header">
     <div>
@@ -118,7 +118,8 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php if (!$sellerParty): ?>
-<div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>No seller is linked to this car.</strong><span>Purchase payments need a source seller so the car and seller ledger stay matched.</span></div></div>
+<div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This older car has no seller link.</strong><span>To protect your records, a payment cannot be posted until its source seller and original payable are corrected. For new purchases, always select the seller and enter the amount paid now while adding the car.</span></div></div>
+<div class="form-actions form-actions-start"><a href="purchase_payments.php" class="btn btn-primary"><i class="ri-arrow-left-line"></i> Choose Another Car</a><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Back to Car</a></div>
 <?php else: ?>
 <div class="stats-grid compact-operational-grid purchase-payment-summary-grid">
     <div class="stat-card"><div class="stat-value"><?= formatAmount($sellerPurchaseAmount) ?></div><div class="stat-label">Seller Purchase Amount</div></div>

@@ -70,12 +70,14 @@ foreach ($accountNavigationChecks as $surface => [$file, $needle]) {
 
 $purchasePaymentChecks = [
     'Purchase payment screen' => ['cars/purchase_payment.php', 'Record Purchase Payment'],
+    'Purchase payment menu screen' => ['cars/purchase_payments.php', 'Pay Pending Purchase Balance'],
     'Purchase payment car-scoped posting' => ['cars/purchase_payment.php', 'loanRepaid('],
     'Purchase payment history details' => ['cars/purchase_payment.php', 'Purchase Payment Details'],
     'Car detail purchase-payment menu' => ['cars/view.php', 'purchase_payment.php?id='],
     'Car list purchase-payment menu' => ['cars/list.php', 'purchase_payment.php?id='],
     'Car detail permanent purchase-payment menu' => ['cars/view.php', "<a href=\"purchase_payment.php?id="],
     'Car list permanent purchase-payment menu' => ['cars/list.php', "<a href=\"purchase_payment.php?id="],
+    'Sidebar purchase-payment menu' => ['includes/header.php', 'Car Purchase Payments'],
 ];
 
 foreach ($purchasePaymentChecks as $surface => [$file, $needle]) {

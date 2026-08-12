@@ -61,6 +61,10 @@ $polishCssVersion = @filemtime(__DIR__ . '/../assets/css/ui-polish.css') ?: APP_
                     <span class="nav-icon"><i class="ri-add-circle-line"></i></span>
                     New Entry
                 </a>
+                <a href="<?= APP_URL ?>cars/purchase_payments.php" class="nav-link <?= $currentPage === 'purchase_payments' ? 'active' : '' ?>">
+                    <span class="nav-icon"><i class="ri-hand-coin-line"></i></span>
+                    Car Purchase Payments
+                </a>
                 <?php endif; ?>
                 <?php if ($canReadPrimaryBooks): ?>
                 <a href="<?= APP_URL ?>transactions/list.php" class="nav-link <?= $currentPage === 'list' && strpos($_SERVER['PHP_SELF'], 'transactions') !== false ? 'active' : '' ?>">
