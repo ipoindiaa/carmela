@@ -87,7 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($selectedSellerId === '') {
                 Auth::requireEntityAccess('party', 'write');
-                $selectedSellerId = $engine->getOrCreateParty($newSellerName, 'SELLER', post('new_seller_phone'));
             }
 
             $entryId = $engine->repairHistoricalCarPurchasePayment(
@@ -96,7 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 parseDecimalInput(post('amount_still_payable')),
                 post('original_payment_account'),
                 post('correction_date'),
-                post('correction_reason')
+                post('correction_reason'),
+                $newSellerName,
+                post('new_seller_phone')
             );
             setFlash('success', 'Purchase record repaired for ' . formatRegistrationNo($car['registration_no']) . '. Seller payable created. Entry: ' . $entryId);
             redirect('purchase_payment.php?id=' . urlencode($carId));

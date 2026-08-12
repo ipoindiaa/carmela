@@ -3280,7 +3280,7 @@ class AccountingEngine {
      * seller. This never changes inventory cost. It restores only the selected
      * originally-recorded cash/bank amount and creates the car-linked payable.
      */
-    public function repairHistoricalCarPurchasePayment($carId, $sellerPartyId, $unpaidAmount, $originalPaymentAccountId, $date, $reason) {
+    public function repairHistoricalCarPurchasePayment($carId, $sellerPartyId, $unpaidAmount, $originalPaymentAccountId, $date, $reason, $newSellerName = null, $newSellerPhone = null) {
         $car = $this->db->fetch(
             "SELECT * FROM cars WHERE id = ? AND business_id = ?",
             [$carId, $this->businessId]
@@ -3296,14 +3296,6 @@ class AccountingEngine {
         }
         if (!empty($car['seller_party_id'])) {
             throw new Exception('This car already has a seller link. Use the normal purchase-payment screen.');
-        }
-
-        $seller = $this->db->fetch(
-            "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
-            [$sellerPartyId, $this->businessId]
-        );
-        if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR'], true) || empty($seller['account_id'])) {
-            throw new Exception('Select an active seller or creditor.');
         }
 
         $paymentAccount = $this->db->fetch(
@@ -3326,6 +3318,7 @@ class AccountingEngine {
         if (mb_strlen($reason) > 500) {
             throw new Exception('Correction reason must be 500 characters or less.');
         }
+        $this->validateDateNotLocked($date);
 
         $selectedOriginalPayment = $this->db->fetch(
             "SELECT COALESCE(SUM(jl.amount), 0) AS total
@@ -3367,6 +3360,17 @@ class AccountingEngine {
 
         $this->db->beginTransaction();
         try {
+            if (!$sellerPartyId) {
+                $sellerPartyId = $this->getOrCreateParty($newSellerName, 'SELLER', $newSellerPhone);
+            }
+            $seller = $this->db->fetch(
+                "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
+                [$sellerPartyId, $this->businessId]
+            );
+            if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR'], true) || empty($seller['account_id'])) {
+                throw new Exception('Select an active seller or creditor.');
+            }
+
             $lines = [
                 ['account_id' => $paymentAccount['id'], 'amount' => $unpaidAmount, 'type' => 'DR', 'narration' => 'Restore incorrectly recorded purchase payment for ' . $car['registration_no']],
                 ['account_id' => $seller['account_id'], 'amount' => $originalRecordedPayment, 'type' => 'CR', 'narration' => 'Historical seller payable reconstructed for ' . $seller['name']],
