@@ -72,6 +72,16 @@ try {
     $purchase = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$purchaseId]);
     assertUll($purchase['car_id'] === $carId && $purchase['party_id'] === $car['seller_party_id'], 'Purchase journal carries both car and seller dimensions');
 
+    $firstSellerClearId = $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL first purchase balance payment', $carId);
+    $firstPurchasePending = $engine->getCarPendingAmounts($carId);
+    $firstSellerClear = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$firstSellerClearId]);
+    assertUll(abs(floatval($firstPurchasePending['purchase_pending']) - 75000.0) < 0.01, 'Partial purchase balance payment leaves the correct remaining amount on the bought car');
+    assertUll($firstSellerClear['car_id'] === $carId && $firstSellerClear['party_id'] === $car['seller_party_id'], 'Purchase balance payment stays linked to its car and seller');
+
+    $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL final purchase balance payment', $carId);
+    $finalPurchasePending = $engine->getCarPendingAmounts($carId);
+    assertUll($finalPurchasePending['purchase_pending'] < 0.01, 'Final purchase balance payment clears the bought car payable');
+
     $saleId = $engine->carSale($carId, 575000, $date, $cash['id'], 'ULL sale with buyer receivable', 'ULL Buyer ' . $suffix, 200000);
     $timeline = $engine->getCarTimeline($carId);
     $saleTimeline = array_values(array_filter($timeline, static fn($row) => $row['entry_id'] === $saleId));

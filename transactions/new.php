@@ -2116,7 +2116,7 @@ function syncCarClearingUi() {
         linkedCarHint.textContent = txnType === 'LOAN_RECEIVED'
             ? 'Select the sold car when buyer pays later in chunks. The buyer will auto-fill when available.'
             : (txnType === 'LOAN_REPAID'
-                ? 'Select the purchased car when seller is paid later in chunks. The seller will auto-fill when available.'
+                ? 'Select the purchased car when seller is paid later in chunks. The seller auto-fills, and the payment cannot exceed this car’s purchase balance.'
                 : 'Use this when buyer or seller chunk payment belongs to a specific car.');
     }
 

@@ -3237,6 +3237,19 @@ class AccountingEngine {
             throw new Exception("Repayment amount must be greater than zero.");
         }
 
+        if ($carId) {
+            $carPending = $this->getCarPendingAmounts($carId);
+            $purchasePending = round(floatval($carPending['purchase_pending'] ?? 0), 2);
+            if ($purchasePending <= 0.009) {
+                throw new Exception("This car has no purchase balance pending for payment.");
+            }
+            if ($amount - $purchasePending > 0.01) {
+                throw new Exception(
+                    "Payment cannot exceed the purchase balance pending for {$car['registration_no']} of " . formatAmount($purchasePending) . '.'
+                );
+            }
+        }
+
         $openItems = $this->buildOutstandingItemsFromLedger($party['account_id'], 'CR');
         $outstanding = round(array_sum(array_column($openItems, 'outstanding_amount')), 2);
         if ($outstanding <= 0.009) {

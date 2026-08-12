@@ -87,7 +87,7 @@ function renderCarRows($cars, $engine) {
                         <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Receive pending car payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-success">Receive</a>
                     <?php endif; ?>
                     <?php if ($sellerOutstanding > 0 && !empty($carPending['seller_party_id'])): ?>
-                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Pay seller balance - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-outline">Pay</a>
+                        <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Purchase balance payment - ' . $car['registration_no']]) ?>" class="btn btn-sm btn-outline" title="Pay purchase balance">Pay Purchase</a>
                     <?php endif; ?>
                 </div>
             </td>
