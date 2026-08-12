@@ -899,7 +899,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION'];
+        $required = ['PURCHASE_PAYMENT_REPAIR', 'CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -913,7 +913,7 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION')
+                 ENUM('CAR_PURCHASE','PURCHASE_PAYMENT_REPAIR','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION')
                  NOT NULL"
             );
         }
@@ -2411,7 +2411,7 @@ class AccountingEngine {
                     $carId,
                     $seller['account_id'],
                     'CR',
-                    ['CAR_PURCHASE', 'LOAN_REPAID']
+                    ['CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID']
                 );
             }
         }
@@ -3275,6 +3275,129 @@ class AccountingEngine {
     }
 
     /**
+     * Repair a historical bought-car entry that reduced cash/bank as though the
+     * full purchase price had been paid, while some amount was still owed to a
+     * seller. This never changes inventory cost. It restores only the selected
+     * originally-recorded cash/bank amount and creates the car-linked payable.
+     */
+    public function repairHistoricalCarPurchasePayment($carId, $sellerPartyId, $unpaidAmount, $originalPaymentAccountId, $date, $reason) {
+        $car = $this->db->fetch(
+            "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+            [$carId, $this->businessId]
+        );
+        if (!$car) {
+            throw new Exception('Car not found.');
+        }
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') {
+            throw new Exception('Only bought business cars can use the purchase-payment repair.');
+        }
+        if (($car['status'] ?? '') === 'CANCELLED') {
+            throw new Exception('Deleted cars are read-only. Their history remains available.');
+        }
+        if (!empty($car['seller_party_id'])) {
+            throw new Exception('This car already has a seller link. Use the normal purchase-payment screen.');
+        }
+
+        $seller = $this->db->fetch(
+            "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
+            [$sellerPartyId, $this->businessId]
+        );
+        if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR'], true) || empty($seller['account_id'])) {
+            throw new Exception('Select an active seller or creditor.');
+        }
+
+        $paymentAccount = $this->db->fetch(
+            "SELECT * FROM accounts WHERE id = ? AND business_id = ? AND is_active = 1",
+            [$originalPaymentAccountId, $this->businessId]
+        );
+        if (!$paymentAccount || !in_array($paymentAccount['entity_type'], ['CASH', 'BANK'], true)) {
+            throw new Exception('Select the original cash or bank account used in the incorrect purchase entry.');
+        }
+        $this->assertCorrectionAccountAccess($paymentAccount['id'], $paymentAccount['entity_type']);
+
+        $unpaidAmount = round(floatval($unpaidAmount), 2);
+        if ($unpaidAmount <= 0) {
+            throw new Exception('Amount still payable must be greater than zero.');
+        }
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            throw new Exception('A reason for correcting the historical purchase record is required.');
+        }
+        if (mb_strlen($reason) > 500) {
+            throw new Exception('Correction reason must be 500 characters or less.');
+        }
+
+        $selectedOriginalPayment = $this->db->fetch(
+            "SELECT COALESCE(SUM(jl.amount), 0) AS total
+             FROM journal_entries je
+             JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             WHERE je.business_id = ?
+               AND je.car_id = ?
+               AND je.transaction_type = 'CAR_PURCHASE'
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND jl.account_id = ?
+               AND jl.entry_type = 'CR'",
+            [$this->businessId, $carId, $paymentAccount['id']]
+        );
+        $selectedOriginalAmount = round(floatval($selectedOriginalPayment['total'] ?? 0), 2);
+        if ($selectedOriginalAmount <= 0.009) {
+            throw new Exception('The selected cash or bank account was not used in this car\'s original purchase entry.');
+        }
+        if ($unpaidAmount - $selectedOriginalAmount > 0.01) {
+            throw new Exception('Amount still payable cannot exceed the amount originally recorded from ' . $paymentAccount['name'] . ' (' . formatAmount($selectedOriginalAmount) . ').');
+        }
+
+        $allOriginalPayments = $this->db->fetch(
+            "SELECT COALESCE(SUM(jl.amount), 0) AS total
+             FROM journal_entries je
+             JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             JOIN accounts a ON a.id = jl.account_id
+             WHERE je.business_id = ?
+               AND je.car_id = ?
+               AND je.transaction_type = 'CAR_PURCHASE'
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0
+               AND jl.entry_type = 'CR'
+               AND a.entity_type IN ('CASH', 'BANK')",
+            [$this->businessId, $carId]
+        );
+        $originalRecordedPayment = round(floatval($allOriginalPayments['total'] ?? 0), 2);
+        $actualPaidAtPurchase = round(max(0, $originalRecordedPayment - $unpaidAmount), 2);
+
+        $this->db->beginTransaction();
+        try {
+            $lines = [
+                ['account_id' => $paymentAccount['id'], 'amount' => $unpaidAmount, 'type' => 'DR', 'narration' => 'Restore incorrectly recorded purchase payment for ' . $car['registration_no']],
+                ['account_id' => $seller['account_id'], 'amount' => $originalRecordedPayment, 'type' => 'CR', 'narration' => 'Historical seller payable reconstructed for ' . $seller['name']],
+            ];
+            if ($actualPaidAtPurchase > 0.009) {
+                $lines[] = ['account_id' => $seller['account_id'], 'amount' => $actualPaidAtPurchase, 'type' => 'DR', 'narration' => 'Historical amount actually paid to ' . $seller['name']];
+            }
+
+            $entryId = $this->postJournalEntry('PURCHASE_PAYMENT_REPAIR', $date, 'Historical purchase payment correction - ' . $car['registration_no'] . ': ' . $reason, $lines, [
+                'car_id' => $carId,
+                'party_id' => $seller['id'],
+                'entry_type_id' => systemEntryTypeId('PURCHASE_PAYMENT_REPAIR'),
+                'entry_amount' => $unpaidAmount,
+            ]);
+
+            $this->db->query(
+                "UPDATE cars SET seller_party_id = ?, purchase_paid_amount = ? WHERE id = ? AND business_id = ?",
+                [$seller['id'], $actualPaidAtPurchase, $carId, $this->businessId]
+            );
+            $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Historical purchase payment repaired; seller payable restored: ' . $reason, 'cars');
+
+            $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * BAD DEBT WRITE-OFF
      */
     public function badDebtWriteOff($partyId, $amount, $date, $narration) {
@@ -3825,6 +3948,20 @@ class AccountingEngine {
             }
         }
 
+        if ($entry['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR') {
+            $laterPayments = $this->db->fetch(
+                "SELECT COUNT(*) AS cnt FROM journal_entries
+                 WHERE business_id = ? AND car_id = ?
+                   AND transaction_type = 'LOAN_REPAID'
+                   AND status = 'POSTED' AND is_reversal = 0
+                   AND created_at >= ?",
+                [$this->businessId, $entry['car_id'], $entry['created_at']]
+            );
+            if (intval($laterPayments['cnt'] ?? 0) > 0) {
+                throw new Exception('This purchase repair already has seller payments. Reverse those payments first, then reverse the repair.');
+            }
+        }
+
         if ($entry['transaction_type'] === 'PARTNER_SETTLEMENT') {
             $this->ensurePartnerSettlementApplicationTrail($entry['partner_id']);
             $applicationCount = $this->db->fetch(
@@ -3994,6 +4131,29 @@ class AccountingEngine {
 
             case 'CAR_PURCHASE':
                 $this->archiveCancelledCar($entry['car_id']);
+                break;
+
+            case 'PURCHASE_PAYMENT_REPAIR':
+                $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$entry['car_id'], $this->businessId]);
+                if ($car && ($car['seller_party_id'] ?? null) === ($entry['party_id'] ?? null)) {
+                    $originalPayment = $this->db->fetch(
+                        "SELECT COALESCE(SUM(jl.amount), 0) AS total
+                         FROM journal_entries original_entry
+                         JOIN journal_lines jl ON jl.journal_entry_id = original_entry.id
+                         JOIN accounts a ON a.id = jl.account_id
+                         WHERE original_entry.business_id = ? AND original_entry.car_id = ?
+                           AND original_entry.transaction_type = 'CAR_PURCHASE'
+                           AND original_entry.status = 'POSTED' AND original_entry.is_reversal = 0
+                           AND jl.entry_type = 'CR' AND a.entity_type IN ('CASH', 'BANK')",
+                        [$this->businessId, $car['id']]
+                    );
+                    $this->db->query(
+                        "UPDATE cars SET seller_party_id = NULL, purchase_paid_amount = ? WHERE id = ? AND business_id = ?",
+                        [round(floatval($originalPayment['total'] ?? 0), 2), $car['id'], $this->businessId]
+                    );
+                    $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$car['id'], $this->businessId]);
+                    Auth::auditUpdate('car', $car['id'], $car, $updatedCar ?: [], 'Historical purchase payment repair reversed', 'cars');
+                }
                 break;
 
             case 'CAR_TOKEN_RECEIVED':

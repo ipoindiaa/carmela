@@ -103,7 +103,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <?php if (!empty($sellerMissingCars)): ?>
 <div class="card detail-subsection">
-    <div class="card-header"><div><h3><i class="ri-link-unlink"></i> Seller Link Needed Before Payment</h3><div class="card-header-note">These older car records have no seller ledger. Do not post their payment as a general expense or loan payment.</div></div></div>
+    <div class="card-header"><div><h3><i class="ri-link-unlink"></i> Historical Purchase Records Need Repair</h3><div class="card-header-note">These older car records have no seller ledger. Open the guided repair to restore the correct payable before making a payment.</div></div></div>
     <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
@@ -113,7 +113,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <td><a href="view.php?id=<?= clean($car['id']) ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a><div class="text-muted"><?= clean(trim($car['make'] . ' ' . $car['model'])) ?></div></td>
                     <td><?= formatDate($car['purchase_date']) ?></td>
                     <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
-                    <td class="text-center"><a href="view.php?id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm">Open Car</a></td>
+                    <td class="text-center"><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-primary btn-sm"><i class="ri-tools-line"></i> Fix Purchase Record</a></td>
                 </tr><?php endforeach; ?>
                 </tbody>
             </table>

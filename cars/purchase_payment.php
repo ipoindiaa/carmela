@@ -36,6 +36,30 @@ $paymentAccountIds = array_values(array_filter(array_map(
     static fn($account) => $account['id'] ?? null,
     $paymentAccounts
 )));
+$availableSellers = $db->fetchAll(
+    "SELECT id, name, type, phone FROM debtors_creditors
+     WHERE business_id = ? AND is_active = 1 AND type IN ('SELLER', 'CREDITOR')
+     ORDER BY name ASC",
+    [$businessId]
+);
+$historicalPaymentAccounts = !$sellerParty ? $db->fetchAll(
+    "SELECT a.id, a.name, a.code, a.entity_type, COALESCE(SUM(jl.amount), 0) AS recorded_amount
+     FROM journal_entries je
+     JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.entry_type = 'CR'
+     JOIN accounts a ON a.id = jl.account_id AND a.business_id = je.business_id
+     WHERE je.business_id = ? AND je.car_id = ?
+       AND je.transaction_type = 'CAR_PURCHASE'
+       AND je.status = 'POSTED' AND je.is_reversal = 0
+       AND a.entity_type IN ('CASH', 'BANK')
+     GROUP BY a.id, a.name, a.code, a.entity_type
+     HAVING SUM(jl.amount) > 0
+     ORDER BY a.entity_type, a.name",
+    [$businessId, $carId]
+) : [];
+$historicalPaymentAccountIds = array_values(array_filter(array_map(
+    static fn($account) => $account['id'] ?? null,
+    $historicalPaymentAccounts
+)));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::requireEntityAccess('car', 'write');
@@ -44,11 +68,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($car['status'] === 'CANCELLED') {
             throw new Exception('Deleted cars are read-only. Their history remains available.');
         }
-        if (!$sellerParty) {
-            throw new Exception('This bought car has no linked seller. Add the seller through a correction before recording a purchase payment.');
+        $action = post('action');
+        if ($action === 'repair_purchase_record') {
+            if ($sellerParty) {
+                throw new Exception('This car already has a seller link. Use the normal purchase-payment form.');
+            }
+            if (post('confirm_historical_repair') !== '1') {
+                throw new Exception('Confirm that the amount was recorded as paid earlier but is still due to the seller.');
+            }
+            if (!in_array(post('original_payment_account'), $historicalPaymentAccountIds, true)) {
+                throw new Exception('Select the original cash or bank account that was incorrectly reduced.');
+            }
+
+            $selectedSellerId = trim((string) post('seller_party_id'));
+            $newSellerName = trim((string) post('new_seller_name'));
+            if ($selectedSellerId !== '' && $newSellerName !== '') {
+                throw new Exception('Choose an existing seller or enter a new seller, not both.');
+            }
+            if ($selectedSellerId === '') {
+                Auth::requireEntityAccess('party', 'write');
+                $selectedSellerId = $engine->getOrCreateParty($newSellerName, 'SELLER', post('new_seller_phone'));
+            }
+
+            $entryId = $engine->repairHistoricalCarPurchasePayment(
+                $carId,
+                $selectedSellerId,
+                parseDecimalInput(post('amount_still_payable')),
+                post('original_payment_account'),
+                post('correction_date'),
+                post('correction_reason')
+            );
+            setFlash('success', 'Purchase record repaired for ' . formatRegistrationNo($car['registration_no']) . '. Seller payable created. Entry: ' . $entryId);
+            redirect('purchase_payment.php?id=' . urlencode($carId));
         }
-        if (post('action') !== 'pay_purchase_balance') {
+        if ($action !== 'pay_purchase_balance') {
             throw new Exception('Unknown purchase payment action.');
+        }
+        if (!$sellerParty) {
+            throw new Exception('This bought car has no linked seller. Use Fix Historical Purchase Record before recording a purchase payment.');
         }
         if (!in_array(post('payment_account'), $paymentAccountIds, true)) {
             throw new Exception('Select an accessible cash or bank account.');
@@ -91,13 +148,15 @@ $paymentHistory = $sellerParty ? $db->fetchAll(
      JOIN journal_lines seller_line
        ON seller_line.journal_entry_id = je.id AND seller_line.account_id = ?
      LEFT JOIN journal_lines payment_line
-       ON payment_line.journal_entry_id = je.id AND payment_line.entry_type = 'CR'
+       ON payment_line.journal_entry_id = je.id
        AND payment_line.account_id IN (
            SELECT id FROM accounts WHERE business_id = ? AND entity_type IN ('CASH', 'BANK')
        )
+       AND ((je.transaction_type = 'PURCHASE_PAYMENT_REPAIR' AND payment_line.entry_type = 'DR')
+            OR (je.transaction_type <> 'PURCHASE_PAYMENT_REPAIR' AND payment_line.entry_type = 'CR'))
      LEFT JOIN accounts payment_account ON payment_account.id = payment_line.account_id
      WHERE je.business_id = ? AND je.car_id = ? AND je.status IN ('POSTED', 'REVERSED')
-       AND je.transaction_type IN ('CAR_PURCHASE', 'LOAN_REPAID')
+       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID')
      ORDER BY je.entry_date ASC, je.created_at ASC",
     [$sellerParty['account_id'], $businessId, $businessId, $carId]
 ) : [];
@@ -118,8 +177,32 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php if (!$sellerParty): ?>
-<div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This older car has no seller link.</strong><span>To protect your records, a payment cannot be posted until its source seller and original payable are corrected. For new purchases, always select the seller and enter the amount paid now while adding the car.</span></div></div>
-<div class="form-actions form-actions-start"><a href="purchase_payments.php" class="btn btn-primary"><i class="ri-arrow-left-line"></i> Choose Another Car</a><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Back to Car</a></div>
+<div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>Fix this historical purchase before making a payment.</strong><span>The earlier entry has no seller payable. This guided correction restores the amount that was wrongly reduced from Cash/Bank and links the balance to the correct seller and car.</span></div></div>
+
+<?php if (!empty($historicalPaymentAccounts) && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
+<form method="POST" class="card purchase-payment-form" data-confirm-submit="Repair this historical purchase record and create the seller payable?">
+    <?= csrfField() ?>
+    <input type="hidden" name="action" value="repair_purchase_record">
+    <div class="card-header"><div><h3><i class="ri-tools-line"></i> Fix Historical Purchase Record</h3><div class="card-header-note">Use this only when the original car purchase was entered as fully paid, but some amount is actually still owed to the seller.</div></div></div>
+    <div class="card-body">
+        <div class="form-row-3">
+            <div class="form-group"><label class="form-label" for="seller_party_id">Existing Seller / Creditor</label><select id="seller_party_id" name="seller_party_id" class="form-control searchable-select"><option value="">Select existing seller</option><?php foreach ($availableSellers as $seller): ?><option value="<?= clean($seller['id']) ?>"><?= clean($seller['name']) ?> · <?= clean(ucfirst(strtolower($seller['type']))) ?></option><?php endforeach; ?></select><div class="form-hint">Choose this or add a new seller below.</div></div>
+            <div class="form-group"><label class="form-label" for="new_seller_name">New Seller Name</label><input id="new_seller_name" name="new_seller_name" class="form-control" maxlength="150" placeholder="Enter only if seller is new"></div>
+            <div class="form-group"><label class="form-label" for="new_seller_phone">New Seller Phone</label><input id="new_seller_phone" name="new_seller_phone" class="form-control" inputmode="tel" maxlength="20" placeholder="Optional"></div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group"><label class="form-label" for="amount_still_payable">Amount Still Payable (₹) *</label><input id="amount_still_payable" name="amount_still_payable" class="form-control currency-input" inputmode="decimal" required><div class="form-hint">Enter only the amount that was recorded as paid but is still due.</div></div>
+            <div class="form-group"><label class="form-label" for="original_payment_account">Original Cash / Bank Entry *</label><select id="original_payment_account" name="original_payment_account" class="form-control" required><option value="">Select original account</option><?php foreach ($historicalPaymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= ($account['entity_type'] ?? '') === 'CASH' ? '💵' : '🏦' ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>) · originally recorded <?= formatAmount($account['recorded_amount']) ?></option><?php endforeach; ?></select></div>
+            <div class="form-group"><label class="form-label" for="correction_date">Correction Date *</label><input id="correction_date" type="date" name="correction_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="correction_reason">Why is this amount still payable? *</label><textarea id="correction_reason" name="correction_reason" class="form-control" rows="3" maxlength="500" required placeholder="e.g. Purchase was entered as fully paid; ₹55,000 remains due to the seller."></textarea><div class="form-hint">This explanation is saved in the accounting audit trail.</div></div>
+        <label class="check-row"><input type="checkbox" name="confirm_historical_repair" value="1" required> <span>I confirm this amount was recorded as paid earlier, but is still due to the seller. I understand that Cash/Bank will be restored and a seller payable will be created.</span></label>
+        <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-check-line"></i> Repair and Create Seller Payable</button><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Cancel</a></div>
+    </div>
+</form>
+<?php else: ?>
+<div class="card"><div class="card-body"><div class="empty-state"><i class="ri-file-search-line"></i><h3>Original payment source is not available</h3><p>No Cash/Bank payment was found on this car’s original purchase entry, so the system cannot safely guess a correction. Review the original entry and its audit trail before changing it.</p><div class="form-actions form-actions-center"><a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($carId) ?>" class="btn btn-primary">Open Car History</a><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Back to Car</a></div></div></div></div>
+<?php endif; ?>
 <?php else: ?>
 <div class="stats-grid compact-operational-grid purchase-payment-summary-grid">
     <div class="stat-card"><div class="stat-value"><?= formatAmount($sellerPurchaseAmount) ?></div><div class="stat-label">Seller Purchase Amount</div></div>
@@ -155,15 +238,16 @@ require_once __DIR__ . '/../includes/header.php';
                 <thead><tr><th>Date / Time</th><th>Reference</th><th>Details</th><th>Paid From</th><th class="text-right">Payable</th><th class="text-right">Paid</th></tr></thead>
                 <tbody>
                 <?php foreach ($paymentHistory as $row): ?><?php
+                    $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
                     $isPayment = $row['entry_type'] === 'DR';
-                    $paymentSource = $isPayment && !empty($row['payment_account_name'])
+                    $paymentSource = ($isPayment || $isRepair) && !empty($row['payment_account_name'])
                         ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
-                    $detail = $row['transaction_type'] === 'CAR_PURCHASE' && !$isPayment ? 'Purchase payable created' : ($isPayment ? 'Payment to seller' : 'Seller ledger movement');
+                    $detail = $row['transaction_type'] === 'CAR_PURCHASE' && !$isPayment ? 'Purchase payable created' : ($isRepair ? ($isPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isPayment ? 'Payment to seller' : 'Seller ledger movement'));
                 ?><tr>
                     <td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td>
                     <td><a href="../transactions/view.php?id=<?= clean($row['id']) ?>"><?= clean($row['reference_no']) ?></a></td>
                     <td><?= clean($detail) ?><?php if (!empty($row['narration'])): ?><div class="text-muted"><?= clean($row['narration']) ?></div><?php endif; ?></td>
-                    <td><?= clean($paymentSource) ?></td>
+                    <td><?= $isRepair && $paymentSource !== '—' ? 'Cash/Bank restored: ' . clean($paymentSource) : clean($paymentSource) ?></td>
                     <td class="text-right amount flow-out"><?= !$isPayment ? formatAmount($row['amount']) : '—' ?></td>
                     <td class="text-right amount flow-in"><?= $isPayment ? formatAmount($row['amount']) : '—' ?></td>
                 </tr><?php endforeach; ?>

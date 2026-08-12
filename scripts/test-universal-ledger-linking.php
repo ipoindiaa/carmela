@@ -82,6 +82,38 @@ try {
     $finalPurchasePending = $engine->getCarPendingAmounts($carId);
     assertUll($finalPurchasePending['purchase_pending'] < 0.01, 'Final purchase balance payment clears the bought car payable');
 
+    $legacyCarId = Database::uuid();
+    $legacyRegistration = 'GJ99LH' . random_int(1000, 9999);
+    $legacyCarAccountId = $engine->createAccount('ULL-LEG-' . $suffix, "ULL Legacy Car - $legacyRegistration", 'ASSET', 'Inventory', 'CAR', $legacyCarId);
+    $db->insert('cars', [
+        'id' => $legacyCarId,
+        'business_id' => $business['id'],
+        'registration_no' => $legacyRegistration,
+        'make' => 'ULL',
+        'model' => 'Legacy repair',
+        'purchase_date' => $date,
+        'purchase_price' => 105000,
+        'purchase_paid_amount' => 105000,
+        'status' => 'IN_STOCK',
+        'account_id' => $legacyCarAccountId,
+    ]);
+    $engine->postJournalEntry('CAR_PURCHASE', $date, 'Legacy purchase incorrectly entered as fully paid', [
+        ['account_id' => $legacyCarAccountId, 'amount' => 105000, 'type' => 'DR'],
+        ['account_id' => $cash['id'], 'amount' => 105000, 'type' => 'CR'],
+    ], ['car_id' => $legacyCarId]);
+    $legacySellerId = $engine->getOrCreateParty('ULL Legacy Seller ' . $suffix, 'SELLER');
+    $repairId = $engine->repairHistoricalCarPurchasePayment($legacyCarId, $legacySellerId, 55000, $cash['id'], $date, '₹55,000 of the original purchase was not actually paid.');
+    $legacyCar = $db->fetch("SELECT seller_party_id, purchase_paid_amount FROM cars WHERE id = ?", [$legacyCarId]);
+    $legacyPending = $engine->getCarPendingAmounts($legacyCarId);
+    $legacySeller = $db->fetch("SELECT account_id FROM debtors_creditors WHERE id = ?", [$legacySellerId]);
+    $legacyRepairLines = $db->fetchAll(
+        "SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? AND account_id = ? ORDER BY entry_type, amount",
+        [$repairId, $legacySeller['account_id']]
+    );
+    assertUll($legacyCar['seller_party_id'] === $legacySellerId && abs(floatval($legacyCar['purchase_paid_amount']) - 50000.0) < 0.01, 'Historical repair links the seller and preserves only the amount actually paid at purchase');
+    assertUll(abs(floatval($legacyPending['purchase_pending']) - 55000.0) < 0.01, 'Historical repair creates the correct car-linked seller balance pending');
+    assertUll(count($legacyRepairLines) === 2 && floatval($legacyRepairLines[0]['amount']) === 105000.0 && floatval($legacyRepairLines[1]['amount']) === 50000.0, 'Historical repair reconstructs both the seller payable and the original direct seller payment');
+
     $saleId = $engine->carSale($carId, 575000, $date, $cash['id'], 'ULL sale with buyer receivable', 'ULL Buyer ' . $suffix, 200000);
     $timeline = $engine->getCarTimeline($carId);
     $saleTimeline = array_values(array_filter($timeline, static fn($row) => $row['entry_id'] === $saleId));

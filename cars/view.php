@@ -124,10 +124,11 @@ $sellerHistory = $sellerParty ? $db->fetchAll(
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.account_id = ?
      LEFT JOIN journal_lines payment_line ON payment_line.journal_entry_id = je.id
-         AND payment_line.entry_type = 'CR'
          AND payment_line.account_id IN (
              SELECT id FROM accounts WHERE business_id = ? AND entity_type IN ('CASH', 'BANK')
          )
+         AND ((je.transaction_type = 'PURCHASE_PAYMENT_REPAIR' AND payment_line.entry_type = 'DR')
+              OR (je.transaction_type <> 'PURCHASE_PAYMENT_REPAIR' AND payment_line.entry_type = 'CR'))
      LEFT JOIN accounts payment_account ON payment_account.id = payment_line.account_id
      WHERE je.business_id = ? AND je.status IN ('POSTED','REVERSED') AND je.car_id = ?
      ORDER BY je.entry_date DESC, je.created_at DESC",
@@ -592,9 +593,10 @@ updateFundingEditTotal();
             <?php if (empty($sellerHistory)): ?><p class="text-muted">No seller payable history.</p><?php else: ?>
             <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>Event</th><th>Paid From</th><th class="text-right">Amount</th></tr></thead><tbody>
                 <?php foreach ($sellerHistory as $row): ?><?php
+                    $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
                     $isSellerPayment = $row['entry_type'] === 'DR';
-                    $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE' && $row['entry_type'] === 'CR' ? 'Seller payable created' : ($isSellerPayment ? 'Cash / bank payment to seller' : 'Seller ledger movement');
-                    $paymentSource = $isSellerPayment && !empty($row['payment_account_name']) ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
+                    $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE' && $row['entry_type'] === 'CR' ? 'Seller payable created' : ($isRepair ? ($isSellerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isSellerPayment ? 'Cash / bank payment to seller' : 'Seller ledger movement'));
+                    $paymentSource = ($isSellerPayment || $isRepair) && !empty($row['payment_account_name']) ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
                 ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($sellerEvent) ?></td><td><?= clean($paymentSource) ?></td><td class="text-right amount <?= $row['entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
         </div>
@@ -717,7 +719,7 @@ updateFundingEditTotal();
                         $flow = transactionBusinessFlow($l['transaction_type'], $l);
                         $eventAmount = round(floatval($l['entry_amount'] ?? 0), 2);
 
-                        $cashFlowOnly = in_array($l['transaction_type'], ['CAR_SALE', 'CAR_PURCHASE', 'CAR_TOKEN_RECEIVED', 'LOAN_RECEIVED', 'LOAN_REPAID', 'CAR_EXPENSE', 'RTO_EXPENSE', 'RTO_RECOVERY'], true);
+                        $cashFlowOnly = in_array($l['transaction_type'], ['CAR_SALE', 'CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'CAR_TOKEN_RECEIVED', 'LOAN_RECEIVED', 'LOAN_REPAID', 'CAR_EXPENSE', 'RTO_EXPENSE', 'RTO_RECOVERY'], true);
                         if ($cashFlowOnly && (floatval($l['cash_in_amount'] ?? 0) > 0 || floatval($l['cash_out_amount'] ?? 0) > 0)) {
                             $eventAmount = max(floatval($l['cash_in_amount'] ?? 0), floatval($l['cash_out_amount'] ?? 0));
                             $flow = floatval($l['cash_in_amount'] ?? 0) > 0 ? 'in' : 'out';
