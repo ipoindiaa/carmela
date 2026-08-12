@@ -68,4 +68,18 @@ foreach ($accountNavigationChecks as $surface => [$file, $needle]) {
     assertReferenceNavigation(strpos($source, $needle) !== false, "$surface opens the matching account or entry detail");
 }
 
+$purchasePaymentChecks = [
+    'Purchase payment screen' => ['cars/purchase_payment.php', 'Record Purchase Payment'],
+    'Purchase payment car-scoped posting' => ['cars/purchase_payment.php', 'loanRepaid('],
+    'Purchase payment history details' => ['cars/purchase_payment.php', 'Purchase Payment Details'],
+    'Car detail purchase-payment menu' => ['cars/view.php', 'purchase_payment.php?id='],
+    'Car list purchase-payment menu' => ['cars/list.php', 'purchase_payment.php?id='],
+];
+
+foreach ($purchasePaymentChecks as $surface => [$file, $needle]) {
+    $source = file_get_contents($root . '/' . $file);
+    assertReferenceNavigation($source !== false, "$surface source is readable");
+    assertReferenceNavigation(strpos($source, $needle) !== false, "$surface exposes the dedicated purchased-car payment workflow");
+}
+
 echo "Reference navigation checks completed.\n";

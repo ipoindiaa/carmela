@@ -231,8 +231,8 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
-        <?php if ($sellerOutstanding > 0 && !empty($carPending['seller_party_id'])): ?>
-            <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Purchase balance payment - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Pay Purchase Balance</a>
+        <?php if ($sellerParty): ?>
+            <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Purchase Payments<?= $sellerOutstanding > 0.009 ? ' · ' . formatAmount($sellerOutstanding) : '' ?></a>
         <?php endif; ?>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a>
@@ -329,7 +329,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
                 <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
                 <?php if ($buyerParty): ?><tr><td class="text-muted">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
-        <?php if ($sellerParty): ?><tr><td class="text-muted">Seller (Source)</td><td><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php if ($sellerOutstanding > 0): ?> <span class="text-muted">· Purchase balance <?= formatAmount($sellerOutstanding) ?></span> <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_REPAID', 'party_id' => $carPending['seller_party_id'], 'car_id' => $car['id'], 'amount' => round($sellerOutstanding), 'narration' => 'Purchase balance payment - ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm">Pay Now</a><?php endif; ?></td></tr><?php endif; ?>
+                <?php if ($sellerParty): ?><tr><td class="text-muted">Seller (Source)</td><td><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php if ($sellerOutstanding > 0.009): ?> <span class="text-muted">· Purchase balance <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?> <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm">Purchase Payments</a></td></tr><?php endif; ?>
                 <tr><td class="text-muted">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
             </table>
             </div>
