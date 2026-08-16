@@ -144,14 +144,17 @@ $sellerPaymentTotalRow = $sellerParty ? $db->fetch(
 ) : null;
 $sellerPaymentsTotal = (float) ($sellerPaymentTotalRow['payment_total'] ?? 0);
 $purchasePaidAtPurchaseRow = $db->fetch(
-    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+    "SELECT COALESCE(SUM(CASE
+            WHEN je.transaction_type = 'CAR_PURCHASE' AND jl.entry_type = 'CR' THEN jl.amount
+            WHEN je.transaction_type = 'PURCHASE_PAYMENT_REPAIR' AND jl.entry_type = 'DR' THEN -jl.amount
+            ELSE 0
+        END), 0) AS total
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id
      JOIN accounts payment_account ON payment_account.id = jl.account_id
      WHERE je.business_id = ? AND je.car_id = ?
-       AND je.transaction_type = 'CAR_PURCHASE'
+       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR')
        AND je.status = 'POSTED' AND je.is_reversal = 0
-       AND jl.entry_type = 'CR'
        AND payment_account.entity_type IN ('CASH', 'BANK')",
     [$businessId, $id]
 );
