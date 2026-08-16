@@ -81,6 +81,8 @@ $purchasePaymentChecks = [
     'Car detail permanent purchase-payment menu' => ['cars/view.php', "<a href=\"purchase_payment.php?id="],
     'Car list permanent purchase-payment menu' => ['cars/list.php', "<a href=\"purchase_payment.php?id="],
     'Sidebar purchase-payment menu' => ['includes/header.php', 'Car Purchase Payments'],
+    'Car purchase settlement explanation' => ['cars/view.php', 'Purchase payment explained:'],
+    'Car timeline distinguishes cash from purchase total' => ['cars/view.php', 'Cash / Bank Out'],
 ];
 
 foreach ($purchasePaymentChecks as $surface => [$file, $needle]) {

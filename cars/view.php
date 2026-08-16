@@ -143,6 +143,32 @@ $sellerPaymentTotalRow = $sellerParty ? $db->fetch(
     [$businessId, $id, $sellerParty['account_id']]
 ) : null;
 $sellerPaymentsTotal = (float) ($sellerPaymentTotalRow['payment_total'] ?? 0);
+$purchasePaidAtPurchaseRow = $db->fetch(
+    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+     FROM journal_entries je
+     JOIN journal_lines jl ON jl.journal_entry_id = je.id
+     JOIN accounts payment_account ON payment_account.id = jl.account_id
+     WHERE je.business_id = ? AND je.car_id = ?
+       AND je.transaction_type = 'CAR_PURCHASE'
+       AND je.status = 'POSTED' AND je.is_reversal = 0
+       AND jl.entry_type = 'CR'
+       AND payment_account.entity_type IN ('CASH', 'BANK')",
+    [$businessId, $id]
+);
+$purchasePaidAtPurchase = round(max(0, floatval($purchasePaidAtPurchaseRow['total'] ?? 0)), 2);
+$sellerPaidLaterRow = $sellerParty ? $db->fetch(
+    "SELECT COALESCE(SUM(jl.amount), 0) AS total
+     FROM journal_entries je
+     JOIN journal_lines jl ON jl.journal_entry_id = je.id
+     WHERE je.business_id = ? AND je.car_id = ?
+       AND je.status = 'POSTED' AND je.is_reversal = 0
+       AND je.transaction_type = 'LOAN_REPAID'
+       AND jl.account_id = ? AND jl.entry_type = 'DR'",
+    [$businessId, $id, $sellerParty['account_id']]
+) : null;
+$sellerPaidLater = round(max(0, floatval($sellerPaidLaterRow['total'] ?? 0)), 2);
+$purchaseTotalPaid = round($purchasePaidAtPurchase + $sellerPaidLater, 2);
+$purchaseBalanceAtBuying = round(max(0, floatval($car['purchase_price']) - $purchasePaidAtPurchase), 2);
 $rtoRecords = $db->fetchAll(
     "SELECT * FROM rto_records WHERE business_id = ? AND car_id = ? ORDER BY created_at DESC",
     [$businessId, $id]
@@ -587,17 +613,27 @@ updateFundingEditTotal();
             </tbody></table><?php endif; ?>
             <?php endif; ?>
             <div class="detail-subsection">
-                <h4 class="attachment-group-title">Seller Payable &amp; Payment History</h4>
-                <div class="form-hint">Paid to seller: <strong class="amount flow-in"><?= formatAmount($sellerPaymentsTotal) ?></strong> &nbsp;•&nbsp; Purchase balance pending: <strong class="amount <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></strong></div>
+                <h4 class="attachment-group-title">Seller Purchase &amp; Payment History</h4>
+                <div class="purchase-settlement-summary" aria-label="Purchase payment summary">
+                    <div><span>Purchase Price</span><strong class="amount flow-out"><?= formatAmount($car['purchase_price']) ?></strong></div>
+                    <div><span>Paid at Purchase</span><strong class="amount flow-in"><?= formatAmount($purchasePaidAtPurchase) ?></strong></div>
+                    <div><span>Paid Later</span><strong class="amount flow-in"><?= formatAmount($sellerPaidLater) ?></strong></div>
+                    <div><span>Still Payable</span><strong class="amount <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></strong></div>
+                </div>
+                <div class="form-hint">Purchase payment explained: <strong><?= formatAmount($purchasePaidAtPurchase) ?></strong> paid while buying + <strong><?= formatAmount($sellerPaidLater) ?></strong> paid later = <strong><?= formatAmount($purchaseTotalPaid) ?></strong> total paid to the seller.</div>
             </div>
             <?php if (empty($sellerHistory)): ?><p class="text-muted">No seller payable history.</p><?php else: ?>
-            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>Event</th><th>Paid From</th><th class="text-right">Amount</th></tr></thead><tbody>
+            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>What Happened</th><th>Cash / Bank</th><th class="text-right">Payable Created</th><th class="text-right">Paid to Seller</th></tr></thead><tbody>
                 <?php foreach ($sellerHistory as $row): ?><?php
                     $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
                     $isSellerPayment = $row['entry_type'] === 'DR';
-                    $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE' && $row['entry_type'] === 'CR' ? 'Seller payable created' : ($isRepair ? ($isSellerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isSellerPayment ? 'Cash / bank payment to seller' : 'Seller ledger movement'));
+                    $isHistoricalRebuild = stripos((string) ($row['narration'] ?? ''), 'Historical seller payable reconstruction') !== false;
+                    $isPurchaseBalanceLine = stripos((string) ($row['narration'] ?? ''), 'Pending purchase payment') !== false;
+                    $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE'
+                        ? ($isSellerPayment ? 'Amount paid to seller at purchase' : ($isHistoricalRebuild ? 'Full purchase value recorded to seller' : ($isPurchaseBalanceLine ? 'Balance left payable after purchase payment' : 'Seller payable created')))
+                        : ($isRepair ? ($isSellerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isSellerPayment ? 'Later payment to seller' : 'Seller ledger movement'));
                     $paymentSource = ($isSellerPayment || $isRepair) && !empty($row['payment_account_name']) ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
-                ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($sellerEvent) ?></td><td><?= clean($paymentSource) ?></td><td class="text-right amount <?= $row['entry_type'] === 'CR' ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($row['amount']) ?></td></tr><?php endforeach; ?>
+                ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($sellerEvent) ?></td><td><?= clean($paymentSource) ?></td><td class="text-right amount flow-out"><?= $row['entry_type'] === 'CR' ? formatAmount($row['amount']) : '—' ?></td><td class="text-right amount flow-in"><?= $isSellerPayment ? formatAmount($row['amount']) : '—' ?></td></tr><?php endforeach; ?>
             </tbody></table><?php endif; ?>
         </div>
     </div>
@@ -708,7 +744,7 @@ updateFundingEditTotal();
     <div class="card-body card-body-flush">
         <div class="table-container">
         <table>
-            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right flow-in">Money In</th><th class="text-right flow-out">Money Out</th></tr></thead>
+            <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Source / Narration</th><th>Status</th><th class="text-right flow-in">Cash / Bank In</th><th class="text-right flow-out">Cash / Bank Out</th></tr></thead>
             <tbody>
                 <?php if (empty($ledger)): ?>
                     <tr><td colspan="7" class="text-center text-muted empty-table-cell">No ledger entries</td></tr>
@@ -757,7 +793,7 @@ updateFundingEditTotal();
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td>
-                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span></td>
+                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span><?php if ($l['transaction_type'] === 'CAR_PURCHASE'): ?><div class="table-note table-note-compact">Purchase <?= formatAmount($car['purchase_price']) ?> · paid now <?= formatAmount($purchasePaidAtPurchase) ?> · balance then <?= formatAmount($purchaseBalanceAtBuying) ?></div><?php endif; ?></td>
                         <td>
                             <div><?= clean(mb_substr($l['narration'] ?? '', 0, 90)) ?></div>
                             <?php if (!empty($l['voucher_id'])): ?>
