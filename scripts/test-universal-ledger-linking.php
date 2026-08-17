@@ -57,8 +57,13 @@ try {
         'account_id' => $carAccountId,
     ]);
 
-    $purchaseId = $engine->carPurchase($carId, 450000, $date, $cash['id'], 'ULL purchase with paid and payable seller amounts', [], 'ULL Seller ' . $suffix, 300000);
-    $car = $db->fetch("SELECT seller_party_id FROM cars WHERE id = ?", [$carId]);
+    $purchaseId = $engine->carPurchase($carId, 450000, $date, $cash['id'], 'ULL purchase with paid and payable seller amounts', [], 'ULL Seller ' . $suffix, 300000, [
+        'name' => 'ULL Purchase Dealer ' . $suffix,
+        'commission' => 15000,
+        'paid_now' => 5000,
+        'payment_account' => $cash['id'],
+    ]);
+    $car = $db->fetch("SELECT seller_party_id, purchase_dealer_party_id FROM cars WHERE id = ?", [$carId]);
     $seller = $db->fetch("SELECT account_id FROM debtors_creditors WHERE id = ?", [$car['seller_party_id']]);
     $sellerLines = $db->fetchAll(
         "SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? AND account_id = ? ORDER BY CASE WHEN entry_type = 'DR' THEN 0 ELSE 1 END, amount",
@@ -72,6 +77,23 @@ try {
     $purchase = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$purchaseId]);
     assertUll($purchase['car_id'] === $carId && $purchase['party_id'] === $car['seller_party_id'], 'Purchase journal carries both car and seller dimensions');
 
+    $dealer = $db->fetch("SELECT account_id FROM debtors_creditors WHERE id = ?", [$car['purchase_dealer_party_id']]);
+    $dealerSettlement = $engine->getCarDealerSettlement($carId);
+    assertUll($car['purchase_dealer_party_id'] !== null && $dealerSettlement['dealer']['id'] === $car['purchase_dealer_party_id'], 'Purchase dealer is linked to the car as a separate party from the owner');
+    assertUll(
+        abs(floatval($dealerSettlement['commission_total']) - 15000.0) < 0.01
+        && abs(floatval($dealerSettlement['paid_total']) - 5000.0) < 0.01
+        && abs(floatval($dealerSettlement['pending']) - 10000.0) < 0.01,
+        'Dealer commission tracks the payable, immediate payment, and remaining balance separately from the purchase price'
+    );
+    $dealerPayableLine = $db->fetch(
+        "SELECT amount FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE je.business_id = ? AND je.car_id = ? AND jl.account_id = ? AND je.transaction_type = 'DEALER_COMMISSION' AND jl.entry_type = 'CR'
+         LIMIT 1",
+        [$business['id'], $carId, $dealer['account_id']]
+    );
+    assertUll(abs(floatval($dealerPayableLine['amount'] ?? 0) - 15000.0) < 0.01, 'Dealer ledger receives only the commission payable, never the owner purchase amount');
+
     $firstSellerClearId = $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL first purchase balance payment', $carId);
     $firstPurchasePending = $engine->getCarPendingAmounts($carId);
     $firstSellerClear = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$firstSellerClearId]);
@@ -81,6 +103,14 @@ try {
     $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL final purchase balance payment', $carId);
     $finalPurchasePending = $engine->getCarPendingAmounts($carId);
     assertUll($finalPurchasePending['purchase_pending'] < 0.01, 'Final purchase balance payment clears the bought car payable');
+
+    $dealerPaymentId = $engine->payPurchaseDealerCommission($carId, 10000, $date, $cash['id'], 'ULL final dealer commission payment');
+    $finalDealerPending = $engine->getCarPendingAmounts($carId);
+    $dealerPayment = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$dealerPaymentId]);
+    $costAfterDealerCommission = $engine->getCarProfitability($carId);
+    assertUll($finalDealerPending['dealer_pending'] < 0.01, 'Final dealer commission payment clears only the dealer payable for this car');
+    assertUll($dealerPayment['car_id'] === $carId && $dealerPayment['party_id'] === $car['purchase_dealer_party_id'], 'Dealer commission payment stays linked to its car and dealer ledger');
+    assertUll(abs(floatval($costAfterDealerCommission['total_cost']) - 465000.0) < 0.01, 'Dealer commission is capitalized into the bought car total cost once, not treated as an owner payment');
 
     $legacyCarId = Database::uuid();
     $legacyRegistration = 'GJ99LH' . random_int(1000, 9999);
@@ -121,8 +151,8 @@ try {
 
     $pnl = $engine->getProfitAndLoss($date, $date);
     $cogs = array_values(array_filter($pnl['expenses'], static fn($row) => ($row['code'] ?? '') === 'COGS'));
-    assertUll(count($cogs) === 1 && floatval($cogs[0]['amount']) === 450000.0, 'Profit and Loss includes the full car cost as Cost of Cars Sold');
-    assertUll(abs(floatval($pnl['net_profit']) - 125000.0) < 0.01, 'Profit and Loss reports sale revenue less Cost of Cars Sold');
+    assertUll(count($cogs) === 1 && floatval($cogs[0]['amount']) === 465000.0, 'Profit and Loss includes the purchase price plus dealer commission as Cost of Cars Sold');
+    assertUll(abs(floatval($pnl['net_profit']) - 110000.0) < 0.01, 'Profit and Loss reports sale revenue less the complete car cost');
 
     $engine->reverseEntry($saleId, 'ULL regression reversal', $date);
     $reversedPnl = $engine->getProfitAndLoss($date, $date);
