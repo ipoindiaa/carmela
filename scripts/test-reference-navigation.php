@@ -70,7 +70,7 @@ foreach ($accountNavigationChecks as $surface => [$file, $needle]) {
 
 $purchasePaymentChecks = [
     'Purchase payment screen' => ['cars/purchase_payment.php', 'Record Purchase Payment'],
-    'Purchase payment menu screen' => ['cars/purchase_payments.php', 'Pay Pending Purchase Balance'],
+    'Purchase payment menu screen' => ['cars/purchase_payments.php', 'Pay Pending Owner Balance'],
     'Purchase payment car-scoped posting' => ['cars/purchase_payment.php', 'loanRepaid('],
     'Purchase payment history details' => ['cars/purchase_payment.php', 'Purchase Payment Details'],
     'Historical purchase repair screen' => ['cars/purchase_payment.php', 'Fix Historical Purchase Record'],
@@ -81,9 +81,29 @@ $purchasePaymentChecks = [
     'Car detail permanent purchase-payment menu' => ['cars/view.php', "<a href=\"purchase_payment.php?id="],
     'Car list permanent purchase-payment menu' => ['cars/list.php', "<a href=\"purchase_payment.php?id="],
     'Sidebar purchase-payment menu' => ['includes/header.php', 'Car Purchase Payments'],
-    'Car purchase settlement explanation' => ['cars/view.php', 'Purchase payment explained:'],
+    'Car purchase settlement explanation' => ['cars/view.php', 'paid while buying'],
     'Car timeline distinguishes cash from purchase total' => ['cars/view.php', 'Cash / Bank Out'],
 ];
+
+$dealerNavigationChecks = [
+    'Dealer commission payment screen' => ['cars/dealer_payment.php', 'Pay Pending Dealer Commission'],
+    'Dealer commission car-scoped posting' => ['cars/dealer_payment.php', 'payPurchaseDealerCommission('],
+    'Dealer payment menu screen' => ['cars/purchase_payments.php', 'Pay Pending Dealer / Broker Commission'],
+    'Car detail dealer payment menu' => ['cars/view.php', "<a href=\"dealer_payment.php?id="],
+    'Car detail purchase source panel' => ['cars/view.php', 'Purchase Source &amp; Settlement'],
+    'Car detail separates owner and dealer money columns' => ['cars/view.php', 'Dealer Payable Created'],
+    'Dealer ledger screen' => ['parties/dealer_ledger.php', 'getDealerCarSettlements('],
+    'Dealer ledger car links' => ['parties/dealer_ledger.php', '../cars/view.php?id='],
+    'Party detail links the dealer ledger' => ['parties/view.php', 'dealer_ledger.php?id='],
+    'Sell Car shows read-only purchase source' => ['transactions/new.php', 'purchase-source-panel'],
+    'Purchase source API is car scoped' => ['transactions/car_purchase_source.php', 'getCarDealerSettlement('],
+];
+
+foreach ($dealerNavigationChecks as $surface => [$file, $needle]) {
+    $source = file_get_contents($root . '/' . $file);
+    assertReferenceNavigation($source !== false, "$surface source is readable");
+    assertReferenceNavigation(strpos($source, $needle) !== false, "$surface exposes the purchase dealer workflow");
+}
 
 foreach ($purchasePaymentChecks as $surface => [$file, $needle]) {
     $source = file_get_contents($root . '/' . $file);

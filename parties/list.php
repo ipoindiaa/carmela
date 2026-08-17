@@ -59,7 +59,7 @@ function renderPartyRows($parties, $snapshots) {
     ?>
     <tr>
         <td class="text-bold"><?= clean($p['name']) ?></td>
-        <td><span class="badge <?= in_array($p['type'], ['DEBTOR','BUYER']) ? 'badge-blue' : 'badge-yellow' ?>"><?= $p['type'] ?></span></td>
+        <td><span class="badge <?= in_array($p['type'], ['DEBTOR','BUYER']) ? 'badge-blue' : ($p['type'] === 'DEALER' ? 'badge-purple' : 'badge-yellow') ?>"><?= $p['type'] === 'DEALER' ? 'DEALER / BROKER' : $p['type'] ?></span></td>
         <td><?= clean($p['phone'] ?: '-') ?></td>
         <td class="text-right">
             <div class="amount <?= $amountClass ?>"><?= formatAmount($outstandingAmount) ?></div>
@@ -183,7 +183,7 @@ $nextUrl = $page < $pagination['total_pages'] ? partiesListUrl($page + 1, true, 
                 <?= csrfField() ?><input type="hidden" name="action" value="add">
                 <div class="form-group"><label class="form-label">Name *</label><input type="text" name="name" class="form-control" required></div>
                 <div class="form-row">
-                    <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control" required><option value="DEBTOR">Debtor</option><option value="CREDITOR">Creditor</option><option value="BUYER">Buyer</option><option value="SELLER">Seller</option></select></div>
+                    <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control" required><option value="DEBTOR">Debtor</option><option value="CREDITOR">Creditor</option><option value="BUYER">Buyer</option><option value="SELLER">Seller</option><option value="DEALER">Dealer / Broker</option></select></div>
                     <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                 </div>
                 <div class="form-row">

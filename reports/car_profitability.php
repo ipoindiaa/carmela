@@ -52,6 +52,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
             $rtoNet = $carProfitability['rto_net'] ?? ($rtoRecovered - $rtoExpense);
             $loanCommissionIncome = $carProfitability['loan_commission_income'] ?? 0;
             $tokenForfeitNet = $carProfitability['token_forfeiture_net'] ?? 0;
+            $dealerCommission = $carProfitability['dealer_commission'] ?? 0;
             if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $totalSaleRealisation; $grandRtoNet += $rtoNet; $grandLoanCommission += $loanCommissionIncome; $grandTokenForfeit += $tokenForfeitNet; $grandProfit += $profit; }
         ?>
         <tr>
@@ -62,7 +63,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
                 <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span></td>
             <td class="text-right"><?= intval($carProfitability['holding_days']) ?></td>
             <td class="text-right amount"><?= formatAmount($car['purchase_price']) ?></td>
-            <td class="text-right amount"><?= formatAmount($expenses) ?></td>
+            <td class="text-right amount"><?= formatAmount($expenses) ?><?php if ($dealerCommission > 0.009): ?><div class="table-secondary">Incl. dealer commission <?= formatAmount($dealerCommission) ?></div><?php endif; ?></td>
             <td class="text-right amount text-bold"><?= formatAmount($totalCost) ?></td>
             <td class="text-right amount">
                 <?php if ($grossSalePrice): ?>

@@ -47,6 +47,7 @@ function renderCarRows($cars, $engine) {
             $profit = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) ? (float) ($carProfitability['profit'] ?? 0) : null;
             $buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
             $sellerOutstanding = (float) ($carPending['purchase_pending'] ?? 0);
+            $dealerOutstanding = (float) ($carPending['dealer_pending'] ?? 0);
             $rtoPending = (float) ($car['rto_pending'] ?? 0);
         ?>
         <tr>
@@ -73,7 +74,8 @@ function renderCarRows($cars, $engine) {
                 <span class="badge <?= $statusBadges[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
                 <div class="compact-pending-stack">
                     <?php if ($buyerOutstanding > 0): ?><span class="mini-pill mini-pill-in">Sale pending <?= formatAmount($buyerOutstanding) ?></span><?php endif; ?>
-                    <?php if ($sellerOutstanding > 0): ?><span class="mini-pill mini-pill-out">Purchase pending <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?>
+                    <?php if ($sellerOutstanding > 0): ?><span class="mini-pill mini-pill-out">Owner pending <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?>
+                    <?php if ($dealerOutstanding > 0): ?><span class="mini-pill mini-pill-out">Dealer pending <?= formatAmount($dealerOutstanding) ?></span><?php endif; ?>
                     <?php if ($rtoPending > 0): ?><span class="mini-pill mini-pill-warn">RTO pending <?= formatAmount($rtoPending) ?></span><?php endif; ?>
                 </div>
             </td>

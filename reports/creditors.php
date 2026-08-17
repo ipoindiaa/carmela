@@ -30,7 +30,7 @@ foreach ($creditors as $creditor) {
     <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
 
-<div class="filter-bar"><form method="get"><div><label class="form-label">Creditor</label><input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email"></div><div><label class="form-label">Type</label><select name="type" class="form-control"><option value="">All types</option><option value="CREDITOR" <?= $typeFilter==='CREDITOR'?'selected':'' ?>>Creditor</option><option value="SELLER" <?= $typeFilter==='SELLER'?'selected':'' ?>>Seller</option></select></div><div><label class="form-label">Oldest pending</label><select name="age" class="form-control"><option value="">Any age</option><option value="0_30" <?= $ageFilter==='0_30'?'selected':'' ?>>0–30 days</option><option value="31_60" <?= $ageFilter==='31_60'?'selected':'' ?>>31–60 days</option><option value="61_PLUS" <?= $ageFilter==='61_PLUS'?'selected':'' ?>>61+ days</option></select></div><button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button><?php if($search!==''||$typeFilter!==''||$ageFilter!==''): ?><a href="creditors.php" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?></form></div>
+<div class="filter-bar"><form method="get"><div><label class="form-label">Creditor</label><input type="search" name="q" class="form-control" value="<?= clean($search) ?>" placeholder="Name, phone, email"></div><div><label class="form-label">Type</label><select name="type" class="form-control"><option value="">All types</option><option value="CREDITOR" <?= $typeFilter==='CREDITOR'?'selected':'' ?>>Creditor</option><option value="SELLER" <?= $typeFilter==='SELLER'?'selected':'' ?>>Seller / Vehicle Owner</option><option value="DEALER" <?= $typeFilter==='DEALER'?'selected':'' ?>>Dealer / Broker</option></select></div><div><label class="form-label">Oldest pending</label><select name="age" class="form-control"><option value="">Any age</option><option value="0_30" <?= $ageFilter==='0_30'?'selected':'' ?>>0–30 days</option><option value="31_60" <?= $ageFilter==='31_60'?'selected':'' ?>>31–60 days</option><option value="61_PLUS" <?= $ageFilter==='61_PLUS'?'selected':'' ?>>61+ days</option></select></div><button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button><?php if($search!==''||$typeFilter!==''||$ageFilter!==''): ?><a href="creditors.php" class="btn btn-ghost btn-sm">Clear all</a><?php endif; ?></form></div>
 
 <div class="stats-grid stats-grid-2">
     <div class="stat-card"><div class="stat-value"><?= count($creditors) ?></div><div class="stat-label">Active Creditors</div></div>
@@ -47,7 +47,7 @@ foreach ($creditors as $creditor) {
                 <?php foreach ($creditors as $creditor): ?>
                     <tr>
                         <td><a class="text-bold" href="../parties/view.php?id=<?= urlencode($creditor['id']) ?>"><?= clean($creditor['name']) ?></a></td>
-                        <td><?= clean($creditor['type']) ?></td>
+                        <td><?= clean(partyTypeLabel($creditor['type'] ?? '')) ?></td>
                         <td><?= clean($creditor['phone'] ?: '-') ?></td>
                         <td><?= clean($creditor['email'] ?: '-') ?></td>
                         <td><?= !empty($creditor['oldest_open_date']) ? formatDate($creditor['oldest_open_date']) : '-' ?></td>

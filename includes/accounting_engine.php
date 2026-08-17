@@ -2,6 +2,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/car_loan_commission_accounting.php';
+require_once __DIR__ . '/car_dealer_accounting.php';
 
 /**
  * AccountingEngine - The heart of AutoBooks Pro
@@ -10,6 +11,7 @@ require_once __DIR__ . '/car_loan_commission_accounting.php';
  */
 class AccountingEngine {
     use CarLoanCommissionAccounting;
+    use CarPurchaseDealerAccounting;
     private $db;
     private $businessId;
     private $userId;
@@ -797,6 +799,14 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `seller_party_id` CHAR(36) DEFAULT NULL AFTER `buyer_party_id`");
             }
         });
+        $this->runMigrationStep('add-column-cars.purchase_dealer_party_id', function () {
+            if (!$this->columnExists('cars', 'purchase_dealer_party_id')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_dealer_party_id` CHAR(36) DEFAULT NULL AFTER `seller_party_id`");
+            }
+        });
+        $this->runMigrationStep('party-type-dealer-enum', function () {
+            $this->ensurePartyTypeEnum();
+        });
         $this->runMigrationStep('add-column-cars.commission_owner_party_id', function () {
             if (!$this->columnExists('cars', 'commission_owner_party_id')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `commission_owner_party_id` CHAR(36) DEFAULT NULL AFTER `ownership_type`");
@@ -899,7 +909,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['PURCHASE_PAYMENT_REPAIR', 'CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION'];
+        $required = ['PURCHASE_PAYMENT_REPAIR', 'CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION', 'DEALER_COMMISSION', 'DEALER_COMMISSION_PAYMENT'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -913,7 +923,30 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','PURCHASE_PAYMENT_REPAIR','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION')
+                 ENUM('CAR_PURCHASE','PURCHASE_PAYMENT_REPAIR','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION','DEALER_COMMISSION','DEALER_COMMISSION_PAYMENT')
+                 NOT NULL"
+            );
+        }
+    }
+
+    /**
+     * Purchase dealers / brokers are a distinct party type with their own
+     * payable ledger. Widening the ENUM keeps every existing party row valid.
+     */
+    private function ensurePartyTypeEnum() {
+        $column = $this->db->fetch(
+            "SELECT COLUMN_TYPE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'debtors_creditors'
+               AND COLUMN_NAME = 'type'"
+        );
+        $currentType = $column['COLUMN_TYPE'] ?? '';
+        if ($currentType !== '' && strpos($currentType, "'DEALER'") === false) {
+            $this->db->query(
+                "ALTER TABLE `debtors_creditors`
+                 MODIFY COLUMN `type`
+                 ENUM('DEBTOR','CREDITOR','BUYER','SELLER','DEALER')
                  NOT NULL"
             );
         }
@@ -1475,7 +1508,15 @@ class AccountingEngine {
         ];
     }
 
-    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $sellerName = null, $paidNow = null) {
+    /**
+     * @param array|null $dealer Optional purchase dealer / broker block:
+     *        ['party_id','name','phone','commission','paid_now','payment_account'].
+     *        The dealer is never the same relationship as the vehicle owner: the
+     *        owner is paid the purchase price, the dealer is paid a commission.
+     * @param string|null $sellerPartyId Existing owner/seller ledger to reuse so
+     *        no duplicate owner ledger is ever created.
+     */
+    public function carPurchase($carId, $amount, $date, $paymentAccount, $narration, $partnerFunding = [], $sellerName = null, $paidNow = null, $dealer = null, $sellerPartyId = null) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found");
 
@@ -1484,6 +1525,14 @@ class AccountingEngine {
         try {
             $carAccountId = $car['account_id'];
             $lines = [];
+            // An existing owner ledger always wins over free text, so selecting
+            // a known owner can never create a second ledger for the same person.
+            $selectedSellerParty = null;
+            if (trim((string) $sellerPartyId) !== '') {
+                $selectedSellerParty = $this->getVehicleOwnerParty($sellerPartyId);
+                $sellerName = $selectedSellerParty['name'];
+            }
+            $dealerInput = $dealer === null ? null : $this->normalizeDealerCommissionInput((array) $dealer, $paymentAccount);
             $validation = $this->validateCarPurchaseInput($amount, $date, $paymentAccount, $partnerFunding, $sellerName, $paidNow);
         $grossAmount = $validation['gross_amount'];
         $partnerFunding = $validation['partner_funding'];
@@ -1494,7 +1543,10 @@ class AccountingEngine {
         $sellerPartyId = null;
         $sellerParty = null;
         $sellerName = trim((string) $sellerName);
-        if ($sellerName !== '') {
+        if ($selectedSellerParty) {
+            $sellerParty = $selectedSellerParty;
+            $sellerPartyId = $selectedSellerParty['id'];
+        } elseif ($sellerName !== '') {
             // Always create/link the source (seller) party so the car keeps a
             // seller relationship even when the purchase is fully paid on the spot.
             // A seller ledger line is only posted when money is still owed; the
@@ -1589,6 +1641,12 @@ class AccountingEngine {
         );
         $updatedCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Car purchase balances and seller link updated', 'transactions');
+
+            // Dealer commission is a separate obligation to a separate party.
+            // It is posted after the purchase so the car cost already exists.
+            if ($dealerInput !== null) {
+                $this->recordPurchaseDealerCommission($carId, $dealerInput, $date, $paymentAccount);
+            }
 
             if ($ownsTransaction) $this->db->commit();
             return $entryId;
@@ -2384,8 +2442,10 @@ class AccountingEngine {
             return [
                 'sale_pending' => 0.0,
                 'purchase_pending' => 0.0,
+                'dealer_pending' => 0.0,
                 'buyer_party_id' => null,
                 'seller_party_id' => null,
+                'purchase_dealer_party_id' => null,
             ];
         }
 
@@ -2419,8 +2479,10 @@ class AccountingEngine {
         return [
             'sale_pending' => $salePending,
             'purchase_pending' => $purchasePending,
+            'dealer_pending' => $this->getCarDealerPendingAmount($carId),
             'buyer_party_id' => $car['buyer_party_id'] ?: null,
             'seller_party_id' => $car['seller_party_id'] ?: null,
+            'purchase_dealer_party_id' => $car['purchase_dealer_party_id'] ?? null,
         ];
     }
 
@@ -3211,8 +3273,8 @@ class AccountingEngine {
     public function loanRepaid($partyId, $amount, $date, $paymentAccount, $narration, $carId = null) {
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $this->businessId]);
         if (!$party) throw new Exception("Party not found");
-        if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
-            throw new Exception("Loan repayment is allowed only against creditor or seller balances.");
+        if (!in_array($party['type'], ['CREDITOR', 'SELLER', 'DEALER'], true)) {
+            throw new Exception("Loan repayment is allowed only against creditor, seller, or dealer balances.");
         }
         $commissionOwnerBalance = $this->db->fetch(
             "SELECT COUNT(*) AS cnt FROM commission_car_settlements
@@ -3931,6 +3993,7 @@ class AccountingEngine {
         }
 
         $this->assertCarLoanCommissionEntryCanBeReversed($entry);
+        $this->assertPurchaseDealerEntryCanBeReversed($entry);
 
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
             $token = $this->db->fetch(
@@ -4024,17 +4087,22 @@ class AccountingEngine {
         }
 
         if ($entry['transaction_type'] === 'CAR_PURCHASE') {
-            return $this->db->fetchAll(
-                "SELECT *
-                 FROM journal_entries
-                 WHERE business_id = ?
-                   AND car_id = ?
-                   AND status = 'POSTED'
-                   AND is_reversal = 0
-                   AND id <> ?
-                   AND transaction_type = 'PARTNER_INVEST'
-                 ORDER BY created_at DESC, id DESC",
-                [$this->businessId, $entry['car_id'], $entry['id']]
+            // Dealer commission belongs to the buying deal, so it is reversed
+            // together with the purchase: payments first, then the payable.
+            return array_merge(
+                $this->getPurchaseDealerDependentEntries($entry),
+                $this->db->fetchAll(
+                    "SELECT *
+                     FROM journal_entries
+                     WHERE business_id = ?
+                       AND car_id = ?
+                       AND status = 'POSTED'
+                       AND is_reversal = 0
+                       AND id <> ?
+                       AND transaction_type = 'PARTNER_INVEST'
+                     ORDER BY created_at DESC, id DESC",
+                    [$this->businessId, $entry['car_id'], $entry['id']]
+                )
             );
         }
 
@@ -4094,6 +4162,7 @@ class AccountingEngine {
 
     private function applyReversalBusinessEffects($entry, $lines, $reversalId) {
         $this->applyCarLoanCommissionReversalEffects($entry);
+        $this->applyPurchaseDealerReversalEffects($entry);
         switch ($entry['transaction_type']) {
             case 'JOURNAL_VOUCHER':
                 if (!empty($entry['journal_voucher_id'])) {
@@ -4383,7 +4452,7 @@ class AccountingEngine {
                AND status = 'POSTED'
                AND is_reversal = 0
                AND id <> ?
-               AND transaction_type NOT IN ('PARTNER_INVEST')",
+               AND transaction_type NOT IN ('PARTNER_INVEST', 'DEALER_COMMISSION', 'DEALER_COMMISSION_PAYMENT')",
             [$this->businessId, $entry['car_id'], $entry['id']]
         );
 
@@ -4550,6 +4619,20 @@ class AccountingEngine {
             "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?",
             [$createdId, $this->businessId]
         );
+    }
+
+    /**
+     * Resolve an existing Vehicle Owner / Seller ledger by id. Owners are kept
+     * on `cars.seller_party_id`; this never creates a second owner ledger.
+     */
+    public function getVehicleOwnerParty($partyId) {
+        $party = $this->db->fetch(
+            "SELECT * FROM debtors_creditors
+             WHERE id = ? AND business_id = ? AND is_active = 1 AND type IN ('SELLER','CREDITOR','DEALER')",
+            [trim((string) $partyId), $this->businessId]
+        );
+        if (!$party) throw new Exception('Select a valid vehicle owner / seller.');
+        return $party;
     }
 
     public function getOrCreateParty($name, $type, $phone = null) {
@@ -4755,6 +4838,10 @@ class AccountingEngine {
         // Token forfeiture income for this car (forfeited minus refunded-of-forfeited)
         // is part of this car's profit, even after the car is sold.
         $tokenForfeitureNet = $this->getCarTokenForfeitureNet($carId);
+        // Purchase dealer / broker commission is already inside $totalCost for
+        // owned stock (it is allocated to the car account). It is reported
+        // separately so operators can see what the sourcing actually cost.
+        $dealerCommission = $this->getCarDealerCommissionTotal($carId);
         $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome + $tokenForfeitureNet;
         $profit = $netBusinessRevenue - $totalCost - $rtoExpense;
         $partnerships = $this->getCarPartnerships($carId);
@@ -4782,6 +4869,7 @@ class AccountingEngine {
             'rto_net' => $rtoRecovered - $rtoExpense,
             'loan_commission_income' => $loanCommissionIncome,
             'token_forfeiture_net' => $tokenForfeitureNet,
+            'dealer_commission' => $dealerCommission,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
             'status' => $car['status'],
@@ -5557,7 +5645,7 @@ class AccountingEngine {
              FROM debtors_creditors dc
              JOIN accounts a ON a.id = dc.account_id
              WHERE dc.business_id = ?
-               AND dc.type IN ('CREDITOR', 'SELLER')
+               AND dc.type IN ('CREDITOR', 'SELLER', 'DEALER')
                AND dc.is_active = 1
              ORDER BY dc.name",
             [$this->businessId]

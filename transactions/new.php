@@ -300,7 +300,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'profit_share_pct' => $partnerShareInput === '' ? null : $partnerShareInput,
                     ];
                 }
-                $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, post('seller_name'), $purchasePaidNow);
+                // Vehicle owner: an existing ledger is reused; a new one is
+                // created only when the operator explicitly adds a new owner.
+                $sellerPartyId = trim((string) post('seller_party_id'));
+                $sellerName = trim((string) post('seller_name'));
+                if ($sellerPartyId !== '' && $sellerName !== '') {
+                    throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
+                }
+                if ($sellerPartyId === '' && $sellerName === '') {
+                    throw new Exception('Select the vehicle owner / seller for this purchase.');
+                }
+                if ($sellerPartyId === '') {
+                    Auth::requireEntityAccess('party', 'write');
+                }
+                $sellerLabel = $sellerName;
+                if ($sellerPartyId !== '') {
+                    $sellerLabel = $engine->getVehicleOwnerParty($sellerPartyId)['name'];
+                }
+                $dealerInput = [
+                    'party_id' => trim((string) post('dealer_party_id')),
+                    'name' => trim((string) post('dealer_name')),
+                    'phone' => post('dealer_phone'),
+                    'commission' => post('dealer_commission', '0'),
+                    'paid_now' => post('dealer_paid_now', ''),
+                    'payment_account' => trim((string) post('dealer_payment_account')) ?: $paymentAccountId,
+                ];
+                if ($dealerInput['party_id'] === '' && $dealerInput['name'] !== '') {
+                    Auth::requireEntityAccess('party', 'write');
+                }
+                if ($dealerInput['payment_account'] !== '' && !in_array($dealerInput['payment_account'], $writableAccountIds, true)) {
+                    throw new Exception('You do not have write access to the dealer payment account.');
+                }
+                $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $sellerLabel, $purchasePaidNow);
                 $partnerFunding = $validation['partner_funding'];
                 $purchasePaidNow = $validation['paid_now'];
 
@@ -338,7 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $carRegNo], "Car $carRegNo created from New Entry", 'transactions');
                 }
                 
-                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, post('seller_name'), $purchasePaidNow);
+                $entryId = $engine->carPurchase($carId, $amount, $date, $paymentAccountId, $narration, $partnerFunding, $sellerName, $purchasePaidNow, $dealerInput, $sellerPartyId ?: null);
                 $attachmentCarId = $carId;
                 if ($ownsPurchaseTransaction) $db->commit();
                 } catch (Throwable $purchaseError) {
@@ -736,17 +767,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" name="car_id" value="new">
                     </div>
                 </div>
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong>Vehicle Owner / Seller *</strong><span>The legal owner of this car. Their ledger receives the purchase payable — never a duplicate account.</span></div>
+                        <button type="button" class="btn btn-outline btn-sm" id="vehicle-owner-new-toggle" onclick="toggleNewParty('vehicle_owner')"><i class="ri-user-add-line"></i> Add New Owner</button>
+                    </div>
+                    <input type="hidden" name="seller_party_id" id="seller_party_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="vehicle-owner-picker-trigger" onclick="openEntityPicker('vehicle_owner', this)">
+                        <span>Select existing owner / seller</span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-row conditional-row" id="vehicle-owner-new-fields" hidden>
+                        <div class="form-group"><label class="form-label">New Owner / Seller Name *</label><input type="text" name="seller_name" class="form-control" placeholder="Full name or company name"></div>
+                        <div class="form-group"><label class="form-label">Phone</label><input type="text" name="seller_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                    </div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Seller Name</label>
-                        <input type="text" name="seller_name" class="form-control" placeholder="Seller's full name">
-                        <div class="form-hint">Required if you are not paying full purchase amount now.</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Amount Paid Now (₹)</label>
+                        <label class="form-label">Paid to Owner Now (₹)</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
                             <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                        </div>
+                        <div class="form-hint">Anything not paid now stays as the owner's pending balance. This payment is never an expense.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pay Owner From</label>
+                        <div class="form-hint form-hint-inline">Uses the <strong>Payment Account</strong> selected at the top of this entry.</div>
+                    </div>
+                </div>
+
+                <div class="entry-relation-panel" id="purchase-dealer-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong>Purchase Dealer / Broker <span class="section-optional">(Optional)</span></strong><span>The person through whom this car was found. Kept completely separate from the owner and from any future sale broker.</span></div>
+                        <button type="button" class="btn btn-outline btn-sm" id="dealer-new-toggle" onclick="toggleNewParty('dealer')"><i class="ri-user-add-line"></i> Add New Dealer / Broker</button>
+                    </div>
+                    <input type="hidden" name="dealer_party_id" id="dealer_party_id">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="dealer-picker-trigger" onclick="openEntityPicker('dealer', this)">
+                        <span>No dealer / broker involved</span>
+                        <i class="ri-search-line"></i>
+                    </button>
+                    <div class="form-row conditional-row" id="dealer-new-fields" hidden>
+                        <div class="form-group"><label class="form-label">New Dealer / Broker Name *</label><input type="text" name="dealer_name" class="form-control" placeholder="Full name or firm name"></div>
+                        <div class="form-group"><label class="form-label">Phone</label><input type="text" name="dealer_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label class="form-label">Dealer Commission (₹)</label>
+                            <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="dealer_commission" id="dealer_commission" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off"></div>
+                            <div class="form-hint">Counts as part of this car's total cost.</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Commission Paid Now (₹)</label>
+                            <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="dealer_paid_now" id="dealer_paid_now" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off"></div>
+                            <div class="form-hint">Cannot be more than the dealer commission.</div>
+                        </div>
+                        <div class="form-group" id="dealer-payment-account-group" hidden>
+                            <label class="form-label">Pay Dealer From</label>
+                            <select name="dealer_payment_account" id="dealer_payment_account" class="form-control searchable-select">
+                                <option value="">Same as Payment Account above</option>
+                                <?php foreach ($writablePrimaryAccounts as $account): ?>
+                                    <option value="<?= clean($account['id']) ?>"><?= $primaryAccountIcon($account['entity_type'] ?? '') ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>)</option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -862,6 +945,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- BUYER SECTION -->
             <div class="txn-section" id="buyer-section" hidden>
+                <!-- Acquisition facts are read-only here: the owner and purchase
+                     dealer were fixed when this car was bought. -->
+                <div class="entry-relation-panel" id="purchase-source-panel" hidden>
+                    <div class="entry-relation-heading">
+                        <div><strong>Purchase Source <span class="section-optional">(read-only)</span></strong><span>How this car was acquired. Any sale broker commission is a separate field and never mixes with the purchase dealer.</span></div>
+                    </div>
+                    <div class="table-container table-container-inline table-columns-compact">
+                        <table class="detail-table">
+                            <tr><td class="text-muted">Owner / Seller</td><td id="ps-owner">—</td></tr>
+                            <tr><td class="text-muted">Purchase Dealer / Broker</td><td id="ps-dealer">—</td></tr>
+                            <tr><td class="text-muted">Purchase Price</td><td class="amount" id="ps-price">—</td></tr>
+                            <tr><td class="text-muted">Paid to Owner</td><td class="amount flow-in" id="ps-owner-paid">—</td></tr>
+                            <tr><td class="text-muted">Owner Balance Pending</td><td class="amount" id="ps-owner-pending">—</td></tr>
+                            <tr><td class="text-muted">Dealer Commission</td><td class="amount" id="ps-dealer-commission">—</td></tr>
+                            <tr><td class="text-muted">Dealer Balance Pending</td><td class="amount" id="ps-dealer-pending">—</td></tr>
+                        </table>
+                    </div>
+                    <div class="alert alert-warning" id="ps-open-balance-warning" hidden>
+                        <i class="ri-alert-line"></i>
+                        <div><strong>Acquisition balances are still open on this car.</strong><span>You can still record the sale. Clear the owner and dealer balances from the car page so the purchase side finishes correctly.</span></div>
+                    </div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Sell Car Amount (₹) *</label>
@@ -1371,6 +1476,20 @@ const entityPickerConfig = {
         triggerId: 'creditor-picker-trigger',
         emptyLabel: 'Select creditor / seller',
     },
+    vehicle_owner: {
+        title: 'Select Vehicle Owner / Seller',
+        subtitle: 'Search the legal owner this car is being bought from. Their existing ledger will be reused.',
+        inputId: 'seller_party_id',
+        triggerId: 'vehicle-owner-picker-trigger',
+        emptyLabel: 'Select existing owner / seller',
+    },
+    dealer: {
+        title: 'Select Purchase Dealer / Broker',
+        subtitle: 'Search the dealer or broker through whom this car was found. This is not the sale broker.',
+        inputId: 'dealer_party_id',
+        triggerId: 'dealer-picker-trigger',
+        emptyLabel: 'No dealer / broker involved',
+    },
     buyer: {
         title: 'Select Buyer / Customer',
         subtitle: 'Search existing buyer and debtor ledgers by name or phone.',
@@ -1496,12 +1615,20 @@ function openCounterpartyPicker(button) {
     openEntityPicker(type === 'LOAN_TAKEN' ? 'counterparty_creditor' : 'counterparty_debtor', button);
 }
 
+const newPartyScopes = {
+    buyer: { fieldsId: 'buyer-new-fields', triggerId: 'buyer-picker-trigger', hiddenId: 'buyer_party_id', toggleId: 'buyer-new-toggle', addLabel: 'Add New Buyer' },
+    counterparty: { fieldsId: 'counterparty-new-fields', triggerId: 'counterparty-picker-trigger', hiddenId: 'counterparty_id', toggleId: 'counterparty-new-toggle', addLabel: 'Add New' },
+    vehicle_owner: { fieldsId: 'vehicle-owner-new-fields', triggerId: 'vehicle-owner-picker-trigger', hiddenId: 'seller_party_id', toggleId: 'vehicle-owner-new-toggle', addLabel: 'Add New Owner' },
+    dealer: { fieldsId: 'dealer-new-fields', triggerId: 'dealer-picker-trigger', hiddenId: 'dealer_party_id', toggleId: 'dealer-new-toggle', addLabel: 'Add New Dealer / Broker' },
+};
+
 function toggleNewParty(scope) {
-    const isBuyer = scope === 'buyer';
-    const fields = document.getElementById(isBuyer ? 'buyer-new-fields' : 'counterparty-new-fields');
-    const trigger = document.getElementById(isBuyer ? 'buyer-picker-trigger' : 'counterparty-picker-trigger');
-    const hidden = document.getElementById(isBuyer ? 'buyer_party_id' : 'counterparty_id');
-    const toggle = document.getElementById(isBuyer ? 'buyer-new-toggle' : 'counterparty-new-toggle');
+    const config = newPartyScopes[scope];
+    if (!config) return;
+    const fields = document.getElementById(config.fieldsId);
+    const trigger = document.getElementById(config.triggerId);
+    const hidden = document.getElementById(config.hiddenId);
+    const toggle = document.getElementById(config.toggleId);
     if (!fields || !trigger || !hidden || !toggle) return;
     const opening = fields.hidden;
     fields.hidden = !opening;
@@ -1516,10 +1643,26 @@ function toggleNewParty(scope) {
         fields.querySelector('input[type="text"]')?.focus();
     } else {
         fields.querySelectorAll('input').forEach((input) => input.value = '');
+        const triggerLabel = trigger.querySelector('span');
+        const pickerConfig = entityPickerConfig[scope === 'counterparty' ? 'counterparty_debtor' : scope];
+        if (triggerLabel && pickerConfig && !hidden.value) triggerLabel.textContent = pickerConfig.emptyLabel;
     }
     toggle.innerHTML = opening
         ? '<i class="ri-search-line"></i> Select Existing'
-        : `<i class="ri-user-add-line"></i> ${isBuyer ? 'Add New Buyer' : 'Add New'}`;
+        : `<i class="ri-user-add-line"></i> ${config.addLabel}`;
+}
+
+// The dealer's own Cash/Bank selector only matters when part of the commission
+// is settled immediately.
+function syncDealerCommissionUi() {
+    const paidNow = document.getElementById('dealer_paid_now');
+    const accountGroup = document.getElementById('dealer-payment-account-group');
+    if (!paidNow || !accountGroup) return;
+    const paying = parseNumericString(paidNow.value) > 0;
+    accountGroup.hidden = !paying;
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(accountGroup, paying);
+    }
 }
 
 function syncCounterpartyUi() {
@@ -1558,9 +1701,13 @@ function syncEntryExclusiveControls() {
         setConditionalControls(primaryPartnerPicker, !addingPartner);
     }
 
+    syncDealerCommissionUi();
+
     [
         ['buyer-new-fields', 'buyer-picker-trigger', 'buyer_party_id'],
         ['counterparty-new-fields', 'counterparty-picker-trigger', 'counterparty_id'],
+        ['vehicle-owner-new-fields', 'vehicle-owner-picker-trigger', 'seller_party_id'],
+        ['dealer-new-fields', 'dealer-picker-trigger', 'dealer_party_id'],
     ].forEach(([fieldsId, triggerId, hiddenId]) => {
         const fields = document.getElementById(fieldsId);
         const trigger = document.getElementById(triggerId);
@@ -1583,6 +1730,7 @@ document.getElementById('account-picker-search')?.addEventListener('input', func
 document.getElementById('entity-picker-search')?.addEventListener('input', function() {
     renderEntityPickerResults(this.value);
 });
+document.getElementById('dealer_paid_now')?.addEventListener('input', syncDealerCommissionUi);
 
 function selectSplitEntryType() {
     const select = document.getElementById('transaction_type');
@@ -2069,6 +2217,7 @@ function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPart
     applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel);
     if (kind === 'car') {
         applyCarTokenContext(linkedPartyId, linkedPartyLabel, tokenAvailable);
+        loadPurchaseSourcePanel();
     }
     closeModal('entity-picker-modal');
 }
@@ -2096,6 +2245,57 @@ function applyCarTokenContext(partyId, partyLabel, available) {
             buyerTrigger.disabled = false;
         }
         if (buyerInput) buyerInput.disabled = false;
+    }
+}
+
+// Sell Car shows acquisition facts, it never re-collects them.
+async function loadPurchaseSourcePanel() {
+    const panel = document.getElementById('purchase-source-panel');
+    if (!panel) return;
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    const carId = document.getElementById('sale_car_id')?.value || '';
+    if (txnType !== 'CAR_SALE' || !carId) {
+        panel.hidden = true;
+        return;
+    }
+
+    try {
+        const response = await fetch(`car_purchase_source.php?car_id=${encodeURIComponent(carId)}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!response.ok) throw new Error('Lookup failed');
+        const data = await response.json();
+        if (!data.found) {
+            panel.hidden = true;
+            return;
+        }
+
+        const setText = (id, value) => {
+            const node = document.getElementById(id);
+            if (node) node.textContent = value || '—';
+        };
+        const setLink = (id, label, url) => {
+            const node = document.getElementById(id);
+            if (!node) return;
+            if (!label) { node.textContent = '—'; return; }
+            node.innerHTML = url
+                ? `<a href="${escapeHtml(url)}" class="text-bold" target="_blank" rel="noopener">${escapeHtml(label)}</a>`
+                : escapeHtml(label);
+        };
+
+        setLink('ps-owner', data.owner_name, data.owner_url);
+        setLink('ps-dealer', data.dealer_name, data.dealer_url);
+        setText('ps-price', data.purchase_price);
+        setText('ps-owner-paid', data.owner_paid);
+        setText('ps-owner-pending', data.owner_pending);
+        setText('ps-dealer-commission', data.dealer_commission);
+        setText('ps-dealer-pending', data.dealer_pending);
+
+        const warning = document.getElementById('ps-open-balance-warning');
+        if (warning) warning.hidden = !((data.owner_pending_value > 0.009) || (data.dealer_pending_value > 0.009));
+        panel.hidden = false;
+    } catch (error) {
+        panel.hidden = true;
     }
 }
 
@@ -2156,6 +2356,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(syncCarClearingUi, 0);
         setTimeout(syncCounterpartyUi, 0);
         setTimeout(syncEntryExclusiveControls, 0);
+        setTimeout(loadPurchaseSourcePanel, 0);
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
@@ -2172,6 +2373,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncCarClearingUi();
     syncCounterpartyUi();
     syncEntryExclusiveControls();
+    loadPurchaseSourcePanel();
 });
 
 async function renderAccountPickerResults(query) {

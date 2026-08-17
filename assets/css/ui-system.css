@@ -767,6 +767,11 @@ body.env-testing .top-header {
     justify-content: flex-start;
 }
 
+.form-actions-center,
+.cluster-center {
+    justify-content: center;
+}
+
 .stack,
 .content-stack,
 .history-timeline {

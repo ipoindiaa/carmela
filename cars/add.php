@@ -18,6 +18,14 @@ $paymentAccountIds = array_values(array_filter(array_map(
 )));
 
 $partners = $db->fetchAll("SELECT id, name, partner_type FROM partners WHERE business_id = ? AND is_active = 1 ORDER BY name", [$businessId]);
+// Owner/seller and purchase dealer are both payable-side ledgers, and one party
+// may serve both roles, so both selectors share the same searchable list.
+$payableParties = $db->fetchAll(
+    "SELECT id, name, type, phone FROM debtors_creditors
+     WHERE business_id = ? AND is_active = 1 AND type IN ('SELLER', 'CREDITOR', 'DEALER')
+     ORDER BY name",
+    [$businessId]
+);
 $formError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -39,10 +47,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $paymentAccount = post('payment_account');
         $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
         $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
-        $sellerName = post('seller_name');
+        $sellerPartyId = trim((string) post('seller_party_id'));
+        $sellerName = trim((string) post('seller_name'));
+        if ($sellerPartyId !== '' && $sellerName !== '') {
+            throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
+        }
+        if ($sellerPartyId === '' && $sellerName === '') {
+            throw new Exception('Select the vehicle owner / seller for this purchase.');
+        }
+        if ($sellerPartyId === '') {
+            Auth::requireEntityAccess('party', 'write');
+        }
+        $sellerLabel = $sellerPartyId !== '' ? $engine->getVehicleOwnerParty($sellerPartyId)['name'] : $sellerName;
+        $dealerInput = [
+            'party_id' => trim((string) post('dealer_party_id')),
+            'name' => trim((string) post('dealer_name')),
+            'phone' => post('dealer_phone'),
+            'commission' => post('dealer_commission', '0'),
+            'paid_now' => post('dealer_paid_now', ''),
+            'payment_account' => trim((string) post('dealer_payment_account')) ?: $paymentAccount,
+        ];
+        if ($dealerInput['party_id'] === '' && $dealerInput['name'] !== '') {
+            Auth::requireEntityAccess('party', 'write');
+        }
         $expectedSalePrice = parseDecimalInput(post('expected_sale_price', '0'));
         if (!in_array($paymentAccount, $paymentAccountIds, true)) {
             throw new Exception('You do not have write access to that payment account.');
+        }
+        if ($dealerInput['payment_account'] !== '' && !in_array($dealerInput['payment_account'], $paymentAccountIds, true)) {
+            throw new Exception('You do not have write access to the dealer payment account.');
         }
 
         $partnerIds = array_values((array) ($_POST['partner_ids'] ?? []));
@@ -90,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
-        $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerName, $purchasePaidNow);
+        $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerLabel, $purchasePaidNow);
         $partnerFunding = $validation['partner_funding'];
         $purchasePaidNow = $validation['paid_now'];
 
@@ -120,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Auto-create the CAR_PURCHASE journal entry via accounting engine
         $narration = "Purchased car $regNo - " . post('make') . ' ' . post('model');
-        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $sellerName, $purchasePaidNow);
+        $engine->carPurchase($carId, $purchasePrice, $purchaseDate, $paymentAccount, $narration, $partnerFunding, $sellerName, $purchasePaidNow, $dealerInput, $sellerPartyId ?: null);
         $createdCar = $db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $businessId]);
         Auth::auditCreate('car', $carId, $createdCar ?: ['registration_no' => $regNo], "Car $regNo added with purchase entry", 'cars');
         if ($ownsTransaction) $db->commit();
@@ -202,12 +235,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="form-row">
                 <div class="form-group">
-                    <label class="form-label">Seller Name</label>
-                    <input type="text" name="seller_name" class="form-control" placeholder="Seller's full name">
-                    <div class="form-hint">Source we bought from — used to link the source's history.</div>
+                    <label class="form-label" for="seller_party_id">Vehicle Owner / Seller *</label>
+                    <select name="seller_party_id" id="seller_party_id" class="form-control searchable-select" data-search-placeholder="Search owner by name or phone">
+                        <option value="">Add a new owner below</option>
+                        <?php foreach ($payableParties as $party): ?>
+                            <option value="<?= clean($party['id']) ?>" <?= post('seller_party_id') === $party['id'] ? 'selected' : '' ?>><?= clean($party['name']) ?> · <?= clean(ucfirst(strtolower($party['type']))) ?><?= $party['phone'] ? ' · ' . clean($party['phone']) : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Amount Paid Now (₹)</label>
+                    <label class="form-label" for="seller_name">New Owner / Seller Name</label>
+                    <input type="text" name="seller_name" id="seller_name" class="form-control" placeholder="Fill only if the owner is new" value="<?= clean(post('seller_name')) ?>">
+                    <div class="form-hint">Leave blank when an existing owner is selected.</div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Amount Paid to Owner Now (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
                         <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
@@ -234,6 +279,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
+            <hr class="form-divider">
+            <div class="form-section-heading form-section-heading-spaced">
+                <div>
+                    <h3 class="form-section-title section-accent-amber"><i class="ri-user-shared-line"></i> Purchase Dealer / Broker <span class="section-optional">(Optional)</span></h3>
+                    <div class="form-hint">The dealer or broker through whom this car was found. Their commission is part of this car's cost and stays separate from any future sale broker.</div>
+                </div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label class="form-label" for="dealer_party_id">Existing Dealer / Broker</label>
+                    <select name="dealer_party_id" id="dealer_party_id" class="form-control searchable-select" data-search-placeholder="Search dealer by name or phone">
+                        <option value="">No dealer / broker involved</option>
+                        <?php foreach ($payableParties as $party): ?>
+                            <option value="<?= clean($party['id']) ?>" <?= post('dealer_party_id') === $party['id'] ? 'selected' : '' ?>><?= clean($party['name']) ?> · <?= clean(ucfirst(strtolower($party['type']))) ?><?= $party['phone'] ? ' · ' . clean($party['phone']) : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-hint">The same party may be both owner and dealer without a duplicate ledger.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="dealer_name">New Dealer / Broker Name</label>
+                    <input type="text" name="dealer_name" id="dealer_name" class="form-control" placeholder="Fill only if the dealer is new" value="<?= clean(post('dealer_name')) ?>">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="dealer_phone">Dealer Phone</label>
+                    <input type="text" name="dealer_phone" id="dealer_phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone">
+                </div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label class="form-label" for="dealer_commission">Dealer Commission (₹)</label>
+                    <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="dealer_commission" id="dealer_commission" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="dealer_paid_now">Commission Paid Now (₹)</label>
+                    <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="dealer_paid_now" id="dealer_paid_now" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off"></div>
+                    <div class="form-hint">Cannot be more than the dealer commission.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="dealer_payment_account">Pay Dealer From</label>
+                    <select name="dealer_payment_account" id="dealer_payment_account" class="form-control searchable-select">
+                        <option value="">Same as Pay From above</option>
+                        <?php foreach ($paymentAccounts as $account): ?>
+                            <option value="<?= clean($account['id']) ?>"><?= ($account['entity_type'] ?? '') === 'CASH' ? '💵' : '🏦' ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <hr class="form-divider">
             <div class="form-group">
                 <label class="form-label">Second Key Available?</label>
                 <select name="has_second_key" class="form-control">

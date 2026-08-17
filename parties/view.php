@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
         $name = trim((string) post('name'));
         $type = strtoupper((string) post('type'));
         if ($name === '') throw new Exception('Party name is required.');
-        if (!in_array($type, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER'], true)) throw new Exception('Invalid party type.');
+        if (!in_array($type, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER', 'DEALER'], true)) throw new Exception('Invalid party type.');
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
         $isActive = post('is_active', '0') === '1' ? 1 : 0;
@@ -79,6 +79,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
     <h1><i class="ri-contacts-book-line"></i> <?= clean($party['name']) ?></h1>
     <div class="page-actions">
         <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($party['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($party['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
+        <?php if (in_array($party['type'], ['DEALER', 'SELLER', 'CREDITOR'], true)): ?><a href="dealer_ledger.php?id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-user-shared-line"></i> Dealer / Broker Ledger</a><?php endif; ?>
         <?php if (!empty($party['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=party&amp;entity_id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (!empty($party['is_active']) && Auth::hasEntityAccess('party', 'delete')): ?><a href="../delete_record.php?entity_type=party&amp;id=<?= clean($party['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
@@ -97,7 +98,7 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
             <?= csrfField() ?><input type="hidden" name="action" value="update">
             <div class="form-row-3">
                 <div class="form-group"><label class="form-label">Name *</label><input type="text" name="name" class="form-control" value="<?= clean($party['name']) ?>" required></div>
-                <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control"><?php foreach (['DEBTOR','CREDITOR','BUYER','SELLER'] as $type): ?><option value="<?= $type ?>" <?= $party['type'] === $type ? 'selected' : '' ?>><?= $type ?></option><?php endforeach; ?></select></div>
+                <div class="form-group"><label class="form-label">Type *</label><select name="type" class="form-control"><?php foreach (['DEBTOR' => 'Debtor', 'CREDITOR' => 'Creditor', 'BUYER' => 'Buyer', 'SELLER' => 'Seller / Vehicle Owner', 'DEALER' => 'Dealer / Broker'] as $type => $typeLabel): ?><option value="<?= $type ?>" <?= $party['type'] === $type ? 'selected' : '' ?>><?= clean($typeLabel) ?></option><?php endforeach; ?></select></div>
                 <div class="form-group"><label class="form-label">Status</label><select name="is_active" class="form-control"><option value="1" <?= $party['is_active'] ? 'selected' : '' ?>>Active</option><option value="0" <?= !$party['is_active'] ? 'selected' : '' ?>>Inactive</option></select></div>
             </div>
             <div class="form-row-3">
@@ -144,13 +145,13 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 // For a source/seller, show every car bought from them (even fully paid) so the
 // owner can see the full relationship history for negotiation and verification.
 $relatedCars = [];
-if (in_array($party['type'], ['SELLER', 'CREDITOR'], true)) {
+if (in_array($party['type'], ['SELLER', 'CREDITOR', 'DEALER'], true)) {
     $relatedCars = $db->fetchAll(
         "SELECT id, registration_no, make, model, purchase_date, purchase_price, sale_price, status
-         FROM cars WHERE business_id = ? AND seller_party_id = ? ORDER BY purchase_date DESC, created_at DESC",
-        [$businessId, $party['id']]
+         FROM cars WHERE business_id = ? AND (seller_party_id = ? OR purchase_dealer_party_id = ?) ORDER BY purchase_date DESC, created_at DESC",
+        [$businessId, $party['id'], $party['id']]
     );
-    $relatedLabel = 'Cars Bought From This Source';
+    $relatedLabel = 'Cars Bought From / Through This Party';
 } elseif (in_array($party['type'], ['BUYER', 'DEBTOR'], true)) {
     $relatedCars = $db->fetchAll(
         "SELECT id, registration_no, make, model, purchase_date, sale_price, status
@@ -169,7 +170,7 @@ if (in_array($party['type'], ['SELLER', 'CREDITOR'], true)) {
             <tbody><?php foreach ($relatedCars as $rc): ?><tr>
                 <td><a href="../cars/view.php?id=<?= urlencode($rc['id']) ?>"><?= clean(formatRegistrationNo($rc['registration_no'])) ?></a></td>
                 <td><?= clean(trim(($rc['make'] ?? '') . ' ' . ($rc['model'] ?? ''))) ?></td>
-                <td class="text-right amount"><?= formatAmount(in_array($party['type'], ['SELLER','CREDITOR'], true) ? ($rc['purchase_price'] ?? 0) : ($rc['sale_price'] ?? 0)) ?></td>
+                <td class="text-right amount"><?= formatAmount(in_array($party['type'], ['SELLER','CREDITOR','DEALER'], true) ? ($rc['purchase_price'] ?? 0) : ($rc['sale_price'] ?? 0)) ?></td>
                 <td><span class="badge <?= ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray'][$rc['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$rc['status']] ?></span></td>
             </tr><?php endforeach; ?></tbody>
         </table>

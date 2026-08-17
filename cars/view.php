@@ -110,6 +110,11 @@ $sellerParty = !empty($car['seller_party_id']) ? $db->fetch("SELECT * FROM debto
 $carPending = $engine->getCarPendingAmounts($id);
 $buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
 $sellerOutstanding = (float) ($carPending['purchase_pending'] ?? 0);
+$dealerSettlement = $engine->getCarDealerSettlement($id);
+$dealerParty = $dealerSettlement['dealer'];
+$dealerCommissionTotal = (float) $dealerSettlement['commission_total'];
+$dealerPaidTotal = (float) $dealerSettlement['paid_total'];
+$dealerOutstanding = (float) $dealerSettlement['pending'];
 $buyerHistory = $buyerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration, jl.amount, jl.entry_type
      FROM journal_entries je
@@ -172,6 +177,53 @@ $sellerPaidLaterRow = $sellerParty ? $db->fetch(
 $sellerPaidLater = round(max(0, floatval($sellerPaidLaterRow['total'] ?? 0)), 2);
 $purchaseTotalPaid = round($purchasePaidAtPurchase + $sellerPaidLater, 2);
 $purchaseBalanceAtBuying = round(max(0, floatval($car['purchase_price']) - $purchasePaidAtPurchase), 2);
+
+// One acquisition history for the car: owner movements and dealer movements are
+// kept in separate columns so no row ever shows an unlabelled "Amount".
+$acquisitionHistory = [];
+foreach ($sellerHistory as $row) {
+    $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
+    $isOwnerPayment = $row['entry_type'] === 'DR';
+    $isHistoricalRebuild = stripos((string) ($row['narration'] ?? ''), 'Historical seller payable reconstruction') !== false;
+    $isPurchaseBalanceLine = stripos((string) ($row['narration'] ?? ''), 'Pending purchase payment') !== false;
+    $acquisitionHistory[] = [
+        'id' => $row['id'],
+        'entry_date' => $row['entry_date'],
+        'created_at' => $row['created_at'],
+        'reference_no' => $row['reference_no'],
+        'event' => $row['transaction_type'] === 'CAR_PURCHASE'
+            ? ($isOwnerPayment ? 'Amount paid to owner at purchase' : ($isHistoricalRebuild ? 'Full purchase value recorded to owner' : ($isPurchaseBalanceLine ? 'Balance left payable after purchase payment' : 'Owner payable created')))
+            : ($isRepair ? ($isOwnerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isOwnerPayment ? 'Later payment to owner' : 'Owner ledger movement')),
+        'payment_source' => ($isOwnerPayment || $isRepair) && !empty($row['payment_account_name'])
+            ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : ''))
+            : '',
+        'owner_payable' => $row['entry_type'] === 'CR' ? (float) $row['amount'] : null,
+        'owner_paid' => $isOwnerPayment ? (float) $row['amount'] : null,
+        'dealer_payable' => null,
+        'dealer_paid' => null,
+    ];
+}
+foreach ($dealerSettlement['history'] as $row) {
+    $isDealerPayment = $row['entry_type'] === 'DR';
+    $acquisitionHistory[] = [
+        'id' => $row['id'],
+        'entry_date' => $row['entry_date'],
+        'created_at' => $row['created_at'],
+        'reference_no' => $row['reference_no'],
+        'event' => $isDealerPayment ? 'Commission paid to dealer / broker' : 'Dealer / broker commission payable created',
+        'payment_source' => $isDealerPayment && !empty($row['payment_account_name'])
+            ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : ''))
+            : '',
+        'owner_payable' => null,
+        'owner_paid' => null,
+        'dealer_payable' => $isDealerPayment ? null : (float) $row['amount'],
+        'dealer_paid' => $isDealerPayment ? (float) $row['amount'] : null,
+    ];
+}
+usort($acquisitionHistory, static function ($left, $right) {
+    return strtotime(($right['entry_date'] ?? '') . ' ' . ($right['created_at'] ?? ''))
+        <=> strtotime(($left['entry_date'] ?? '') . ' ' . ($left['created_at'] ?? ''));
+});
 $rtoRecords = $db->fetchAll(
     "SELECT * FROM rto_records WHERE business_id = ? AND car_id = ? ORDER BY created_at DESC",
     [$businessId, $id]
@@ -262,12 +314,13 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'LOAN_RECEIVED', 'party_id' => $carPending['buyer_party_id'], 'car_id' => $car['id'], 'amount' => round($buyerOutstanding), 'narration' => 'Car payment clearing - ' . $car['registration_no']]) ?>" class="btn btn-success btn-sm"><i class="ri-arrow-down-circle-line"></i> Receive Pending</a>
         <?php endif; ?>
         <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Purchase Payments<?= $sellerOutstanding > 0.009 ? ' · ' . formatAmount($sellerOutstanding) : '' ?></a>
+        <a href="dealer_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $dealerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-user-shared-line"></i> Dealer Commission<?= $dealerOutstanding > 0.009 ? ' · ' . formatAmount($dealerOutstanding) : '' ?></a>
         <?php if ($car['status'] === 'IN_STOCK'): ?>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-hand-coin-line"></i> Receive Token</a>
             <a href="../transactions/new.php?type=CAR_EXPENSE&car_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-tools-line"></i> Add Expense</a>
             <a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_SALE', 'car_id' => $car['id']]) ?>" class="btn btn-success btn-sm"><i class="ri-money-rupee-circle-line"></i> Sell Car</a>
         <?php endif; ?>
-        <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)): ?><a href="#payment-history" class="btn btn-outline btn-sm"><i class="ri-wallet-3-line"></i> Payment History</a><?php endif; ?>
+        <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) || $sellerParty || $dealerParty): ?><a href="#payment-history" class="btn btn-outline btn-sm"><i class="ri-wallet-3-line"></i> Payment History</a><?php endif; ?>
         <?php if (!empty($car['buyer_party_id'])): ?><a href="loan_commission.php?car_id=<?= urlencode($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-bank-card-line"></i> Loan Commission</a><?php endif; ?>
         <a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-file-shield-2-line"></i> RTO</a>
         <a href="list.php<?= $car['status'] === 'CANCELLED' ? '?status=CANCELLED' : '' ?>" class="btn btn-outline btn-sm"><i class="ri-arrow-left-line"></i> Back</a>
@@ -326,11 +379,65 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
 
 <div class="stats-grid compact-operational-grid car-detail-pending-grid">
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($buyerOutstanding) ?></div><div class="stat-label">Sale Pending</div></div>
-    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($sellerOutstanding) ?></div><div class="stat-label">Purchase Pending</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($sellerOutstanding) ?></div><div class="stat-label">Owner Pending</div></div>
+    <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($dealerOutstanding) ?></div><div class="stat-label">Dealer Pending</div></div>
     <div class="stat-card"><div class="stat-value flow-out"><?= formatAmount($rtoSpent) ?></div><div class="stat-label">RTO Spent</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($rtoRecovered) ?></div><div class="stat-label">RTO Recovered</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($profitability['loan_commission_income'] ?? 0) ?></div><div class="stat-label">Loan Commission Income</div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($tokenSummary['available']) ?></div><div class="stat-label">Token Held</div></div>
+</div>
+
+<div class="card" id="purchase-source">
+    <div class="card-header">
+        <div><h3><i class="ri-shopping-bag-3-line"></i> Purchase Source &amp; Settlement</h3><div class="card-header-note">Who this car was bought from, who it was bought through, and exactly what is still owed to each of them.</div></div>
+        <div class="card-header-actions">
+            <?php if ($sellerParty): ?><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Pay Pending Owner Balance</a><?php endif; ?>
+            <a href="dealer_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $dealerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-secure-payment-line"></i> <?= $dealerParty ? 'Pay Pending Dealer Commission' : 'Add Purchase Dealer' ?></a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="grid-2">
+            <div class="table-container table-container-inline table-columns-compact">
+                <table class="detail-table">
+                    <tr><td class="text-muted">Vehicle Owner / Seller</td><td>
+                        <?php if ($sellerParty): ?><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php else: ?><span class="text-muted">Not recorded</span><?php endif; ?>
+                    </td></tr>
+                    <tr><td class="text-muted">Purchase Price</td><td class="amount flow-out"><?= formatAmount($car['purchase_price']) ?></td></tr>
+                    <tr><td class="text-muted">Paid at Purchase</td><td class="amount flow-in"><?= formatAmount($purchasePaidAtPurchase) ?></td></tr>
+                    <tr><td class="text-muted">Paid Later to Owner</td><td class="amount flow-in"><?= formatAmount($sellerPaidLater) ?></td></tr>
+                    <tr><td class="text-muted">Total Paid to Owner</td><td class="amount text-bold flow-in"><?= formatAmount($purchaseTotalPaid) ?></td></tr>
+                    <tr><td class="text-muted">Owner Balance Pending</td><td class="amount text-bold <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></td></tr>
+                </table>
+            </div>
+            <div class="table-container table-container-inline table-columns-compact">
+                <table class="detail-table">
+                    <tr><td class="text-muted">Purchase Dealer / Broker</td><td>
+                        <?php if ($dealerParty): ?>
+                            <a href="../parties/dealer_ledger.php?id=<?= urlencode($dealerParty['id']) ?>" class="text-bold"><?= clean($dealerParty['name']) ?></a>
+                            <?php if ($sellerParty && $dealerParty['id'] === $sellerParty['id']): ?> <span class="badge badge-blue">Same as owner</span><?php endif; ?>
+                        <?php else: ?><span class="text-muted">No dealer / broker recorded</span><?php endif; ?>
+                    </td></tr>
+                    <tr><td class="text-muted">Dealer Commission</td><td class="amount flow-out"><?= formatAmount($dealerCommissionTotal) ?></td></tr>
+                    <tr><td class="text-muted">Dealer Commission Paid</td><td class="amount flow-in"><?= formatAmount($dealerPaidTotal) ?></td></tr>
+                    <tr><td class="text-muted">Dealer Balance Pending</td><td class="amount text-bold <?= $dealerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($dealerOutstanding) ?></td></tr>
+                    <tr><td class="text-muted">Sale Broker / Sale Commission</td><td><span class="text-muted">Recorded separately at sale time — never mixed with the purchase dealer.</span></td></tr>
+                </table>
+            </div>
+        </div>
+        <div class="alert alert-info">
+            <i class="ri-information-line"></i>
+            <div>
+                <strong>In plain language</strong>
+                <span>Purchase <?= formatAmount($car['purchase_price']) ?>: <?= formatAmount($purchasePaidAtPurchase) ?> paid while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?> paid to the owner. Pending: <?= formatAmount($sellerOutstanding) ?>.<?php if ($dealerCommissionTotal > 0.009): ?> Dealer commission <?= formatAmount($dealerCommissionTotal) ?>: <?= formatAmount($dealerPaidTotal) ?> paid, <?= formatAmount($dealerOutstanding) ?> pending. This commission is part of this car's total cost; money paid to the owner is not an expense.<?php endif; ?></span>
+            </div>
+        </div>
+        <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) && ($sellerOutstanding > 0.009 || $dealerOutstanding > 0.009)): ?>
+        <div class="alert alert-warning">
+            <i class="ri-alert-line"></i>
+            <div><strong>This car is sold but acquisition balances are still open.</strong><span>Owner pending <?= formatAmount($sellerOutstanding) ?> · Dealer pending <?= formatAmount($dealerOutstanding) ?>. Clear them using the payment actions above so the purchase side is fully settled.</span></div>
+        </div>
+        <?php endif; ?>
+    </div>
 </div>
 
 <div class="grid-2 car-detail-main-grid">
@@ -604,7 +711,7 @@ updateFundingEditTotal();
 </div>
 
 <div class="grid-2 car-support-grid">
-    <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) || $sellerParty): ?>
+    <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) || $sellerParty || $dealerParty): ?>
     <div class="card" id="payment-history">
         <div class="card-header"><h3><i class="ri-wallet-3-line"></i> Payment History</h3></div>
         <div class="card-body">
@@ -616,28 +723,24 @@ updateFundingEditTotal();
             </tbody></table><?php endif; ?>
             <?php endif; ?>
             <div class="detail-subsection">
-                <h4 class="attachment-group-title">Seller Purchase &amp; Payment History</h4>
-                <div class="purchase-settlement-summary" aria-label="Purchase payment summary">
-                    <div><span>Purchase Price</span><strong class="amount flow-out"><?= formatAmount($car['purchase_price']) ?></strong></div>
-                    <div><span>Paid at Purchase</span><strong class="amount flow-in"><?= formatAmount($purchasePaidAtPurchase) ?></strong></div>
-                    <div><span>Paid Later</span><strong class="amount flow-in"><?= formatAmount($sellerPaidLater) ?></strong></div>
-                    <div><span>Still Payable</span><strong class="amount <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></strong></div>
-                </div>
-                <div class="form-hint">Purchase payment explained: <strong><?= formatAmount($purchasePaidAtPurchase) ?></strong> paid while buying + <strong><?= formatAmount($sellerPaidLater) ?></strong> paid later = <strong><?= formatAmount($purchaseTotalPaid) ?></strong> total paid to the seller.</div>
+                <h4 class="attachment-group-title">Owner &amp; Dealer Payment History</h4>
+                <div class="form-hint">Owner payments settle the purchase price and are never an expense. Dealer / broker commission is a separate cost of this car.</div>
             </div>
-            <?php if (empty($sellerHistory)): ?><p class="text-muted">No seller payable history.</p><?php else: ?>
-            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>What Happened</th><th>Cash / Bank</th><th class="text-right">Payable Created</th><th class="text-right">Paid to Seller</th></tr></thead><tbody>
-                <?php foreach ($sellerHistory as $row): ?><?php
-                    $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
-                    $isSellerPayment = $row['entry_type'] === 'DR';
-                    $isHistoricalRebuild = stripos((string) ($row['narration'] ?? ''), 'Historical seller payable reconstruction') !== false;
-                    $isPurchaseBalanceLine = stripos((string) ($row['narration'] ?? ''), 'Pending purchase payment') !== false;
-                    $sellerEvent = $row['transaction_type'] === 'CAR_PURCHASE'
-                        ? ($isSellerPayment ? 'Amount paid to seller at purchase' : ($isHistoricalRebuild ? 'Full purchase value recorded to seller' : ($isPurchaseBalanceLine ? 'Balance left payable after purchase payment' : 'Seller payable created')))
-                        : ($isRepair ? ($isSellerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isSellerPayment ? 'Later payment to seller' : 'Seller ledger movement'));
-                    $paymentSource = ($isSellerPayment || $isRepair) && !empty($row['payment_account_name']) ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
-                ?><tr><td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td><td><a href="../transactions/view.php?id=<?= $row['id'] ?>"><?= clean($row['reference_no']) ?></a></td><td><?= clean($sellerEvent) ?></td><td><?= clean($paymentSource) ?></td><td class="text-right amount flow-out"><?= $row['entry_type'] === 'CR' ? formatAmount($row['amount']) : '—' ?></td><td class="text-right amount flow-in"><?= $isSellerPayment ? formatAmount($row['amount']) : '—' ?></td></tr><?php endforeach; ?>
-            </tbody></table><?php endif; ?>
+            <?php if (empty($acquisitionHistory)): ?><p class="text-muted">No owner or dealer payable history.</p><?php else: ?>
+            <div class="table-container table-container-inline">
+            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>What Happened</th><th>Cash / Bank</th><th class="text-right">Owner Payable Created</th><th class="text-right">Paid to Owner</th><th class="text-right">Dealer Payable Created</th><th class="text-right">Paid to Dealer</th></tr></thead><tbody>
+                <?php foreach ($acquisitionHistory as $row): ?><tr>
+                    <td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td>
+                    <td><a href="../transactions/view.php?id=<?= clean($row['id']) ?>"><?= clean($row['reference_no']) ?></a></td>
+                    <td><?= clean($row['event']) ?></td>
+                    <td><?= clean($row['payment_source'] ?: '—') ?></td>
+                    <td class="text-right amount flow-out"><?= $row['owner_payable'] !== null ? formatAmount($row['owner_payable']) : '—' ?></td>
+                    <td class="text-right amount flow-in"><?= $row['owner_paid'] !== null ? formatAmount($row['owner_paid']) : '—' ?></td>
+                    <td class="text-right amount flow-out"><?= $row['dealer_payable'] !== null ? formatAmount($row['dealer_payable']) : '—' ?></td>
+                    <td class="text-right amount flow-in"><?= $row['dealer_paid'] !== null ? formatAmount($row['dealer_paid']) : '—' ?></td>
+                </tr><?php endforeach; ?>
+            </tbody></table>
+            </div><?php endif; ?>
         </div>
     </div>
     <?php endif; ?>

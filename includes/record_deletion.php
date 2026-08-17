@@ -185,8 +185,8 @@ class RecordDeletionService {
         $accountIds = array_values(array_filter([$party['account_id']]));
         $this->assertNoPostedActivity('party_id', $partyId, $accountIds, 'Reverse or clear all active receipts, payments, loans, and tokens first.');
         $carLinks = $this->db->fetch(
-            "SELECT COUNT(*) AS cnt FROM cars WHERE business_id = ? AND status <> 'CANCELLED' AND (buyer_party_id = ? OR seller_party_id = ? OR commission_owner_party_id = ?)",
-            [$this->businessId, $partyId, $partyId, $partyId]
+            "SELECT COUNT(*) AS cnt FROM cars WHERE business_id = ? AND status <> 'CANCELLED' AND (buyer_party_id = ? OR seller_party_id = ? OR commission_owner_party_id = ? OR purchase_dealer_party_id = ?)",
+            [$this->businessId, $partyId, $partyId, $partyId, $partyId]
         );
         if (($carLinks['cnt'] ?? 0) > 0) throw new Exception('This party is connected to an active car. Remove or reverse that car relationship first.');
         return $this->removeOrArchiveMaster('debtors_creditors', 'party', $party, $accountIds, $reason, 'parties');

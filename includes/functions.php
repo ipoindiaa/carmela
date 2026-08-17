@@ -39,6 +39,17 @@ function accountLedgerUrl($accountId, $fromDate = null, $toDate = null) {
     return APP_URL . 'reports/ledger.php?' . http_build_query($query);
 }
 
+function partyTypeLabel($partyType) {
+    $partyType = strtoupper(trim((string) $partyType));
+    return [
+        'DEBTOR' => 'Debtor',
+        'CREDITOR' => 'Creditor',
+        'BUYER' => 'Buyer',
+        'SELLER' => 'Seller / Vehicle Owner',
+        'DEALER' => 'Dealer / Broker',
+    ][$partyType] ?? $partyType;
+}
+
 function transactionTypeLabel($transactionType, array $context = []) {
     $transactionType = strtoupper((string) $transactionType);
     $entryTypeId = trim((string) ($context['entry_type_id'] ?? ''));

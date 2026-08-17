@@ -47,8 +47,11 @@ if ($accountId) {
         ];
 
         $entries = $db->fetchAll(
-            "SELECT je.id AS entry_id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type
+            "SELECT je.id AS entry_id, je.business_id, je.entry_date, je.created_at, je.reference_no, je.narration, je.transaction_type, je.entry_type_id, je.entry_amount, jl.amount, jl.entry_type,
+                    je.car_id, je.party_id, c.registration_no AS car_registration_no, dc.name AS party_name, dc.type AS party_type
              FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+             LEFT JOIN cars c ON c.id = je.car_id AND c.business_id = je.business_id
+             LEFT JOIN debtors_creditors dc ON dc.id = je.party_id AND dc.business_id = je.business_id
              WHERE jl.account_id = ? AND je.status IN ('POSTED','REVERSED') AND je.entry_date BETWEEN ? AND ?
              ORDER BY je.entry_date, je.created_at", [$accountId, $dateFrom, $dateTo]);
     }
@@ -99,12 +102,13 @@ $displayEntries = array_reverse($displayEntries);
 
 <div class="table-container table-container-fill">
     <table>
-        <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
+        <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Car / Party</th><th>Narration</th><th class="text-right debit-amount">Debit</th><th class="text-right credit-amount">Credit</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
         <?php foreach ($displayEntries as $e): ?>
         <tr>
             <td><?= renderDateTimeStack($e['entry_date'], $e['created_at']) ?></td><td><a class="text-bold" href="../transactions/view.php?id=<?= urlencode($e['entry_id']) ?>"><?= clean($e['reference_no']) ?></a></td>
             <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($e['transaction_type'], $e)) ?></span></td>
+            <td><?php if (!empty($e['car_registration_no'])): ?><a href="../cars/view.php?id=<?= urlencode((string) $e['car_id']) ?>"><?= clean($e['car_registration_no']) ?></a><?php else: ?>-<?php endif; ?><?php if (!empty($e['party_name'])): ?><div class="table-note table-note-compact"><a href="../parties/view.php?id=<?= urlencode((string) $e['party_id']) ?>"><?= clean($e['party_name']) ?></a><?= !empty($e['party_type']) ? ' · ' . clean(partyTypeLabel($e['party_type'])) : '' ?></div><?php endif; ?></td>
             <td><?= clean(mb_substr($e['narration']??'',0,50)) ?></td>
             <td class="text-right amount debit-amount"><?= $e['entry_type']==='DR' ? formatAmount($e['amount']) : '' ?></td>
             <td class="text-right amount credit-amount"><?= $e['entry_type']==='CR' ? formatAmount($e['amount']) : '' ?></td>

@@ -197,26 +197,91 @@ switch ($kind) {
         }
         break;
 
+    case 'vehicle_owner':
+    case 'dealer':
+        // Vehicle owner and purchase dealer are different roles, but both are
+        // payable-side ledgers. One party may legitimately serve both roles,
+        // so both pickers search the same payable party types.
+        $isDealerPicker = $kind === 'dealer';
+        $rows = $db->fetchAll(
+            "SELECT dc.id, dc.name, dc.type, dc.phone,
+                    (SELECT COUNT(*) FROM cars c WHERE c.business_id = dc.business_id AND c.purchase_dealer_party_id = dc.id) AS dealer_car_count,
+                    (SELECT COUNT(*) FROM cars c WHERE c.business_id = dc.business_id AND c.seller_party_id = dc.id) AS owner_car_count
+             FROM debtors_creditors dc
+             WHERE dc.business_id = ?
+               AND dc.is_active = 1
+               AND dc.type IN ('DEALER', 'SELLER', 'CREDITOR')
+               AND (
+                   dc.name LIKE ?
+                   OR dc.phone LIKE ?
+               )
+             ORDER BY CASE WHEN dc.type = ? THEN 0 ELSE 1 END, dc.name
+             LIMIT $limit",
+            [$businessId, $needle, $needle, $isDealerPicker ? 'DEALER' : 'SELLER']
+        );
+        foreach ($rows as $row) {
+            $roleParts = [ucfirst(strtolower($row['type']))];
+            if ((int) $row['dealer_car_count'] > 0) $roleParts[] = (int) $row['dealer_car_count'] . ' dealt car(s)';
+            if ((int) $row['owner_car_count'] > 0) $roleParts[] = (int) $row['owner_car_count'] . ' owned car(s)';
+            if (!empty($row['phone'])) $roleParts[] = $row['phone'];
+            $results[] = [
+                'id' => $row['id'],
+                'label' => $row['name'],
+                'meta' => implode(' | ', $roleParts),
+            ];
+        }
+        break;
+
+    case 'dealer_car':
+        $rows = $db->fetchAll(
+            "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,
+                    dealer.id AS dealer_party_id, dealer.name AS dealer_name
+             FROM cars c
+             JOIN debtors_creditors dealer ON dealer.id = c.purchase_dealer_party_id AND dealer.business_id = c.business_id
+             WHERE c.business_id = ?
+               AND c.status <> 'CANCELLED'
+               AND (
+                   c.registration_no LIKE ?
+                   OR c.make LIKE ?
+                   OR c.model LIKE ?
+                   OR dealer.name LIKE ?
+               )
+             ORDER BY c.registration_no
+             LIMIT $limit",
+            [$businessId, $needle, $needle, $needle, $needle]
+        );
+        foreach ($rows as $row) {
+            $results[] = [
+                'id' => $row['id'],
+                'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? ''))),
+                'meta' => 'Dealer: ' . $row['dealer_name'],
+                'linked_party_id' => $row['dealer_party_id'],
+                'linked_party_label' => $row['dealer_name'],
+            ];
+        }
+        break;
+
     case 'buyer':
     case 'counterparty_debtor':
     case 'debtor':
     case 'counterparty_creditor':
     case 'creditor':
         $isDebtor = in_array($kind, ['buyer', 'counterparty_debtor', 'debtor'], true);
-        $types = $isDebtor ? ['DEBTOR', 'BUYER'] : ['CREDITOR', 'SELLER'];
+        $types = $isDebtor ? ['DEBTOR', 'BUYER'] : ['CREDITOR', 'SELLER', 'DEALER'];
+        $typePlaceholders = implode(',', array_fill(0, count($types), '?'));
         $rows = $db->fetchAll(
             "SELECT id, name, type, phone
              FROM debtors_creditors
              WHERE business_id = ?
                AND is_active = 1
-               AND type IN (?, ?)
+               AND type IN ($typePlaceholders)
                AND (
                    name LIKE ?
                    OR phone LIKE ?
                )
              ORDER BY name
              LIMIT $limit",
-            [$businessId, $types[0], $types[1], $needle, $needle]
+            array_merge([$businessId], $types, [$needle, $needle])
         );
         foreach ($rows as $row) {
             $results[] = [
