@@ -112,6 +112,23 @@ try {
     assertUll($dealerPayment['car_id'] === $carId && $dealerPayment['party_id'] === $car['purchase_dealer_party_id'], 'Dealer commission payment stays linked to its car and dealer ledger');
     assertUll(abs(floatval($costAfterDealerCommission['total_cost']) - 465000.0) < 0.01, 'Dealer commission is capitalized into the bought car total cost once, not treated as an owner payment');
 
+    $increaseCorrectionId = $engine->correctCarPurchaseAmount($carId, 475000, $date, 'Purchase deal was entered ₹25,000 too low.');
+    $increasedCar = $db->fetch("SELECT purchase_price FROM cars WHERE id = ?", [$carId]);
+    $increasedPending = $engine->getCarPendingAmounts($carId);
+    $increaseLines = $db->fetchAll("SELECT account_id, entry_type, amount FROM journal_lines WHERE journal_entry_id = ? ORDER BY entry_type", [$increaseCorrectionId]);
+    assertUll(abs(floatval($increasedCar['purchase_price']) - 475000.0) < 0.01 && abs(floatval($increasedPending['purchase_pending']) - 25000.0) < 0.01, 'Increasing a car purchase amount updates the car price and creates only the additional seller payable');
+    assertUll(count($increaseLines) === 2 && in_array('DR', array_column($increaseLines, 'entry_type'), true) && in_array('CR', array_column($increaseLines, 'entry_type'), true), 'Purchase amount increase is a balanced car-and-seller journal correction with no cash line');
+    $engine->loanRepaid($car['seller_party_id'], 25000, $date, $cash['id'], 'ULL corrected purchase balance payment', $carId);
+
+    $decreaseCorrectionId = $engine->correctCarPurchaseAmount($carId, 450000, $date, 'Purchase deal was entered ₹25,000 too high.');
+    $decreasedCar = $db->fetch("SELECT purchase_price FROM cars WHERE id = ?", [$carId]);
+    $decreasedPending = $engine->getCarPendingAmounts($carId);
+    $decreaseLines = $db->fetchAll("SELECT account_id, entry_type, amount FROM journal_lines WHERE journal_entry_id = ? ORDER BY entry_type", [$decreaseCorrectionId]);
+    $costAfterPurchaseCorrection = $engine->getCarProfitability($carId);
+    assertUll(abs(floatval($decreasedCar['purchase_price']) - 450000.0) < 0.01 && $decreasedPending['purchase_pending'] < 0.01, 'Reducing a fully paid purchase value records the seller refund / advance without creating a false payable');
+    assertUll(count($decreaseLines) === 2 && in_array('DR', array_column($decreaseLines, 'entry_type'), true) && in_array('CR', array_column($decreaseLines, 'entry_type'), true), 'Purchase amount decrease is a balanced seller-and-car journal correction with no cash line');
+    assertUll(abs(floatval($costAfterPurchaseCorrection['total_cost']) - 465000.0) < 0.01, 'Car profitability uses the corrected signed vehicle cost after purchase amount changes');
+
     $legacyCarId = Database::uuid();
     $legacyRegistration = 'GJ99LH' . random_int(1000, 9999);
     $legacyCarAccountId = $engine->createAccount('ULL-LEG-' . $suffix, "ULL Legacy Car - $legacyRegistration", 'ASSET', 'Inventory', 'CAR', $legacyCarId);
@@ -142,7 +159,9 @@ try {
     );
     assertUll($legacyCar['seller_party_id'] === $legacySellerId && abs(floatval($legacyCar['purchase_paid_amount']) - 50000.0) < 0.01, 'Historical repair links the seller and preserves only the amount actually paid at purchase');
     assertUll(abs(floatval($legacyPending['purchase_pending']) - 55000.0) < 0.01, 'Historical repair creates the correct car-linked seller balance pending');
-    assertUll(count($legacyRepairLines) === 2 && floatval($legacyRepairLines[0]['amount']) === 105000.0 && floatval($legacyRepairLines[1]['amount']) === 50000.0, 'Historical repair reconstructs both the seller payable and the original direct seller payment');
+    $legacyRepairPayable = array_values(array_filter($legacyRepairLines, static fn($line) => $line['entry_type'] === 'CR'));
+    $legacyRepairPaid = array_values(array_filter($legacyRepairLines, static fn($line) => $line['entry_type'] === 'DR'));
+    assertUll(count($legacyRepairPayable) === 1 && count($legacyRepairPaid) === 1 && floatval($legacyRepairPayable[0]['amount']) === 105000.0 && floatval($legacyRepairPaid[0]['amount']) === 50000.0, 'Historical repair reconstructs both the seller payable and the original direct seller payment');
 
     $saleId = $engine->carSale($carId, 575000, $date, $cash['id'], 'ULL sale with buyer receivable', 'ULL Buyer ' . $suffix, 200000);
     $timeline = $engine->getCarTimeline($carId);

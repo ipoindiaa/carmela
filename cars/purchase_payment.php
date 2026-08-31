@@ -135,11 +135,17 @@ $paymentTotalRow = $sellerParty ? $db->fetch(
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id
      WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
-       AND jl.account_id = ? AND jl.entry_type = 'DR'",
+       AND jl.account_id = ? AND jl.entry_type = 'DR'
+       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID')",
     [$businessId, $carId, $sellerParty['account_id']]
 ) : null;
 $paidToSeller = (float) ($paymentTotalRow['payment_total'] ?? 0);
-$sellerPurchaseAmount = $paidToSeller + $purchasePending;
+$partnerFundingRow = $db->fetch(
+    "SELECT COALESCE(SUM(funding_amount), 0) AS total FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'",
+    [$businessId, $carId]
+);
+$sellerPurchaseAmount = round(max(0, floatval($car['purchase_price']) - floatval($partnerFundingRow['total'] ?? 0)), 2);
+$sellerRefundDue = round(max(0, $paidToSeller - $sellerPurchaseAmount), 2);
 
 $paymentHistory = $sellerParty ? $db->fetchAll(
     "SELECT je.id, je.entry_date, je.created_at, je.reference_no, je.transaction_type, je.narration,
@@ -157,7 +163,7 @@ $paymentHistory = $sellerParty ? $db->fetchAll(
             OR (je.transaction_type <> 'PURCHASE_PAYMENT_REPAIR' AND payment_line.entry_type = 'CR'))
      LEFT JOIN accounts payment_account ON payment_account.id = payment_line.account_id
      WHERE je.business_id = ? AND je.car_id = ? AND je.status IN ('POSTED', 'REVERSED')
-       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID')
+       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'PURCHASE_AMOUNT_CORRECTION', 'LOAN_REPAID')
      ORDER BY je.entry_date ASC, je.created_at ASC",
     [$sellerParty['account_id'], $businessId, $businessId, $carId]
 ) : [];
@@ -211,6 +217,10 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="stat-card"><div class="stat-value <?= $purchasePending > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($purchasePending) ?></div><div class="stat-label">Purchase Balance Pending</div></div>
 </div>
 
+<?php if ($sellerRefundDue > 0.009): ?>
+<div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Owner refund / advance due: <?= formatAmount($sellerRefundDue) ?></strong><span>The corrected purchase amount is lower than the amount already paid. This is a recoverable owner balance; it is not another purchase payment.</span></div></div>
+<?php endif; ?>
+
 <?php if ($purchasePending > 0.009 && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
 <form method="POST" class="card purchase-payment-form" data-confirm-submit="Record this payment against the purchase balance of this car?">
     <?= csrfField() ?>
@@ -236,25 +246,29 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
-                <thead><tr><th>Date / Time</th><th>Reference</th><th>Details</th><th>Paid From</th><th class="text-right">Payable</th><th class="text-right">Paid</th></tr></thead>
+                <thead><tr><th>Date / Time</th><th>Reference</th><th>Details</th><th>Paid From</th><th class="text-right">Payable</th><th class="text-right">Paid</th><th class="text-right">Correction</th></tr></thead>
                 <tbody>
                 <?php foreach ($paymentHistory as $row): ?><?php
                     $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
-                    $isPayment = $row['entry_type'] === 'DR';
+                    $isAmountCorrection = $row['transaction_type'] === 'PURCHASE_AMOUNT_CORRECTION';
+                    $isPayment = $row['entry_type'] === 'DR' && !$isAmountCorrection;
                     $paymentSource = ($isPayment || $isRepair) && !empty($row['payment_account_name'])
                         ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : '')) : '—';
-                    $detail = $row['transaction_type'] === 'CAR_PURCHASE' && !$isPayment ? 'Purchase payable created' : ($isRepair ? ($isPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isPayment ? 'Payment to seller' : 'Seller ledger movement'));
+                    $detail = $isAmountCorrection
+                        ? ($row['entry_type'] === 'DR' ? 'Purchase amount reduced — seller refund / advance due' : 'Purchase amount increased — additional seller payable')
+                        : ($row['transaction_type'] === 'CAR_PURCHASE' && !$isPayment ? 'Purchase payable created' : ($isRepair ? ($isPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isPayment ? 'Payment to seller' : 'Seller ledger movement')));
                 ?><tr>
                     <td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td>
                     <td><a href="../transactions/view.php?id=<?= clean($row['id']) ?>"><?= clean($row['reference_no']) ?></a></td>
                     <td><?= clean($detail) ?><?php if (!empty($row['narration'])): ?><div class="text-muted"><?= clean($row['narration']) ?></div><?php endif; ?></td>
                     <td><?= $isRepair && $paymentSource !== '—' ? 'Cash/Bank restored: ' . clean($paymentSource) : clean($paymentSource) ?></td>
-                    <td class="text-right amount flow-out"><?= !$isPayment ? formatAmount($row['amount']) : '—' ?></td>
+                    <td class="text-right amount flow-out"><?= !$isPayment && !$isAmountCorrection ? formatAmount($row['amount']) : '—' ?></td>
                     <td class="text-right amount flow-in"><?= $isPayment ? formatAmount($row['amount']) : '—' ?></td>
+                    <td class="text-right amount <?= $isAmountCorrection && $row['entry_type'] === 'DR' ? 'flow-in' : 'flow-out' ?>"><?= $isAmountCorrection ? ($row['entry_type'] === 'DR' ? '− ' : '+ ') . formatAmount($row['amount']) : '—' ?></td>
                 </tr><?php endforeach; ?>
-                <?php if (empty($paymentHistory)): ?><tr><td colspan="6" class="text-center text-muted empty-table-cell">No purchase payable or payment has been recorded for this car.</td></tr><?php endif; ?>
+                <?php if (empty($paymentHistory)): ?><tr><td colspan="7" class="text-center text-muted empty-table-cell">No purchase payable or payment has been recorded for this car.</td></tr><?php endif; ?>
                 </tbody>
-                <tfoot><tr><th colspan="4" class="text-right">Totals</th><th class="text-right amount flow-out"><?= formatAmount($sellerPurchaseAmount) ?></th><th class="text-right amount flow-in"><?= formatAmount($paidToSeller) ?></th></tr></tfoot>
+                <tfoot><tr><th colspan="4" class="text-right">Totals</th><th class="text-right amount flow-out"><?= formatAmount($sellerPurchaseAmount) ?></th><th class="text-right amount flow-in"><?= formatAmount($paidToSeller) ?></th><th></th></tr></tfoot>
             </table>
         </div>
     </div>

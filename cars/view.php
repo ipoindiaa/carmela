@@ -35,6 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newDetails = array_intersect_key($updatedCar ?: [], array_flip(['make', 'model', 'year', 'color', 'has_second_key', 'expected_sale_price', 'notes']));
             Auth::auditUpdate('car', $id, $oldDetails, $newDetails, 'Car details updated', 'cars');
             setFlash('success', 'Car details updated.');
+        } elseif ($action === 'correct_purchase_amount') {
+            $_SESSION['car_purchase_amount_correction_draft'][$id] = [
+                'purchase_amount' => post('purchase_amount'),
+                'correction_date' => post('correction_date'),
+                'correction_reason' => post('correction_reason'),
+            ];
+            if (post('confirm_purchase_amount_correction') !== '1') {
+                throw new Exception('Confirm that this is an accounting correction before saving.');
+            }
+            $entryId = $engine->correctCarPurchaseAmount(
+                $id,
+                parseDecimalInput(post('purchase_amount')),
+                post('correction_date'),
+                post('correction_reason')
+            );
+            unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
+            setFlash('success', 'Purchase amount corrected. Original entry remains in History; correction entry: ' . $entryId);
         } elseif ($action === 'correct_partner_funding') {
             $partnerIds = array_values((array) ($_POST['partner_ids'] ?? []));
             $amounts = array_values((array) ($_POST['partner_amounts'] ?? []));
@@ -88,10 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $engine->refundCarToken(post('token_id'), post('refund_amount'), post('refund_date'), post('payment_account'), post('refund_reason'));
             setFlash('success', 'Token refunded.');
         }
-        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : "view.php?id=$id");
+        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : ($action === 'correct_purchase_amount' ? "view.php?id=$id&edit=1#purchase-amount-correction" : "view.php?id=$id"));
     } catch (Exception $e) {
         setFlash('error', $e->getMessage());
-        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : "view.php?id=$id");
+        redirect($action === 'correct_partner_funding' ? "view.php?id=$id&edit_funding=1#car-partner-terms" : ($action === 'correct_purchase_amount' ? "view.php?id=$id&edit=1#purchase-amount-correction" : "view.php?id=$id"));
     }
 }
 
@@ -144,7 +161,8 @@ $sellerPaymentTotalRow = $sellerParty ? $db->fetch(
      FROM journal_entries je
      JOIN journal_lines jl ON jl.journal_entry_id = je.id
      WHERE je.business_id = ? AND je.status = 'POSTED' AND je.car_id = ?
-       AND jl.account_id = ? AND jl.entry_type = 'DR'",
+       AND jl.account_id = ? AND jl.entry_type = 'DR'
+       AND je.transaction_type IN ('CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID')",
     [$businessId, $id, $sellerParty['account_id']]
 ) : null;
 $sellerPaymentsTotal = (float) ($sellerPaymentTotalRow['payment_total'] ?? 0);
@@ -176,14 +194,22 @@ $sellerPaidLaterRow = $sellerParty ? $db->fetch(
 ) : null;
 $sellerPaidLater = round(max(0, floatval($sellerPaidLaterRow['total'] ?? 0)), 2);
 $purchaseTotalPaid = round($purchasePaidAtPurchase + $sellerPaidLater, 2);
-$purchaseBalanceAtBuying = round(max(0, floatval($car['purchase_price']) - $purchasePaidAtPurchase), 2);
+$activePartnerFundingRow = $db->fetch(
+    "SELECT COALESCE(SUM(funding_amount), 0) AS total FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'",
+    [$businessId, $id]
+);
+$activePartnerFunding = round(floatval($activePartnerFundingRow['total'] ?? 0), 2);
+$sellerAgreedPurchaseAmount = round(max(0, floatval($car['purchase_price']) - $activePartnerFunding), 2);
+$sellerRefundDue = round(max(0, $purchaseTotalPaid - $sellerAgreedPurchaseAmount), 2);
+$purchaseBalanceAtBuying = round(max(0, $sellerAgreedPurchaseAmount - $purchasePaidAtPurchase), 2);
 
 // One acquisition history for the car: owner movements and dealer movements are
 // kept in separate columns so no row ever shows an unlabelled "Amount".
 $acquisitionHistory = [];
 foreach ($sellerHistory as $row) {
     $isRepair = $row['transaction_type'] === 'PURCHASE_PAYMENT_REPAIR';
-    $isOwnerPayment = $row['entry_type'] === 'DR';
+    $isPurchaseAmountCorrection = $row['transaction_type'] === 'PURCHASE_AMOUNT_CORRECTION';
+    $isOwnerPayment = $row['entry_type'] === 'DR' && !$isPurchaseAmountCorrection;
     $isHistoricalRebuild = stripos((string) ($row['narration'] ?? ''), 'Historical seller payable reconstruction') !== false;
     $isPurchaseBalanceLine = stripos((string) ($row['narration'] ?? ''), 'Pending purchase payment') !== false;
     $acquisitionHistory[] = [
@@ -191,14 +217,18 @@ foreach ($sellerHistory as $row) {
         'entry_date' => $row['entry_date'],
         'created_at' => $row['created_at'],
         'reference_no' => $row['reference_no'],
-        'event' => $row['transaction_type'] === 'CAR_PURCHASE'
+        'event' => $isPurchaseAmountCorrection
+            ? ($row['entry_type'] === 'DR' ? 'Purchase value reduced — owner refund / advance receivable' : 'Purchase value increased — additional owner payable')
+            : ($row['transaction_type'] === 'CAR_PURCHASE'
             ? ($isOwnerPayment ? 'Amount paid to owner at purchase' : ($isHistoricalRebuild ? 'Full purchase value recorded to owner' : ($isPurchaseBalanceLine ? 'Balance left payable after purchase payment' : 'Owner payable created')))
-            : ($isRepair ? ($isOwnerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isOwnerPayment ? 'Later payment to owner' : 'Owner ledger movement')),
-        'payment_source' => ($isOwnerPayment || $isRepair) && !empty($row['payment_account_name'])
+            : ($isRepair ? ($isOwnerPayment ? 'Historical payment reconstructed' : 'Historical payable reconstructed') : ($isOwnerPayment ? 'Later payment to owner' : 'Owner ledger movement'))),
+        'payment_source' => ($isOwnerPayment || $isRepair) && !$isPurchaseAmountCorrection && !empty($row['payment_account_name'])
             ? trim($row['payment_account_name'] . (!empty($row['payment_account_code']) ? ' (' . $row['payment_account_code'] . ')' : ''))
             : '',
-        'owner_payable' => $row['entry_type'] === 'CR' ? (float) $row['amount'] : null,
+        'owner_payable' => $row['entry_type'] === 'CR' && !$isPurchaseAmountCorrection ? (float) $row['amount'] : null,
         'owner_paid' => $isOwnerPayment ? (float) $row['amount'] : null,
+        'owner_adjustment' => $isPurchaseAmountCorrection ? (float) $row['amount'] : null,
+        'owner_adjustment_direction' => $isPurchaseAmountCorrection && $row['entry_type'] === 'DR' ? 'DOWN' : ($isPurchaseAmountCorrection ? 'UP' : null),
         'dealer_payable' => null,
         'dealer_paid' => null,
     ];
@@ -216,6 +246,8 @@ foreach ($dealerSettlement['history'] as $row) {
             : '',
         'owner_payable' => null,
         'owner_paid' => null,
+        'owner_adjustment' => null,
+        'owner_adjustment_direction' => null,
         'dealer_payable' => $isDealerPayment ? null : (float) $row['amount'],
         'dealer_paid' => $isDealerPayment ? (float) $row['amount'] : null,
     ];
@@ -302,12 +334,14 @@ $contributions = $db->fetchAll(
 $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $contributions)), 2);
 $partnerFundingDraft = $_SESSION['car_partner_funding_draft'][$id] ?? null;
 unset($_SESSION['car_partner_funding_draft'][$id]);
+$purchaseAmountCorrectionDraft = $_SESSION['car_purchase_amount_correction_draft'][$id] ?? null;
+unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
 ?>
 
 <div class="page-header">
     <h1><i class="ri-car-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1>
     <div class="page-actions car-detail-actions">
-        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
+        <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit / Correct</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($car['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if ($buyerOutstanding > 0 && !empty($carPending['buyer_party_id'])): ?>
@@ -333,7 +367,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these car detail changes? Every changed field will be recorded in History.">
             <?= csrfField() ?><input type="hidden" name="action" value="update_details">
-            <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase amount, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use reversal for financial corrections.</div>
+            <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use the Purchase Amount Correction section below to safely correct a wrongly entered buying amount.</div>
             <div class="form-row-3">
                 <div class="form-group"><label class="form-label">Make</label><input type="text" name="make" class="form-control" value="<?= clean($car['make']) ?>"></div>
                 <div class="form-group"><label class="form-label">Model</label><input type="text" name="model" class="form-control" value="<?= clean($car['model']) ?>"></div>
@@ -349,6 +383,35 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
             <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"><?= clean($car['notes']) ?></textarea></div>
             <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button><a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a></div>
         </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (get('edit') === '1' && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
+<div class="card car-edit-card" id="purchase-amount-correction">
+    <div class="card-header"><div><h3><i class="ri-edit-2-line"></i> Correct Purchase Amount</h3><div class="card-header-note">Use this only when the original buying amount was entered wrongly.</div></div></div>
+    <div class="card-body">
+        <?php if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
+            <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This is not a bought business car.</strong><span>Commission and outside cars do not have a business purchase amount to correct.</span></div></div>
+        <?php elseif ($car['status'] !== 'IN_STOCK'): ?>
+            <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This car is no longer in stock.</strong><span>Reverse the sale first, then correct its purchase amount so profit and sale history remain traceable.</span></div></div>
+        <?php elseif (!$sellerParty): ?>
+            <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>No vehicle owner / seller is linked to this car.</strong><span>Link the original seller first so the correction updates the correct party ledger.</span></div></div>
+            <div class="form-actions form-actions-start"><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-primary"><i class="ri-tools-line"></i> Fix Historical Purchase Record</a></div>
+        <?php else: ?>
+            <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Current purchase amount: <?= formatAmount($car['purchase_price']) ?></strong><span>This does not edit or delete the original purchase. It posts a dated correction against <?= clean($sellerParty['name']) ?>, updates this car's cost and purchase balance, and keeps the full audit history. No Cash or Bank amount is moved by this correction.</span></div></div>
+            <form method="POST" data-confirm-submit="Save this purchase amount correction? The original purchase entry will remain in History and the seller balance will be adjusted.">
+                <?= csrfField() ?><input type="hidden" name="action" value="correct_purchase_amount">
+                <div class="form-row-3">
+                    <div class="form-group"><label class="form-label" for="purchase_amount">Correct Purchase Amount (₹) *</label><input id="purchase_amount" type="text" name="purchase_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($purchaseAmountCorrectionDraft['purchase_amount'] ?? $car['purchase_price']) ?>" required><div class="form-hint">Enter the agreed purchase value, not only the unpaid amount.</div></div>
+                    <div class="form-group"><label class="form-label" for="correction_date">Correction Date *</label><input id="correction_date" type="date" name="correction_date" class="form-control" value="<?= clean($purchaseAmountCorrectionDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
+                    <div class="form-group"><label class="form-label">Vehicle Owner / Seller</label><div class="form-control form-control-readonly"><?= clean($sellerParty['name']) ?></div><div class="form-hint">The seller ledger is linked automatically.</div></div>
+                </div>
+                <div class="form-group"><label class="form-label" for="correction_reason">Reason for Correction *</label><textarea id="correction_reason" name="correction_reason" class="form-control" rows="3" minlength="5" maxlength="500" required placeholder="Example: Purchase was entered as ₹11,50,000; confirmed owner deal is ₹11,00,000."><?= clean($purchaseAmountCorrectionDraft['correction_reason'] ?? '') ?></textarea></div>
+                <label class="check-row"><input type="checkbox" name="confirm_purchase_amount_correction" value="1" required> <span>I confirm this is a correction to the agreed purchase value. I understand the original voucher is preserved and the owner payable or owner refund receivable will be adjusted automatically.</span></label>
+                <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Save Purchase Amount Correction</button><a href="view.php?id=<?= clean($car['id']) ?>" class="btn btn-outline">Cancel</a></div>
+            </form>
+        <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
@@ -407,6 +470,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
                     <tr><td class="text-muted">Paid Later to Owner</td><td class="amount flow-in"><?= formatAmount($sellerPaidLater) ?></td></tr>
                     <tr><td class="text-muted">Total Paid to Owner</td><td class="amount text-bold flow-in"><?= formatAmount($purchaseTotalPaid) ?></td></tr>
                     <tr><td class="text-muted">Owner Balance Pending</td><td class="amount text-bold <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></td></tr>
+                    <?php if ($sellerRefundDue > 0.009): ?><tr><td class="text-muted">Owner Refund / Advance Due</td><td class="amount text-bold flow-in"><?= formatAmount($sellerRefundDue) ?></td></tr><?php endif; ?>
                 </table>
             </div>
             <div class="table-container table-container-inline table-columns-compact">
@@ -428,7 +492,7 @@ unset($_SESSION['car_partner_funding_draft'][$id]);
             <i class="ri-information-line"></i>
             <div>
                 <strong>In plain language</strong>
-                <span>Purchase <?= formatAmount($car['purchase_price']) ?>: <?= formatAmount($purchasePaidAtPurchase) ?> paid while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?> paid to the owner. Pending: <?= formatAmount($sellerOutstanding) ?>.<?php if ($dealerCommissionTotal > 0.009): ?> Dealer commission <?= formatAmount($dealerCommissionTotal) ?>: <?= formatAmount($dealerPaidTotal) ?> paid, <?= formatAmount($dealerOutstanding) ?> pending. This commission is part of this car's total cost; money paid to the owner is not an expense.<?php endif; ?></span>
+                <span>Purchase <?= formatAmount($car['purchase_price']) ?>: <?= formatAmount($purchasePaidAtPurchase) ?> paid while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?> paid to the owner. Pending: <?= formatAmount($sellerOutstanding) ?>.<?php if ($sellerRefundDue > 0.009): ?> The owner has <?= formatAmount($sellerRefundDue) ?> to refund or carry as an advance because the corrected purchase value is lower than the amount already paid.<?php endif; ?><?php if ($dealerCommissionTotal > 0.009): ?> Dealer commission <?= formatAmount($dealerCommissionTotal) ?>: <?= formatAmount($dealerPaidTotal) ?> paid, <?= formatAmount($dealerOutstanding) ?> pending. This commission is part of this car's total cost; money paid to the owner is not an expense.<?php endif; ?></span>
             </div>
         </div>
         <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) && ($sellerOutstanding > 0.009 || $dealerOutstanding > 0.009)): ?>
@@ -728,7 +792,7 @@ updateFundingEditTotal();
             </div>
             <?php if (empty($acquisitionHistory)): ?><p class="text-muted">No owner or dealer payable history.</p><?php else: ?>
             <div class="table-container table-container-inline">
-            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>What Happened</th><th>Cash / Bank</th><th class="text-right">Owner Payable Created</th><th class="text-right">Paid to Owner</th><th class="text-right">Dealer Payable Created</th><th class="text-right">Paid to Dealer</th></tr></thead><tbody>
+            <table class="table-compact"><thead><tr><th>Date / Time</th><th>Ref</th><th>What Happened</th><th>Cash / Bank</th><th class="text-right">Owner Payable Created</th><th class="text-right">Paid to Owner</th><th class="text-right">Purchase Correction</th><th class="text-right">Dealer Payable Created</th><th class="text-right">Paid to Dealer</th></tr></thead><tbody>
                 <?php foreach ($acquisitionHistory as $row): ?><tr>
                     <td><?= renderDateTimeStack($row['entry_date'], $row['created_at']) ?></td>
                     <td><a href="../transactions/view.php?id=<?= clean($row['id']) ?>"><?= clean($row['reference_no']) ?></a></td>
@@ -736,6 +800,7 @@ updateFundingEditTotal();
                     <td><?= clean($row['payment_source'] ?: '—') ?></td>
                     <td class="text-right amount flow-out"><?= $row['owner_payable'] !== null ? formatAmount($row['owner_payable']) : '—' ?></td>
                     <td class="text-right amount flow-in"><?= $row['owner_paid'] !== null ? formatAmount($row['owner_paid']) : '—' ?></td>
+                    <td class="text-right amount <?= ($row['owner_adjustment_direction'] ?? '') === 'DOWN' ? 'flow-in' : 'flow-out' ?>"><?php if ($row['owner_adjustment'] !== null): ?><?= ($row['owner_adjustment_direction'] ?? '') === 'DOWN' ? '− ' : '+ ' ?><?= formatAmount($row['owner_adjustment']) ?><?php else: ?>—<?php endif; ?></td>
                     <td class="text-right amount flow-out"><?= $row['dealer_payable'] !== null ? formatAmount($row['dealer_payable']) : '—' ?></td>
                     <td class="text-right amount flow-in"><?= $row['dealer_paid'] !== null ? formatAmount($row['dealer_paid']) : '—' ?></td>
                 </tr><?php endforeach; ?>

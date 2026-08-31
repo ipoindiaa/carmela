@@ -909,7 +909,7 @@ class AccountingEngine {
                AND TABLE_NAME = 'journal_entries'
                AND COLUMN_NAME = 'transaction_type'"
         );
-        $required = ['PURCHASE_PAYMENT_REPAIR', 'CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION', 'DEALER_COMMISSION', 'DEALER_COMMISSION_PAYMENT'];
+        $required = ['PURCHASE_PAYMENT_REPAIR', 'PURCHASE_AMOUNT_CORRECTION', 'CAR_TOKEN_RECEIVED', 'JOURNAL_VOUCHER', 'PARTNER_SETTLEMENT', 'EMPLOYEE_COMMISSION', 'EMPLOYEE_ADVANCE_WRITEOFF', 'RTO_EXPENSE', 'RTO_RECOVERY', 'TOKEN_FORFEITURE', 'TOKEN_REFUND', 'CASH_RECONCILIATION', 'DEALER_COMMISSION', 'DEALER_COMMISSION_PAYMENT'];
         $currentType = $column['COLUMN_TYPE'] ?? '';
         $needsUpdate = false;
         foreach ($required as $value) {
@@ -923,7 +923,7 @@ class AccountingEngine {
             $this->db->query(
                 "ALTER TABLE `journal_entries`
                  MODIFY COLUMN `transaction_type`
-                 ENUM('CAR_PURCHASE','PURCHASE_PAYMENT_REPAIR','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION','DEALER_COMMISSION','DEALER_COMMISSION_PAYMENT')
+                 ENUM('CAR_PURCHASE','PURCHASE_PAYMENT_REPAIR','PURCHASE_AMOUNT_CORRECTION','CAR_TOKEN_RECEIVED','CAR_SALE','RTO_EXPENSE','RTO_RECOVERY','CAR_EXPENSE','GENERAL_EXPENSE','JOURNAL_VOUCHER','PARTNER_INVEST','PARTNER_WITHDRAW','PARTNER_SETTLEMENT','SALARY_PAYMENT','EMPLOYEE_COMMISSION','EMPLOYEE_ADVANCE','EMPLOYEE_ADVANCE_WRITEOFF','LOAN_GIVEN','LOAN_RECEIVED','LOAN_TAKEN','LOAN_REPAID','CONTRA_TRANSFER','OPENING_BALANCE','REVERSAL','BAD_DEBT','PROFIT_DISTRIBUTION','TOKEN_FORFEITURE','TOKEN_REFUND','CASH_RECONCILIATION','DEALER_COMMISSION','DEALER_COMMISSION_PAYMENT')
                  NOT NULL"
             );
         }
@@ -2471,7 +2471,7 @@ class AccountingEngine {
                     $carId,
                     $seller['account_id'],
                     'CR',
-                    ['CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'LOAN_REPAID']
+                    ['CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'PURCHASE_AMOUNT_CORRECTION', 'LOAN_REPAID']
                 );
             }
         }
@@ -3459,6 +3459,88 @@ class AccountingEngine {
             return $entryId;
         } catch (Throwable $e) {
             $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Correct an in-stock car's agreed purchase value without overwriting its
+     * original purchase voucher. The difference is mirrored to the linked
+     * seller ledger, preserving both the financial trail and car-wise cost.
+     */
+    public function correctCarPurchaseAmount($carId, $correctedAmount, $date, $reason) {
+        $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+        if (!$car) throw new Exception('Car not found.');
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Purchase amount correction is available only for bought business cars.');
+        if (($car['status'] ?? '') !== 'IN_STOCK') throw new Exception('Purchase amount can be corrected only while the car is in stock. Reverse the sale first if this car has already been sold.');
+        if (empty($car['seller_party_id'])) throw new Exception('This car has no linked vehicle owner / seller. First use Fix Historical Purchase Record so the correction can keep the seller ledger matched.');
+
+        $seller = $this->db->fetch(
+            "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
+            [$car['seller_party_id'], $this->businessId]
+        );
+        if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR'], true) || empty($seller['account_id'])) {
+            throw new Exception('The linked vehicle owner / seller ledger is unavailable. Reactivate or correct the seller before changing this purchase amount.');
+        }
+
+        $correctedAmount = round(floatval($correctedAmount), 2);
+        if ($correctedAmount <= 0) throw new Exception('Corrected purchase amount must be greater than zero.');
+        $currentAmount = round(floatval($car['purchase_price']), 2);
+        if (abs($correctedAmount - $currentAmount) < 0.01) throw new Exception('Enter a purchase amount different from the current amount.');
+
+        $reason = trim((string) $reason);
+        if (mb_strlen($reason) < 5) throw new Exception('Enter a clear correction reason of at least 5 characters.');
+        if (mb_strlen($reason) > 500) throw new Exception('Correction reason must be 500 characters or less.');
+        $this->validateDateNotLocked($date);
+
+        $partnerFunding = $this->db->fetch(
+            "SELECT COALESCE(SUM(funding_amount), 0) AS total FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'",
+            [$this->businessId, $carId]
+        );
+        $partnerFundingAmount = round(floatval($partnerFunding['total'] ?? 0), 2);
+        if ($correctedAmount + 0.01 < $partnerFundingAmount) {
+            throw new Exception('Corrected purchase amount cannot be lower than active partner funding of ' . formatAmount($partnerFundingAmount) . '. Correct the partner funding first.');
+        }
+
+        $difference = round($correctedAmount - $currentAmount, 2);
+        $increase = $difference > 0;
+        $adjustmentAmount = abs($difference);
+        $lines = $increase ? [
+            ['account_id' => $car['account_id'], 'amount' => $adjustmentAmount, 'type' => 'DR', 'narration' => 'Purchase value increased for ' . $car['registration_no']],
+            ['account_id' => $seller['account_id'], 'amount' => $adjustmentAmount, 'type' => 'CR', 'narration' => 'Additional amount payable to ' . $seller['name']],
+        ] : [
+            ['account_id' => $seller['account_id'], 'amount' => $adjustmentAmount, 'type' => 'DR', 'narration' => 'Purchase value reduced; refund / advance receivable from ' . $seller['name']],
+            ['account_id' => $car['account_id'], 'amount' => $adjustmentAmount, 'type' => 'CR', 'narration' => 'Purchase value reduced for ' . $car['registration_no']],
+        ];
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $entryId = $this->postJournalEntry(
+                'PURCHASE_AMOUNT_CORRECTION',
+                $date,
+                'Purchase amount correction - ' . $car['registration_no'] . ': ' . $reason,
+                $lines,
+                [
+                    'car_id' => $carId,
+                    'party_id' => $seller['id'],
+                    'entry_type_id' => systemEntryTypeId('PURCHASE_AMOUNT_CORRECTION'),
+                    'entry_amount' => $adjustmentAmount,
+                ]
+            );
+            $this->db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [$correctedAmount, $carId, $this->businessId]);
+            Auth::auditUpdate(
+                'car',
+                $carId,
+                ['purchase_price' => $currentAmount],
+                ['purchase_price' => $correctedAmount, 'purchase_amount_correction_entry_id' => $entryId, 'correction_reason' => $reason],
+                'Purchase amount corrected through journal entry: ' . $reason,
+                'cars'
+            );
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
             throw $e;
         }
     }
@@ -4698,11 +4780,14 @@ class AccountingEngine {
             return floatval($outsideCost['total_cost'] ?? 0);
         }
         $total = $this->db->fetch(
-            "SELECT COALESCE(SUM(jl.amount), 0) AS total_cost
+            "SELECT COALESCE(SUM(CASE
+                    WHEN jl.entry_type = 'DR' THEN jl.amount
+                    WHEN je.transaction_type = 'PURCHASE_AMOUNT_CORRECTION' THEN -jl.amount
+                    ELSE 0
+                END), 0) AS total_cost
              FROM journal_lines jl
              JOIN journal_entries je ON je.id = jl.journal_entry_id
              WHERE jl.account_id = ?
-               AND jl.entry_type = 'DR'
                AND je.business_id = ?
                AND je.status = 'POSTED'
                AND je.is_reversal = 0",
