@@ -43,7 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('A car with this registration number already exists.');
         }
         $purchasePrice = parseDecimalInput(post('purchase_price'));
-        $purchaseDate = post('purchase_date');
+        // A purchase date is optional at intake. Accounting and the database
+        // still need a real posting date, so a blank value is safely recorded
+        // as today's date rather than an invalid/zero date.
+        $purchaseDateInput = trim((string) post('purchase_date'));
+        $purchaseDate = $purchaseDateInput === '' ? date('Y-m-d') : $purchaseDateInput;
         $paymentAccount = post('payment_account');
         $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
         $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
@@ -52,10 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($sellerPartyId !== '' && $sellerName !== '') {
             throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
         }
-        if ($sellerPartyId === '' && $sellerName === '') {
-            throw new Exception('Select the vehicle owner / seller for this purchase.');
-        }
-        if ($sellerPartyId === '') {
+        if ($sellerPartyId === '' && $sellerName !== '') {
             Auth::requireEntityAccess('party', 'write');
         }
         $sellerLabel = $sellerPartyId !== '' ? $engine->getVehicleOwnerParty($sellerPartyId)['name'] : $sellerName;
@@ -198,8 +199,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-hint">Last 4 digits must stay exactly 4 numbers, like <strong>0001</strong>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Purchase Date *</label>
-                    <input type="date" name="purchase_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                    <label class="form-label">Purchase Date <span class="section-optional">(Optional)</span></label>
+                    <input type="date" name="purchase_date" class="form-control" value="<?= clean(post('purchase_date') ?: date('Y-m-d')) ?>">
+                    <div class="form-hint">Leave blank to record this purchase with today's date.</div>
                 </div>
             </div>
             <div class="form-row-3">
@@ -235,19 +237,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="form-row">
                 <div class="form-group">
-                    <label class="form-label" for="seller_party_id">Vehicle Owner / Seller *</label>
+                    <label class="form-label" for="seller_party_id">Vehicle Owner / Seller <span class="section-optional">(Optional)</span></label>
                     <select name="seller_party_id" id="seller_party_id" class="form-control searchable-select" data-search-placeholder="Search owner by name or phone">
-                        <option value="">Add a new owner below</option>
+                        <option value="">No owner / seller recorded yet</option>
                         <?php foreach ($payableParties as $party): ?>
                             <option value="<?= clean($party['id']) ?>" <?= post('seller_party_id') === $party['id'] ? 'selected' : '' ?>><?= clean($party['name']) ?> · <?= clean(ucfirst(strtolower($party['type']))) ?><?= $party['phone'] ? ' · ' . clean($party['phone']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created.</div>
+                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created. An owner is required only if a purchase balance remains pending.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="seller_name">New Owner / Seller Name</label>
                     <input type="text" name="seller_name" id="seller_name" class="form-control" placeholder="Fill only if the owner is new" value="<?= clean(post('seller_name')) ?>">
-                    <div class="form-hint">Leave blank when an existing owner is selected.</div>
+                    <div class="form-hint">Leave blank when an existing owner is selected, or when the car is fully paid and the owner will be linked later.</div>
                 </div>
             </div>
             <div class="form-row">
