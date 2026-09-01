@@ -42,12 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($existingCar) {
             throw new Exception('A car with this registration number already exists.');
         }
+        // A car may be received before the final purchase price is known.
+        // Store a blank price as zero; no purchase-cost journal is posted until
+        // a real price is entered through the controlled correction workflow.
         $purchasePrice = parseDecimalInput(post('purchase_price'));
-        // A purchase date is optional at intake. Accounting and the database
-        // still need a real posting date, so a blank value is safely recorded
-        // as today's date rather than an invalid/zero date.
-        $purchaseDateInput = trim((string) post('purchase_date'));
-        $purchaseDate = $purchaseDateInput === '' ? date('Y-m-d') : $purchaseDateInput;
+        $purchaseDate = trim((string) post('purchase_date'));
+        if ($purchaseDate === '') {
+            throw new Exception('Purchase date is required.');
+        }
         $paymentAccount = post('payment_account');
         $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
         $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
@@ -199,9 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-hint">Last 4 digits must stay exactly 4 numbers, like <strong>0001</strong>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Purchase Date <span class="section-optional">(Optional)</span></label>
-                    <input type="date" name="purchase_date" class="form-control" value="<?= clean(post('purchase_date') ?: date('Y-m-d')) ?>">
-                    <div class="form-hint">Leave blank to record this purchase with today's date.</div>
+                    <label class="form-label">Purchase Date *</label>
+                    <input type="date" name="purchase_date" class="form-control" value="<?= clean(post('purchase_date') ?: date('Y-m-d')) ?>" required>
                 </div>
             </div>
             <div class="form-row-3">
@@ -225,11 +226,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="text" name="color" class="form-control" placeholder="e.g., White">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Purchase Price (₹) *</label>
+                    <label class="form-label">Purchase Price (₹) <span class="section-optional">(Optional)</span></label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off" required>
+                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="Leave blank if not known" inputmode="decimal" autocomplete="off">
                     </div>
+                    <div class="form-hint">A blank price is saved as ₹0. Add the confirmed amount later using Correct Purchase Amount.</div>
                 </div>
             </div>
             <hr class="form-divider">
