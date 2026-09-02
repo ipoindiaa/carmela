@@ -395,6 +395,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $attachmentCarId = $carId;
                 break;
 
+            case 'TOKEN_REFUND':
+                $entryId = $engine->refundBuyerTokenBalance(
+                    post('buyer_party_id'),
+                    $amount,
+                    $date,
+                    $paymentAccountId,
+                    $narration,
+                    post('token_refund_car_id')
+                );
+                break;
+
             case 'CAR_EXPENSE':
                 $carId = post('expense_car_id');
                 $entryId = $engine->carExpense($carId, $amount, $date, $paymentAccountId, $narration);
@@ -634,6 +645,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
                             <option value="OUTSIDE_CAR_RECEIVED" data-flow="both" data-icon="ri-steering-2-line" data-title="Add Outside Car" data-desc="Receive a source entity's car on commission basis; never adds it to owned stock.">Add Outside Car</option>
                             <option value="CAR_TOKEN_RECEIVED" data-flow="in" data-icon="ri-hand-coin-line" data-title="Car Token Received" data-desc="Buyer advance held for one specific car; not income yet.">Car Token Received</option>
+                            <option value="TOKEN_REFUND" data-flow="out" data-icon="ri-refund-2-line" data-title="Return Car Token" data-desc="Return a recorded buyer token from Cash or Bank. Car selection is optional.">Return Car Token</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
                             <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
@@ -916,6 +928,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </button>
                         <input type="hidden" name="sale_car_id" id="sale_car_id" value="<?= clean(in_array($preselectedType, ['CAR_SALE', 'CAR_TOKEN_RECEIVED'], true) ? $preselectedCarId : '') ?>">
                     </div>
+                </div>
+            </div>
+
+            <!-- TOKEN RETURN: buyer is required; the car only narrows the token search. -->
+            <div class="txn-section" id="token-return-section" hidden>
+                <div class="alert alert-info token-accounting-note">
+                    <i class="ri-shield-check-line"></i>
+                    <div><strong>This returns a buyer advance, not an expense.</strong><span>The system clears only that buyer's recorded open token balance and pays from the selected Cash or Bank account.</span></div>
+                </div>
+                <div class="entry-relation-panel">
+                    <div class="entry-relation-heading">
+                        <div><strong>Car <span class="text-muted">(Optional)</span></strong><span>Select a car to return only that car's token. Leave blank to return the buyer's oldest open token balances across cars.</span></div>
+                    </div>
+                    <input type="hidden" name="token_refund_car_id" id="token_refund_car_id" value="<?= clean($preselectedType === 'TOKEN_REFUND' ? $preselectedCarId : '') ?>">
+                    <button type="button" class="picker-trigger picker-trigger-wide" id="token-refund-car-picker-trigger" onclick="openEntityPicker('token_refund_car', this)">
+                        <span><?= $preselectedType === 'TOKEN_REFUND' && $preselectedCar ? clean($preselectedCar['registration_no']) : 'No car — return buyer token balance' ?></span>
+                        <i class="ri-search-line"></i>
+                    </button>
                 </div>
             </div>
 
@@ -1462,6 +1492,13 @@ const entityPickerConfig = {
         triggerId: 'commission-car-picker-trigger',
         emptyLabel: 'No car — general commission',
     },
+    token_refund_car: {
+        title: 'Select Token Car (Optional)',
+        subtitle: 'Choose one car to return only that car’s token. Leave it blank to return the buyer’s token balance across cars.',
+        inputId: 'token_refund_car_id',
+        triggerId: 'token-refund-car-picker-trigger',
+        emptyLabel: 'No car — return buyer token balance',
+    },
     debtor: {
         title: 'Search Debtors / Buyers',
         subtitle: 'Search by debtor, buyer, or phone number.',
@@ -1673,6 +1710,30 @@ function syncCounterpartyUi() {
     if (help) help.textContent = type === 'LOAN_TAKEN'
         ? 'The creditor ledger will be selected or created automatically.'
         : 'The debtor ledger will be selected or created automatically.';
+}
+
+function syncTokenReturnUi() {
+    const type = document.getElementById('transaction_type')?.value || '';
+    const isTokenReturn = type === 'TOKEN_REFUND';
+    const buyerToggle = document.getElementById('buyer-new-toggle');
+    const buyerNewFields = document.getElementById('buyer-new-fields');
+    const buyerPicker = document.getElementById('buyer-picker-trigger');
+    const buyerInput = document.getElementById('buyer_party_id');
+    const buyerHeading = document.querySelector('#buyer-identity-section .entry-relation-heading > div');
+
+    if (buyerToggle) buyerToggle.hidden = isTokenReturn;
+    if (buyerHeading) {
+        buyerHeading.innerHTML = isTokenReturn
+            ? '<strong>Buyer / Customer *</strong><span>Select the existing buyer whose recorded token is being returned.</span>'
+            : '<strong>Buyer / Customer *</strong><span>Select an existing ledger or create it here once.</span>';
+    }
+    if (!isTokenReturn || !buyerNewFields || !buyerPicker || !buyerInput) return;
+
+    buyerNewFields.hidden = true;
+    if (typeof setConditionalControls === 'function') setConditionalControls(buyerNewFields, false, { clear: true });
+    buyerPicker.hidden = false;
+    buyerPicker.disabled = false;
+    buyerInput.disabled = false;
 }
 
 // Show/hide debtor vs creditor select
@@ -2355,6 +2416,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(syncSaleAmountUi, 0);
         setTimeout(syncCarClearingUi, 0);
         setTimeout(syncCounterpartyUi, 0);
+        setTimeout(syncTokenReturnUi, 0);
         setTimeout(syncEntryExclusiveControls, 0);
         setTimeout(loadPurchaseSourcePanel, 0);
     });
@@ -2372,6 +2434,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncSaleAmountUi();
     syncCarClearingUi();
     syncCounterpartyUi();
+    syncTokenReturnUi();
     syncEntryExclusiveControls();
     loadPurchaseSourcePanel();
 });

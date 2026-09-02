@@ -623,6 +623,7 @@ class AccountingEngine {
                     `received_date` DATE NOT NULL,
                     `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                     `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `refunded_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                     `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED','FORFEITED','REFUNDED') NOT NULL DEFAULT 'OPEN',
                     `narration` VARCHAR(500) DEFAULT NULL,
                     `created_by` CHAR(36) NOT NULL,
@@ -632,6 +633,30 @@ class AccountingEngine {
                     UNIQUE KEY `uk_car_token_entry` (`journal_entry_id`),
                     KEY `idx_car_tokens_car_status` (`business_id`, `car_id`, `status`),
                     KEY `idx_car_tokens_party` (`business_id`, `party_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+        });
+        $this->runMigrationStep('add-column-car_tokens.refunded_amount', function () {
+            if (!$this->columnExists('car_tokens', 'refunded_amount')) {
+                $this->db->query("ALTER TABLE `car_tokens` ADD COLUMN `refunded_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `applied_amount`");
+            }
+        });
+        $this->runMigrationStep('create-table-car_token_refunds', function () {
+            $this->db->query(
+                "CREATE TABLE IF NOT EXISTS `car_token_refunds` (
+                    `id` CHAR(36) NOT NULL,
+                    `business_id` CHAR(36) NOT NULL,
+                    `token_id` CHAR(36) NOT NULL,
+                    `journal_entry_id` CHAR(36) NOT NULL,
+                    `refund_date` DATE NOT NULL,
+                    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    `narration` VARCHAR(500) DEFAULT NULL,
+                    `created_by` CHAR(36) NOT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    KEY `idx_car_token_refunds_token` (`token_id`),
+                    KEY `idx_car_token_refunds_entry` (`journal_entry_id`),
+                    KEY `idx_car_token_refunds_business_date` (`business_id`, `refund_date`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
         });
@@ -1708,18 +1733,20 @@ class AccountingEngine {
         );
         $received = 0.0;
         $applied = 0.0;
+        $refunded = 0.0;
         $held = 0.0;
         foreach ($rows as $row) {
             if ($row['status'] === 'REVERSED') continue;
             $received += floatval($row['amount']);
             $applied += floatval($row['applied_amount']);
+            $refunded += floatval($row['refunded_amount'] ?? 0);
             if (in_array($row['status'], ['OPEN', 'PARTIAL'], true)) {
-                $held += max(0, floatval($row['amount']) - floatval($row['applied_amount']));
+                $held += max(0, floatval($row['amount']) - floatval($row['applied_amount']) - floatval($row['refunded_amount'] ?? 0));
             }
         }
         $openRow = null;
         foreach ($rows as $row) {
-            if (in_array($row['status'], ['OPEN', 'PARTIAL'], true) && floatval($row['amount']) - floatval($row['applied_amount']) > 0.009) {
+            if (in_array($row['status'], ['OPEN', 'PARTIAL'], true) && floatval($row['amount']) - floatval($row['applied_amount']) - floatval($row['refunded_amount'] ?? 0) > 0.009) {
                 $openRow = $row;
                 break;
             }
@@ -1728,6 +1755,7 @@ class AccountingEngine {
             'rows' => $rows,
             'received' => round($received, 2),
             'applied' => round($applied, 2),
+            'refunded' => round($refunded, 2),
             'available' => round($held, 2),
             'party_id' => $openRow['party_id'] ?? null,
             'party_name' => $openRow['party_name'] ?? null,
@@ -1739,14 +1767,14 @@ class AccountingEngine {
      */
     public function getCarTokenAvailableForParty($carId, $partyId) {
         $rows = $this->db->fetchAll(
-            "SELECT amount, applied_amount FROM car_tokens
+            "SELECT amount, applied_amount, refunded_amount FROM car_tokens
              WHERE business_id = ? AND car_id = ? AND party_id = ?
                AND status IN ('OPEN','PARTIAL')",
             [$this->businessId, $carId, $partyId]
         );
         $available = 0.0;
         foreach ($rows as $row) {
-            $available += max(0, floatval($row['amount']) - floatval($row['applied_amount']));
+            $available += max(0, floatval($row['amount']) - floatval($row['applied_amount']) - floatval($row['refunded_amount'] ?? 0));
         }
         return round($available, 2);
     }
@@ -1764,7 +1792,7 @@ class AccountingEngine {
         if (!in_array($token['status'], ['OPEN', 'PARTIAL'], true)) {
             throw new Exception("Only an open token that is not already applied can be forfeited.");
         }
-        $amount = round(floatval($token['amount']) - floatval($token['applied_amount']), 2);
+        $amount = round(floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0), 2);
         if ($amount <= 0.009) throw new Exception("This token has no available balance left to forfeit.");
         $reason = trim((string) $reason);
         if ($reason === '') throw new Exception("A forfeiture reason and date are required.");
@@ -1809,7 +1837,7 @@ class AccountingEngine {
         if (!in_array($token['status'], ['OPEN', 'PARTIAL', 'FORFEITED'], true)) {
             throw new Exception("Only open or forfeited tokens can be refunded.");
         }
-        $available = round(floatval($token['amount']) - floatval($token['applied_amount']), 2);
+        $available = round(floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0), 2);
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) throw new Exception("Refund amount must be greater than zero.");
         if (abs($amount - $available) > 0.01) {
@@ -1843,10 +1871,122 @@ class AccountingEngine {
                 'party_id' => $token['party_id'],
             ]);
             $this->db->query(
-                "UPDATE car_tokens SET status = 'REFUNDED' WHERE id = ? AND business_id = ?",
-                [$tokenId, $this->businessId]
+                "UPDATE car_tokens SET refunded_amount = ?, status = 'REFUNDED' WHERE id = ? AND business_id = ?",
+                [round(floatval($token['refunded_amount'] ?? 0) + $amount, 2), $tokenId, $this->businessId]
             );
-            Auth::auditUpdate('car_token', $tokenId, $token, array_merge($token, ['status' => 'REFUNDED']), 'Token refunded: ' . $reason, 'transactions');
+            $this->db->insert('car_token_refunds', [
+                'id' => Database::uuid(),
+                'business_id' => $this->businessId,
+                'token_id' => $tokenId,
+                'journal_entry_id' => $entryId,
+                'refund_date' => $date,
+                'amount' => $amount,
+                'narration' => $reason,
+                'created_by' => $this->userId,
+            ]);
+            Auth::auditUpdate('car_token', $tokenId, $token, array_merge($token, ['refunded_amount' => round(floatval($token['refunded_amount'] ?? 0) + $amount, 2), 'status' => 'REFUNDED']), 'Token refunded: ' . $reason, 'transactions');
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Return token money from the Payments menu. The buyer is required; the car
+     * is intentionally optional so an operator can return a buyer's advances
+     * even when the refund covers tokens received for more than one car.
+     *
+     * The return is allocated oldest-first across only OPEN/PARTIAL tokens and
+     * never exceeds the recorded Customer Token Advance liability:
+     *   Dr Customer Token Advances / Cr Cash or Bank
+     */
+    public function refundBuyerTokenBalance($partyId, $amount, $date, $paymentAccount, $narration = '', $carId = null) {
+        $partyId = trim((string) $partyId);
+        $carId = trim((string) $carId);
+        $amount = round(floatval($amount), 2);
+        $narration = trim((string) $narration);
+        if ($partyId === '') throw new Exception('Select the buyer / customer whose token is being returned.');
+        if ($amount <= 0) throw new Exception('Token return amount must be greater than zero.');
+        $this->validateDateNotLocked($date);
+        $this->validateCashAvailable($paymentAccount, $amount);
+
+        $party = $this->db->fetch(
+            "SELECT id, name, type FROM debtors_creditors
+             WHERE id = ? AND business_id = ? AND is_active = 1
+               AND type IN ('BUYER', 'DEBTOR')",
+            [$partyId, $this->businessId]
+        );
+        if (!$party) throw new Exception('Select a valid buyer / customer with a token balance.');
+        if ($carId !== '') {
+            $car = $this->db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ? AND status <> 'CANCELLED'", [$carId, $this->businessId]);
+            if (!$car) throw new Exception('Select a valid car or leave the car field blank.');
+        }
+
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $tokenSql = "SELECT * FROM car_tokens
+                         WHERE business_id = ? AND party_id = ?
+                           AND status IN ('OPEN', 'PARTIAL')";
+            $params = [$this->businessId, $partyId];
+            if ($carId !== '') {
+                $tokenSql .= ' AND car_id = ?';
+                $params[] = $carId;
+            }
+            $tokenSql .= ' ORDER BY received_date, created_at FOR UPDATE';
+            $tokens = $this->db->fetchAll($tokenSql, $params);
+
+            $available = 0.0;
+            foreach ($tokens as $token) {
+                $available += max(0, floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0));
+            }
+            $available = round($available, 2);
+            if ($available <= 0.009) {
+                throw new Exception($carId === '' ? 'This buyer has no open token balance to return.' : 'This buyer has no open token balance for the selected car.');
+            }
+            if ($amount - $available > 0.009) {
+                throw new Exception('Token return cannot exceed the available balance of ' . formatAmount($available) . '.');
+            }
+
+            $advanceAccount = $this->getOrCreateSystemAccount('CUST-ADV', 'Customer Token Advances', 'LIABILITY', 'Current Liabilities');
+            $entryNarration = $narration !== '' ? $narration : "Token return to {$party['name']}";
+            $entryId = $this->postJournalEntry('TOKEN_REFUND', $date, $entryNarration, [
+                ['account_id' => $advanceAccount['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => "Token return to {$party['name']}"],
+                ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => 'Token return paid'],
+            ], [
+                'car_id' => $carId !== '' ? $carId : null,
+                'party_id' => $partyId,
+            ]);
+
+            $remaining = $amount;
+            foreach ($tokens as $token) {
+                if ($remaining <= 0.009) break;
+                $tokenAvailable = round(floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0), 2);
+                if ($tokenAvailable <= 0.009) continue;
+                $allocated = min($tokenAvailable, $remaining);
+                $newRefunded = round(floatval($token['refunded_amount'] ?? 0) + $allocated, 2);
+                $newAvailable = round(floatval($token['amount']) - floatval($token['applied_amount']) - $newRefunded, 2);
+                $newStatus = $newAvailable <= 0.009 ? 'REFUNDED' : 'PARTIAL';
+                $this->db->query(
+                    'UPDATE car_tokens SET refunded_amount = ?, status = ? WHERE id = ? AND business_id = ?',
+                    [$newRefunded, $newStatus, $token['id'], $this->businessId]
+                );
+                $this->db->insert('car_token_refunds', [
+                    'id' => Database::uuid(),
+                    'business_id' => $this->businessId,
+                    'token_id' => $token['id'],
+                    'journal_entry_id' => $entryId,
+                    'refund_date' => $date,
+                    'amount' => $allocated,
+                    'narration' => $entryNarration,
+                    'created_by' => $this->userId,
+                ]);
+                Auth::auditUpdate('car_token', $token['id'], $token, array_merge($token, ['refunded_amount' => $newRefunded, 'status' => $newStatus]), 'Token return allocated from Payments: ' . $entryNarration, 'transactions');
+                $remaining = round($remaining - $allocated, 2);
+            }
+            if ($remaining > 0.009) throw new Exception('Token return allocation failed. No payment was saved.');
             if ($ownsTransaction) $this->db->commit();
             return $entryId;
         } catch (Throwable $e) {
@@ -2308,11 +2448,11 @@ class AccountingEngine {
         );
         foreach ($tokens as $token) {
             if ($remaining <= 0.009) break;
-            $available = round(floatval($token['amount']) - floatval($token['applied_amount']), 2);
+            $available = round(floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0), 2);
             if ($available <= 0.009) continue;
             $apply = min($available, $remaining);
             $newApplied = round(floatval($token['applied_amount']) + $apply, 2);
-            $status = $newApplied >= floatval($token['amount']) - 0.009 ? 'APPLIED' : 'PARTIAL';
+            $status = $newApplied + floatval($token['refunded_amount'] ?? 0) >= floatval($token['amount']) - 0.009 ? 'APPLIED' : 'PARTIAL';
             $this->db->query(
                 "UPDATE car_tokens SET applied_amount = ?, applied_sale_entry_id = ?, status = ? WHERE id = ? AND business_id = ?",
                 [$newApplied, $saleEntryId, $status, $token['id'], $this->businessId]
@@ -4079,11 +4219,11 @@ class AccountingEngine {
 
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
             $token = $this->db->fetch(
-                "SELECT applied_amount FROM car_tokens WHERE business_id = ? AND journal_entry_id = ?",
+                "SELECT applied_amount, refunded_amount FROM car_tokens WHERE business_id = ? AND journal_entry_id = ?",
                 [$this->businessId, $entry['id']]
             );
-            if (floatval($token['applied_amount'] ?? 0) > 0.009) {
-                throw new Exception('This token is already adjusted against a car sale. Reverse the sale first, then reverse the token.');
+            if (floatval($token['applied_amount'] ?? 0) > 0.009 || floatval($token['refunded_amount'] ?? 0) > 0.009) {
+                throw new Exception('This token has already been applied to a sale or returned. Reverse the related transaction first.');
             }
         }
 
@@ -4399,13 +4539,21 @@ class AccountingEngine {
                     );
                     foreach ($appliedTokens as $token) {
                         $this->db->query(
-                            "UPDATE car_tokens SET applied_amount = 0, applied_sale_entry_id = NULL, status = 'OPEN' WHERE id = ? AND business_id = ?",
-                            [$token['id'], $this->businessId]
-                        );
-                        Auth::auditUpdate('car_token', $token['id'], $token, array_merge($token, [
-                            'applied_amount' => 0,
-                            'applied_sale_entry_id' => null,
-                            'status' => 'OPEN',
+                        "UPDATE car_tokens SET applied_amount = 0, applied_sale_entry_id = NULL, status = ? WHERE id = ? AND business_id = ?",
+                        [
+                            floatval($token['refunded_amount'] ?? 0) >= floatval($token['amount']) - 0.009
+                                ? 'REFUNDED'
+                                : (floatval($token['refunded_amount'] ?? 0) > 0.009 ? 'PARTIAL' : 'OPEN'),
+                            $token['id'],
+                            $this->businessId,
+                        ]
+                    );
+                    Auth::auditUpdate('car_token', $token['id'], $token, array_merge($token, [
+                        'applied_amount' => 0,
+                        'applied_sale_entry_id' => null,
+                        'status' => floatval($token['refunded_amount'] ?? 0) >= floatval($token['amount']) - 0.009
+                            ? 'REFUNDED'
+                            : (floatval($token['refunded_amount'] ?? 0) > 0.009 ? 'PARTIAL' : 'OPEN'),
                         ]), 'Car sale reversed; token restored as available', 'transactions');
                     }
                     $this->db->query(

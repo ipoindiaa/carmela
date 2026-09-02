@@ -370,6 +370,7 @@ CREATE TABLE `car_tokens` (
     `received_date` DATE NOT NULL,
     `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `applied_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `refunded_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `status` ENUM('OPEN','PARTIAL','APPLIED','REVERSED','FORFEITED','REFUNDED') NOT NULL DEFAULT 'OPEN',
     `narration` VARCHAR(500) DEFAULT NULL,
     `created_by` CHAR(36) NOT NULL,
@@ -379,6 +380,23 @@ CREATE TABLE `car_tokens` (
     UNIQUE KEY `uk_car_token_entry` (`journal_entry_id`),
     KEY `idx_car_tokens_car_status` (`business_id`, `car_id`, `status`),
     KEY `idx_car_tokens_party` (`business_id`, `party_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Token returns can be allocated across one or more original token receipts.
+CREATE TABLE `car_token_refunds` (
+    `id` CHAR(36) NOT NULL,
+    `business_id` CHAR(36) NOT NULL,
+    `token_id` CHAR(36) NOT NULL,
+    `journal_entry_id` CHAR(36) NOT NULL,
+    `refund_date` DATE NOT NULL,
+    `amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `narration` VARCHAR(500) DEFAULT NULL,
+    `created_by` CHAR(36) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_car_token_refunds_token` (`token_id`),
+    KEY `idx_car_token_refunds_entry` (`journal_entry_id`),
+    KEY `idx_car_token_refunds_business_date` (`business_id`, `refund_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

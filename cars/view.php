@@ -829,13 +829,13 @@ updateFundingEditTotal();
 
 <div class="card">
     <div class="card-header">
-        <div><h3><i class="ri-hand-coin-line"></i> Buyer Token History</h3><div class="card-header-note">Advances received for this car and how they were adjusted.</div></div>
-        <?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-add-line"></i> Receive Token</a><?php endif; ?>
+        <div><h3><i class="ri-hand-coin-line"></i> Buyer Token History</h3><div class="card-header-note">Advances received for this car and how they were adjusted or returned.</div></div>
+        <div class="card-header-actions"><?php if ($car['status'] === 'IN_STOCK'): ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'CAR_TOKEN_RECEIVED', 'car_id' => $car['id'], 'narration' => 'Token received for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-add-line"></i> Receive Token</a><?php endif; ?><a href="../transactions/new.php?<?= http_build_query(['type' => 'TOKEN_REFUND', 'car_id' => $car['id'], 'narration' => 'Token return for ' . $car['registration_no']]) ?>" class="btn btn-outline btn-sm"><i class="ri-refund-2-line"></i> Return Token</a></div>
     </div>
     <div class="card-body card-body-flush">
         <div class="table-container table-container-inline">
             <table>
-                <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Available</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Date</th><th>Buyer</th><th>Receipt</th><th class="text-right">Received</th><th class="text-right">Adjusted</th><th class="text-right">Returned</th><th class="text-right">Available</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                 <?php foreach ($tokenSummary['rows'] as $token): ?>
                     <?php $tokenStatus = strtoupper((string) $token['status']); ?>
@@ -845,10 +845,11 @@ updateFundingEditTotal();
                         <td><a href="../transactions/view.php?id=<?= urlencode($token['journal_entry_id']) ?>"><?= clean($token['reference_no'] ?: 'View') ?></a></td>
                         <td class="text-right amount flow-in"><?= formatAmount($token['amount']) ?></td>
                         <td class="text-right amount"><?= formatAmount($token['applied_amount']) ?></td>
-                        <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']))) ?></td>
+                        <td class="text-right amount flow-out"><?= formatAmount($token['refunded_amount'] ?? 0) ?></td>
+                        <td class="text-right amount"><?= formatAmount(max(0, floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0))) ?></td>
                         <td><span class="badge <?= $tokenStatus === 'APPLIED' ? 'badge-green' : ($tokenStatus === 'FORFEITED' ? 'badge-yellow' : ($tokenStatus === 'REFUNDED' || $tokenStatus === 'REVERSED' ? 'badge-red' : 'badge-blue')) ?>"><?= clean($token['status']) ?></span></td>
                         <td class="text-nowrap">
-                            <?php if (in_array($tokenStatus, ['OPEN', 'PARTIAL'], true) && (floatval($token['amount']) - floatval($token['applied_amount']) > 0.009)): ?>
+                            <?php if (in_array($tokenStatus, ['OPEN', 'PARTIAL'], true) && (floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0) > 0.009)): ?>
                                 <form method="POST" class="inline-form token-action-form" data-confirm-submit="Forfeit this token? It will become profit of this car. A buyer who later returns can still get it refunded here.">
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="forfeit_token">
@@ -862,7 +863,7 @@ updateFundingEditTotal();
                                     <?= csrfField() ?>
                                     <input type="hidden" name="action" value="refund_token">
                                     <input type="hidden" name="token_id" value="<?= clean($token['id']) ?>">
-                                    <input type="hidden" name="refund_amount" value="<?= clean($token['amount']) ?>">
+                                    <input type="hidden" name="refund_amount" value="<?= clean(max(0, floatval($token['amount']) - floatval($token['applied_amount']) - floatval($token['refunded_amount'] ?? 0))) ?>">
                                     <select name="payment_account" class="form-control token-action-account" required>
                                         <?php foreach ($paymentAccounts as $pa): ?><option value="<?= clean($pa['id']) ?>"><?= clean($pa['name']) ?></option><?php endforeach; ?>
                                     </select>
@@ -876,7 +877,7 @@ updateFundingEditTotal();
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (empty($tokenSummary['rows'])): ?><tr><td colspan="8" class="text-center text-muted empty-table-cell">No token received for this car.</td></tr><?php endif; ?>
+                <?php if (empty($tokenSummary['rows'])): ?><tr><td colspan="9" class="text-center text-muted empty-table-cell">No token received for this car.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>

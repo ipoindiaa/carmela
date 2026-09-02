@@ -171,7 +171,8 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                 <?php if ($entry['party_name']): ?><tr><td class="text-muted">Person / Company</td><td><a href="../parties/view.php?id=<?= urlencode($entry['party_id']) ?>"><?= clean($entry['party_name']) ?></a> <span class="badge badge-gray"><?= clean($entry['party_type']) ?></span></td></tr><?php endif; ?>
                 <?php if ($tokenRecord): ?>
                     <tr><td class="text-muted">Token Status</td><td><span class="badge <?= $tokenRecord['status'] === 'APPLIED' ? 'badge-green' : ($tokenRecord['status'] === 'REVERSED' ? 'badge-red' : 'badge-blue') ?>"><?= clean($tokenRecord['status']) ?></span></td></tr>
-                    <tr><td class="text-muted">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']))) ?></td></tr>
+                    <tr><td class="text-muted">Token Returned</td><td class="amount"><?= formatAmount($tokenRecord['refunded_amount'] ?? 0) ?></td></tr>
+                    <tr><td class="text-muted">Token Available</td><td class="amount"><?= formatAmount(max(0, floatval($tokenRecord['amount']) - floatval($tokenRecord['applied_amount']) - floatval($tokenRecord['refunded_amount'] ?? 0))) ?></td></tr>
                     <?php if (!empty($tokenRecord['applied_sale_entry_id'])): ?><tr><td class="text-muted">Adjusted In Sale</td><td><a href="view.php?id=<?= urlencode($tokenRecord['applied_sale_entry_id']) ?>"><?= clean($tokenRecord['sale_reference'] ?: 'View sale entry') ?></a></td></tr><?php endif; ?>
                 <?php endif; ?>
                 <?php if ($entry['partner_name']): ?><tr><td class="text-muted">Partner</td><td><a href="../partners/view.php?id=<?= urlencode($entry['partner_id']) ?>"><?= clean($entry['partner_name']) ?></a></td></tr><?php endif; ?>

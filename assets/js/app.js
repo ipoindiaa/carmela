@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'CAR_PURCHASE': ['car-section', 'partner-funding-section'],
                 'OUTSIDE_CAR_RECEIVED': ['outside-car-section'],
                 'CAR_TOKEN_RECEIVED': ['car-select-section', 'buyer-identity-section', 'token-section'],
+                'TOKEN_REFUND': ['token-return-section', 'buyer-identity-section'],
                 'CAR_SALE': ['car-select-section', 'buyer-identity-section', 'buyer-section'],
                 'CAR_EXPENSE': ['car-select-section'],
                 'RTO_EXPENSE': ['rto-section'],
@@ -147,6 +148,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (typeof syncSaleAmountUi === 'function') {
                 syncSaleAmountUi();
+            }
+            if (typeof syncTokenReturnUi === 'function') {
+                syncTokenReturnUi();
             }
         });
 

@@ -74,6 +74,7 @@ switch ($kind) {
     case 'payment_car':
     case 'rto_car':
     case 'commission_car':
+    case 'token_refund_car':
         $statusFilterSql = "AND status <> 'CANCELLED'";
         if (in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED', 'CAR_EXPENSE'], true)) {
             $statusFilterSql = "AND status = 'IN_STOCK'";
@@ -98,7 +99,7 @@ switch ($kind) {
              LEFT JOIN debtors_creditors buyer ON buyer.id = c.buyer_party_id AND buyer.business_id = c.business_id
              LEFT JOIN debtors_creditors seller ON seller.id = c.seller_party_id AND seller.business_id = c.business_id
              LEFT JOIN (
-                 SELECT business_id, car_id, party_id, SUM(amount - applied_amount) AS available_amount
+                 SELECT business_id, car_id, party_id, SUM(amount - applied_amount - refunded_amount) AS available_amount
                  FROM car_tokens
                  WHERE status IN ('OPEN','PARTIAL')
                  GROUP BY business_id, car_id, party_id
