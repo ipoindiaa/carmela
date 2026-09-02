@@ -16,17 +16,14 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 
 $db = Database::getInstance();
-$business = $db->fetch('SELECT id FROM businesses ORDER BY created_at ASC LIMIT 1');
-if (!$business) {
-    throw new RuntimeException('No business is available for the schema check.');
+$user = $db->fetch(
+    'SELECT id, business_id FROM users WHERE business_id IS NOT NULL AND business_id <> \'\' ORDER BY created_at ASC LIMIT 1'
+);
+if (!$user || empty($user['business_id'])) {
+    throw new RuntimeException('No business-linked user is available for the schema check.');
 }
 
-$user = $db->fetch('SELECT id FROM users WHERE business_id = ? ORDER BY created_at ASC LIMIT 1', [$business['id']]);
-if (!$user) {
-    throw new RuntimeException('No user is available for the schema check.');
-}
-
-new AccountingEngine($business['id'], $user['id']);
+new AccountingEngine($user['business_id'], $user['id']);
 
 $refundedColumn = $db->fetch(
     "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
