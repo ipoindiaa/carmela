@@ -1894,9 +1894,11 @@ class AccountingEngine {
     }
 
     /**
-     * Return token money from the Payments menu. The buyer is required; the car
-     * is intentionally optional so an operator can return a buyer's advances
-     * even when the refund covers tokens received for more than one car.
+     * Return token money from the Payments menu. The buyer is optional only
+     * when a selected car has one unambiguous open-token buyer; in that case
+     * the buyer is derived from the token register. The car remains optional
+     * when the operator has already selected the buyer and is returning
+     * advances across more than one car.
      *
      * The return is allocated oldest-first across only OPEN/PARTIAL tokens and
      * never exceeds the recorded Customer Token Advance liability:
@@ -1907,18 +1909,11 @@ class AccountingEngine {
         $carId = trim((string) $carId);
         $amount = round(floatval($amount), 2);
         $narration = trim((string) $narration);
-        if ($partyId === '') throw new Exception('Select the buyer / customer whose token is being returned.');
+        if ($partyId === '' && $carId === '') throw new Exception('Select a buyer / customer or select the car whose token is being returned.');
         if ($amount <= 0) throw new Exception('Token return amount must be greater than zero.');
         $this->validateDateNotLocked($date);
         $this->validateCashAvailable($paymentAccount, $amount);
 
-        $party = $this->db->fetch(
-            "SELECT id, name, type FROM debtors_creditors
-             WHERE id = ? AND business_id = ? AND is_active = 1
-               AND type IN ('BUYER', 'DEBTOR')",
-            [$partyId, $this->businessId]
-        );
-        if (!$party) throw new Exception('Select a valid buyer / customer with a token balance.');
         if ($carId !== '') {
             $car = $this->db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ? AND status <> 'CANCELLED'", [$carId, $this->businessId]);
             if (!$car) throw new Exception('Select a valid car or leave the car field blank.');
@@ -1927,6 +1922,36 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
+            if ($partyId === '') {
+                $openTokenRows = $this->db->fetchAll(
+                    "SELECT party_id FROM car_tokens
+                     WHERE business_id = ? AND car_id = ?
+                       AND status IN ('OPEN', 'PARTIAL')
+                       AND amount - applied_amount - refunded_amount > 0.009
+                     FOR UPDATE",
+                    [$this->businessId, $carId]
+                );
+                $candidatePartyIds = array_values(array_unique(array_filter(array_map(
+                    static fn($row) => trim((string) ($row['party_id'] ?? '')),
+                    $openTokenRows
+                ))));
+                if (count($candidatePartyIds) === 0) {
+                    throw new Exception('The selected car has no open token balance to return.');
+                }
+                if (count($candidatePartyIds) > 1) {
+                    throw new Exception('The selected car has open tokens for more than one buyer. Select the buyer / customer before returning a token.');
+                }
+                $partyId = $candidatePartyIds[0];
+            }
+
+            $party = $this->db->fetch(
+                "SELECT id, name, type FROM debtors_creditors
+                 WHERE id = ? AND business_id = ? AND is_active = 1
+                   AND type IN ('BUYER', 'DEBTOR')",
+                [$partyId, $this->businessId]
+            );
+            if (!$party) throw new Exception('Select a valid buyer / customer with a token balance.');
+
             $tokenSql = "SELECT * FROM car_tokens
                          WHERE business_id = ? AND party_id = ?
                            AND status IN ('OPEN', 'PARTIAL')";

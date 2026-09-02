@@ -22,6 +22,7 @@ assertTokenReturn(
     str_contains($newEntrySource, 'value="TOKEN_REFUND"')
         && str_contains($newEntrySource, 'id="token-return-section"')
         && str_contains($newEntrySource, 'name="token_refund_car_id"')
+        && str_contains($newEntrySource, 'Buyer / Customer <span class="text-muted">(Optional)</span>')
         && str_contains($appJsSource, "'TOKEN_REFUND': ['token-return-section', 'buyer-identity-section']")
         && str_contains($configSource, "'TOKEN_REFUND' => ['label' => 'Return Car Token'") ,
     'Payments menu exposes Return Car Token with buyer and optional car controls'
@@ -89,6 +90,32 @@ try {
     $remainingCarSummary = $engine->getCarTokenSummary($remainingCarId);
     assertTokenReturn($carScopedRefund['car_id'] === $remainingCarId && $carScopedRefund['party_id'] === $buyerId, 'Selected-car token return is linked to both that car and buyer');
     assertTokenReturn(abs($remainingCarSummary['available'] - 1500.0) < 0.01, 'Car token summary separates returned value from the remaining available token');
+
+    $autoBuyerCarId = $createCar('TA');
+    $autoBuyerId = $engine->getOrCreateParty('Auto Token Buyer ' . $suffix, 'BUYER');
+    $engine->receiveCarToken($autoBuyerCarId, $autoBuyerId, '', '', 2200, $date, $cash['id'], 'Auto buyer token receipt');
+    $autoBuyerRefundId = $engine->refundBuyerTokenBalance('', 1200, $date, $cash['id'], 'Return using selected car', $autoBuyerCarId);
+    $autoBuyerRefund = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$autoBuyerRefundId]);
+    assertTokenReturn($autoBuyerRefund['car_id'] === $autoBuyerCarId && $autoBuyerRefund['party_id'] === $autoBuyerId, 'Selected car derives its only open token buyer when the buyer field is blank');
+
+    $multipleBuyerCarId = $createCar('TM');
+    $multipleBuyerOne = $engine->getOrCreateParty('Multiple Token Buyer One ' . $suffix, 'BUYER');
+    $multipleBuyerTwo = $engine->getOrCreateParty('Multiple Token Buyer Two ' . $suffix, 'BUYER');
+    $engine->receiveCarToken($multipleBuyerCarId, $multipleBuyerOne, '', '', 1000, $date, $cash['id'], 'First buyer token');
+    $engine->receiveCarToken($multipleBuyerCarId, $multipleBuyerTwo, '', '', 1000, $date, $cash['id'], 'Second buyer token');
+    try {
+        $engine->refundBuyerTokenBalance('', 500, $date, $cash['id'], 'Ambiguous buyer attempt', $multipleBuyerCarId);
+        throw new RuntimeException('Expected ambiguous selected-car token return to require a buyer.');
+    } catch (Exception $expected) {
+        assertTokenReturn(str_contains($expected->getMessage(), 'more than one buyer'), 'Selected car with multiple token buyers asks the operator to select the buyer');
+    }
+
+    try {
+        $engine->refundBuyerTokenBalance('', 500, $date, $cash['id'], 'No buyer or car');
+        throw new RuntimeException('Expected token return without buyer and car to be rejected.');
+    } catch (Exception $expected) {
+        assertTokenReturn(str_contains($expected->getMessage(), 'Select a buyer / customer or select the car'), 'Token return still requires a buyer or a car for traceable allocation');
+    }
 
     try {
         $engine->refundBuyerTokenBalance($buyerId, 1501, $date, $cash['id'], 'Over-refund attempt', $remainingCarId);

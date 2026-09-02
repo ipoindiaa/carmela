@@ -931,15 +931,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- TOKEN RETURN: buyer is required; the car only narrows the token search. -->
+            <!-- TOKEN RETURN: a selected car can identify its only open-token buyer. -->
             <div class="txn-section" id="token-return-section" hidden>
                 <div class="alert alert-info token-accounting-note">
                     <i class="ri-shield-check-line"></i>
-                    <div><strong>This returns a buyer advance, not an expense.</strong><span>The system clears only that buyer's recorded open token balance and pays from the selected Cash or Bank account.</span></div>
+                    <div><strong>This returns a buyer advance, not an expense.</strong><span>Choose a buyer, or select a car with one open token buyer and the system will identify the buyer automatically.</span></div>
                 </div>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Car <span class="text-muted">(Optional)</span></strong><span>Select a car to return only that car's token. Leave blank to return the buyer's oldest open token balances across cars.</span></div>
+                        <div><strong>Car <span class="text-muted">(Optional)</span></strong><span>Select a car to return only that car's token. If you leave Buyer blank, this car must have one open token buyer. Leave car blank to return the selected buyer's oldest open token balances across cars.</span></div>
                     </div>
                     <input type="hidden" name="token_refund_car_id" id="token_refund_car_id" value="<?= clean($preselectedType === 'TOKEN_REFUND' ? $preselectedCarId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="token-refund-car-picker-trigger" onclick="openEntityPicker('token_refund_car', this)">
@@ -1724,7 +1724,7 @@ function syncTokenReturnUi() {
     if (buyerToggle) buyerToggle.hidden = isTokenReturn;
     if (buyerHeading) {
         buyerHeading.innerHTML = isTokenReturn
-            ? '<strong>Buyer / Customer *</strong><span>Select the existing buyer whose recorded token is being returned.</span>'
+            ? '<strong>Buyer / Customer <span class="text-muted">(Optional)</span></strong><span>Leave blank only after selecting a car with one open token buyer. Select the buyer when the car has more than one token.</span>'
             : '<strong>Buyer / Customer *</strong><span>Select an existing ledger or create it here once.</span>';
     }
     if (!isTokenReturn || !buyerNewFields || !buyerPicker || !buyerInput) return;
@@ -1734,6 +1734,9 @@ function syncTokenReturnUi() {
     buyerPicker.hidden = false;
     buyerPicker.disabled = false;
     buyerInput.disabled = false;
+    if (!buyerInput.value && buyerPicker.querySelector('span')) {
+        buyerPicker.querySelector('span').textContent = 'Optional — select buyer / customer';
+    }
 }
 
 // Show/hide debtor vs creditor select
