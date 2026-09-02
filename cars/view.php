@@ -887,10 +887,10 @@ updateFundingEditTotal();
 <div class="card">
     <div class="card-header"><h3><i class="ri-file-shield-2-line"></i> RTO Money History</h3><a href="../rto/list.php?car_id=<?= clean($car['id']) ?>" class="btn btn-sm btn-outline">Open RTO Book</a></div>
     <div class="card-body card-body-flush">
-        <table><thead><tr><th>RTO Narration</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
-            <?php if (empty($rtoHistory)): ?><tr><td colspan="5" class="text-center text-muted empty-table-cell">No RTO money history for this car.</td></tr><?php else: ?>
+        <table><thead><tr><th>Date</th><th>RTO Narration</th><th>Buyer / Agent</th><th>Money Type</th><th class="text-right">Received</th><th class="text-right">Spent</th></tr></thead><tbody>
+            <?php if (empty($rtoHistory)): ?><tr><td colspan="6" class="text-center text-muted empty-table-cell">No RTO money history for this car.</td></tr><?php else: ?>
             <?php foreach ($rtoHistory as $rto): ?><tr>
-                <td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= ($rto['money_type'] === 'RECEIVE') ? 'badge-green' : 'badge-red' ?>"><?= $rto['money_type'] === 'RECEIVE' ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['received_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['spent_amount']) ?></td>
+                <td><?= formatDate($rto['entry_date']) ?></td><td><?= clean($rto['rto_type']) ?></td><td><?= clean($rto['party_name'] ?: '-') ?><div class="text-muted"><?= clean($rto['agent_name'] ?: '-') ?></div></td><td><span class="badge <?= ($rto['money_type'] === 'RECEIVE') ? 'badge-green' : 'badge-red' ?>"><?= $rto['money_type'] === 'RECEIVE' ? 'Money In' : 'Money Out' ?></span></td><td class="text-right amount flow-in"><?= formatAmount($rto['received_amount']) ?></td><td class="text-right amount flow-out"><?= formatAmount($rto['spent_amount']) ?></td>
             </tr><?php endforeach; ?><?php endif; ?>
         </tbody></table>
     </div>
