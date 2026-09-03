@@ -378,7 +378,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 <div class="form-group"><label class="form-label">Second Key</label><select name="has_second_key" class="form-control"><option value="0" <?= empty($car['has_second_key']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($car['has_second_key']) ? 'selected' : '' ?>>Yes</option></select></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Expected Selling Value (₹)</label><input type="text" name="expected_sale_price" class="form-control currency-input" value="<?= clean($car['expected_sale_price'] ?? 0) ?>"><div class="form-hint">Get a warning alert if this car sells below this value.</div></div>
+                <div class="form-group"><label class="form-label">Reference Selling Price (₹)</label><input type="text" name="expected_sale_price" class="form-control currency-input" value="<?= clean($car['expected_sale_price'] ?? 0) ?>"><div class="form-hint">A reminder price only — never included in accounting, cost, profit, or balance calculations.</div></div>
             </div>
             <div class="form-group"><label class="form-label">Notes</label><textarea name="notes" class="form-control" rows="2"><?= clean($car['notes']) ?></textarea></div>
             <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Car</button><a href="view.php?id=<?= $car['id'] ?>" class="btn btn-outline">Cancel</a></div>
@@ -432,6 +432,11 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
         <div class="stat-header"><div class="stat-icon stat-icon-purple"><i class="ri-calculator-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($carTotalCost) ?></div>
         <div class="stat-label">Total Cost</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header"><div class="stat-icon stat-icon-blue"><i class="ri-price-tag-3-line"></i></div></div>
+        <div class="stat-value"><?= !empty($car['expected_sale_price']) ? formatAmount($car['expected_sale_price']) : 'Not set' ?></div>
+        <div class="stat-label">Reference Selling Price</div>
     </div>
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon stat-icon-<?= clean($carSummaryClass) ?>"><i class="ri-line-chart-line"></i></div></div>
@@ -528,8 +533,8 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 </td></tr>
                 <?php if ($car['status'] === 'CANCELLED'): ?><tr><td class="text-muted">Correction Status</td><td>Purchase cancelled and archived for correction.</td></tr><?php endif; ?>
                 <?php if ($car['sold_date']): ?><tr><td class="text-muted">Sold Date</td><td><?= formatDate($car['sold_date']) ?></td></tr><?php endif; ?>
-                <?php if ($car['sale_price']): ?><tr><td class="text-muted">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?><?php if (!empty($car['expected_sale_price']) && $car['sale_price'] < $car['expected_sale_price']): ?> <span class="badge badge-yellow">Sold below expected</span><?php endif; ?></td></tr><?php endif; ?>
-                <?php if (!empty($car['expected_sale_price'])): ?><tr><td class="text-muted">Expected Sale Value</td><td class="amount"><?= formatAmount($car['expected_sale_price']) ?></td></tr><?php endif; ?>
+                <?php if ($car['sale_price']): ?><tr><td class="text-muted">Sale Price</td><td class="amount flow-in"><?= formatAmount($car['sale_price']) ?><?php if (!empty($car['expected_sale_price']) && $car['sale_price'] < $car['expected_sale_price']): ?> <span class="badge badge-yellow">Sold below reference</span><?php endif; ?></td></tr><?php endif; ?>
+                <tr><td class="text-muted">Reference Selling Price</td><td class="amount"><?php if (!empty($car['expected_sale_price'])): ?><?= formatAmount($car['expected_sale_price']) ?><div class="table-secondary">Reference only — not part of calculations</div><?php else: ?><span class="text-muted">Not set</span><?php endif; ?></td></tr>
                 <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
                 <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>

@@ -263,12 +263,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Expected Selling Value (₹)</label>
+                    <label class="form-label">Reference Selling Price (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="expected_sale_price" class="form-control currency-input" placeholder="Optional target sale price" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="expected_sale_price" class="form-control currency-input" placeholder="Optional price to remember" inputmode="decimal" autocomplete="off">
                     </div>
-                    <div class="form-hint">If the car is later sold below this, you'll get a warning alert.</div>
+                    <div class="form-hint">Reference only — not included in any accounting, cost, profit, or balance calculation.</div>
                 </div>
             </div>
             <div class="form-row">

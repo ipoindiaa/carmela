@@ -112,6 +112,15 @@ try {
     assertUll($dealerPayment['car_id'] === $carId && $dealerPayment['party_id'] === $car['purchase_dealer_party_id'], 'Dealer commission payment stays linked to its car and dealer ledger');
     assertUll(abs(floatval($costAfterDealerCommission['total_cost']) - 465000.0) < 0.01, 'Dealer commission is capitalized into the bought car total cost once, not treated as an owner payment');
 
+    $profitabilityBeforeReferencePrice = $engine->getCarProfitability($carId);
+    $db->query("UPDATE cars SET expected_sale_price = ? WHERE id = ?", [9999999, $carId]);
+    $profitabilityAfterReferencePrice = $engine->getCarProfitability($carId);
+    assertUll(
+        abs(floatval($profitabilityBeforeReferencePrice['total_cost']) - floatval($profitabilityAfterReferencePrice['total_cost'])) < 0.01
+        && abs(floatval($profitabilityBeforeReferencePrice['profit']) - floatval($profitabilityAfterReferencePrice['profit'])) < 0.01,
+        'Reference selling price is excluded from car cost and profit calculations'
+    );
+
     $increaseCorrectionId = $engine->correctCarPurchaseAmount($carId, 475000, $date, 'Purchase deal was entered ₹25,000 too low.');
     $increasedCar = $db->fetch("SELECT purchase_price FROM cars WHERE id = ?", [$carId]);
     $increasedPending = $engine->getCarPendingAmounts($carId);

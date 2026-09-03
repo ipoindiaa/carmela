@@ -23,7 +23,7 @@ assertCarsListContract(
     'Cars list no longer shows Purchase Date/Time, Purchase Price, or Extra Cost columns'
 );
 assertCarsListContract(
-    str_contains($source, '<tr><td colspan="9" class="text-center text-muted empty-table-cell">'),
+    str_contains($source, '<tr><td colspan="10" class="text-center text-muted empty-table-cell">'),
     'Cars list empty state matches the revised column count'
 );
 
