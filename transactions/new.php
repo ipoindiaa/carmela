@@ -787,12 +787,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Vehicle Owner / Seller *</strong><span>The legal owner of this car. Their ledger receives the purchase payable — never a duplicate account.</span></div>
+                        <div><strong>Owner's Name <span class="text-muted">(Vehicle Owner / Seller)</span> *</strong><span>The legal owner of this car. Their ledger receives the purchase payable — never a duplicate account.</span></div>
                         <button type="button" class="btn btn-outline btn-sm" id="vehicle-owner-new-toggle" onclick="toggleNewParty('vehicle_owner')"><i class="ri-user-add-line"></i> Add New Owner</button>
                     </div>
                     <input type="hidden" name="seller_party_id" id="seller_party_id">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="vehicle-owner-picker-trigger" onclick="openEntityPicker('vehicle_owner', this)">
-                        <span>Select existing owner / seller</span>
+                        <span>Select owner's name</span>
                         <i class="ri-search-line"></i>
                     </button>
                     <div class="form-row conditional-row" id="vehicle-owner-new-fields" hidden>
@@ -817,7 +817,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <div class="entry-relation-panel" id="purchase-dealer-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Purchase Dealer / Broker <span class="section-optional">(Optional)</span></strong><span>The person through whom this car was found. Kept completely separate from the owner and from any future sale broker.</span></div>
+                        <div><strong>Dealer's Name <span class="text-muted">(Purchase Dealer / Broker)</span> <span class="section-optional">(Optional)</span></strong><span>The person through whom this car was found. Kept completely separate from the owner and from any future sale broker.</span></div>
                         <button type="button" class="btn btn-outline btn-sm" id="dealer-new-toggle" onclick="toggleNewParty('dealer')"><i class="ri-user-add-line"></i> Add New Dealer / Broker</button>
                     </div>
                     <input type="hidden" name="dealer_party_id" id="dealer_party_id">
@@ -985,12 +985,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      dealer were fixed when this car was bought. -->
                 <div class="entry-relation-panel" id="purchase-source-panel" hidden>
                     <div class="entry-relation-heading">
-                        <div><strong>Purchase Source <span class="section-optional">(read-only)</span></strong><span>How this car was acquired. Any sale broker commission is a separate field and never mixes with the purchase dealer.</span></div>
+                        <div><strong>Purchase Owner &amp; Dealer <span class="section-optional">(read-only)</span></strong><span>How this car was acquired. These names are shown for reference while selling; any sale broker commission is separate.</span></div>
                     </div>
                     <div class="table-container table-container-inline table-columns-compact">
                         <table class="detail-table">
-                            <tr><td class="text-muted">Owner / Seller</td><td id="ps-owner">—</td></tr>
-                            <tr><td class="text-muted">Purchase Dealer / Broker</td><td id="ps-dealer">—</td></tr>
+                            <tr><td class="text-muted">Owner's Name</td><td id="ps-owner">—</td></tr>
+                            <tr><td class="text-muted">Dealer's Name</td><td id="ps-dealer">—</td></tr>
                             <tr><td class="text-muted">Purchase Price</td><td class="amount" id="ps-price">—</td></tr>
                             <tr><td class="text-muted">Paid to Owner</td><td class="amount flow-in" id="ps-owner-paid">—</td></tr>
                             <tr><td class="text-muted">Owner Balance Pending</td><td class="amount" id="ps-owner-pending">—</td></tr>

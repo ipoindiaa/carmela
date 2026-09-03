@@ -516,6 +516,12 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 <tr><td class="text-muted">Year</td><td><?= $car['year'] ?: '-' ?></td></tr>
                 <tr><td class="text-muted">Color</td><td><?= clean($car['color'] ?: '-') ?></td></tr>
                 <tr><td class="text-muted">Purchase Date</td><td><?= formatDate($car['purchase_date']) ?></td></tr>
+                <tr><td class="text-muted">Owner's Name</td><td>
+                    <?php if ($sellerParty): ?><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php else: ?><span class="text-muted">Not recorded</span><?php endif; ?>
+                </td></tr>
+                <tr><td class="text-muted">Dealer's Name</td><td>
+                    <?php if ($dealerParty): ?><a href="../parties/dealer_ledger.php?id=<?= urlencode($dealerParty['id']) ?>" class="text-bold"><?= clean($dealerParty['name']) ?></a><?php else: ?><span class="text-muted">Not recorded</span><?php endif; ?>
+                </td></tr>
                 <tr><td class="text-muted">Status</td><td>
                     <?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
                     <span class="badge <?= $sb[$car['status']] ?? 'badge-gray' ?>"><?= CAR_STATUS[$car['status']] ?></span>
@@ -528,7 +534,6 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
                 <?php if ($buyerParty): ?><tr><td class="text-muted">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
-                <?php if ($sellerParty): ?><tr><td class="text-muted">Seller (Source)</td><td><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php if ($sellerOutstanding > 0.009): ?> <span class="text-muted">· Purchase balance <?= formatAmount($sellerOutstanding) ?></span><?php endif; ?> <a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm">Purchase Payments</a></td></tr><?php endif; ?>
                 <tr><td class="text-muted">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
             </table>
             </div>
