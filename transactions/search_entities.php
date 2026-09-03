@@ -83,14 +83,15 @@ switch ($kind) {
         } elseif ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
             $statusFilterSql = "AND status IN ('IN_STOCK', 'PENDING_PAYMENT', 'SOLD')";
         }
-        $ownershipFilterSql = '';
+        // Every operational car picker can discover business, commission, and
+        // outside cars. The normal "Sold a Car" flow is the one exception: it
+        // creates inventory/COGS entries and must remain limited to owned stock.
+        $ownershipFilterSql = "AND COALESCE(c.ownership_type, 'OWNED') IN ('OWNED', 'COMMISSION', 'OUTSIDE')";
         if ($context === 'CAR_SALE') {
-            $ownershipFilterSql = "AND COALESCE(ownership_type, 'OWNED') = 'OWNED'";
-        } elseif ($context === 'CAR_EXPENSE' || ($kind === 'payment_car' && $context === 'LOAN_REPAID')) {
-            $ownershipFilterSql = "AND COALESCE(ownership_type, 'OWNED') IN ('OWNED','OUTSIDE')";
+            $ownershipFilterSql = "AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED'";
         }
         $rows = $db->fetchAll(
-            "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status,
+            "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status, c.ownership_type,
                     buyer.id AS buyer_party_id, buyer.name AS buyer_name,
                     seller.id AS seller_party_id, seller.name AS seller_name,
                     token_party.id AS token_party_id, token_party.name AS token_party_name,
@@ -125,6 +126,10 @@ switch ($kind) {
             [$businessId, $needle, $needle, $needle, $needle, $prefix, $prefix]
         );
         foreach ($rows as $row) {
+            $ownershipType = strtoupper((string) ($row['ownership_type'] ?? 'OWNED'));
+            $ownershipLabel = $ownershipType === 'OUTSIDE'
+                ? 'Outside Car'
+                : ($ownershipType === 'COMMISSION' ? 'Commission Car' : 'Business Car');
             $linkedPartyId = null;
             $linkedPartyLabel = '';
             if ($kind === 'payment_car') {
@@ -141,8 +146,8 @@ switch ($kind) {
             }
             $results[] = [
                 'id' => $row['id'],
-                'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? ''))),
-                'meta' => trim(($row['year'] ?: '') . ' ' . ($row['status'] ?? '')),
+                'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? '')) . ($ownershipType === 'OWNED' ? '' : ' · ' . $ownershipLabel)),
+                'meta' => trim(implode(' · ', array_filter([$row['year'] ?: '', $row['status'] ?? '', $ownershipLabel]))),
                 'linked_party_id' => $linkedPartyId,
                 'linked_party_label' => $linkedPartyLabel,
                 'token_available' => floatval($row['token_available'] ?? 0),

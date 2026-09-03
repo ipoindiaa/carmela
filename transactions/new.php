@@ -1457,22 +1457,22 @@ let activeSplitRow = null;
 let activeEntityPicker = null;
 const entityPickerConfig = {
     payment_car: {
-        title: 'Search Cars',
-        subtitle: 'Search the car linked to this buyer or seller payment.',
+        title: 'Search Business & Outside Cars',
+        subtitle: 'Search the car linked to this buyer or seller payment. Outside and commission cars are marked clearly.',
         inputId: 'linked_car_id',
         triggerId: 'payment-car-picker-trigger',
         emptyLabel: 'Select car if this payment belongs to one car',
     },
     rto_car: {
-        title: 'Search Cars',
-        subtitle: 'Select the car connected to this RTO entry.',
+        title: 'Search Business & Outside Cars',
+        subtitle: 'Select the car connected to this RTO entry. Outside and commission cars are marked clearly.',
         inputId: 'rto_car_id',
         triggerId: 'rto-car-picker-trigger',
         emptyLabel: 'Select car for RTO',
     },
     car: {
-        title: 'Search Cars',
-        subtitle: 'Search available cars by registration number, make, or model.',
+        title: 'Search Business & Outside Cars',
+        subtitle: 'Search available cars by registration number, make, or model. Outside and commission cars are marked clearly when supported by this entry.',
         inputId: 'expense_car_select',
         mirrorInputId: 'sale_car_id',
         triggerId: 'car-picker-trigger',
@@ -1493,15 +1493,15 @@ const entityPickerConfig = {
         emptyLabel: 'Select employee',
     },
     commission_car: {
-        title: 'Select Related Car',
-        subtitle: 'Choose any active or sold car connected to this employee commission.',
+        title: 'Select Related Business or Outside Car',
+        subtitle: 'Choose any active or sold car connected to this employee commission. Outside and commission cars are marked clearly.',
         inputId: 'commission_car_id',
         triggerId: 'commission-car-picker-trigger',
         emptyLabel: 'No car — general commission',
     },
     token_refund_car: {
         title: 'Select Token Car (Optional)',
-        subtitle: 'Choose one car to return only that car’s token. Leave it blank to return the buyer’s token balance across cars.',
+        subtitle: 'Choose one business, outside, or commission car to return only that car’s token. Leave it blank to return the buyer’s token balance across cars.',
         inputId: 'token_refund_car_id',
         triggerId: 'token-refund-car-picker-trigger',
         emptyLabel: 'No car — return buyer token balance',
