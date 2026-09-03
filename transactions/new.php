@@ -655,7 +655,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
                             <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
-                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="New RTO Receipt" data-desc="Record RTO money received from buyer/customer. Link the car when this receipt belongs to one car.">New RTO Receipt</option>
+                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Received" data-desc="Record RTO money received from buyer/customer. Link the car when this receipt belongs to one car.">RTO Received</option>
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
