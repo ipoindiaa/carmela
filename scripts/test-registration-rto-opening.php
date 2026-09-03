@@ -85,6 +85,7 @@ try {
     );
     assertRegistrationRto(intval($audit['cnt']) >= 2, 'Every RTO opening balance change creates an immutable audit update');
 
+    $summaryBeforeGeneralRecovery = $engine->getRtoBookSummary();
     $cash = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND code = 'CASH-001'", [$business['id']]);
     $generalRecoveryEntryId = $engine->rtoRecoveryWithoutCar(750, date('Y-m-d'), $cash['id'], 'RTO receipt not linked to a vehicle');
     $generalRecoveryEntry = $db->fetch("SELECT * FROM journal_entries WHERE id = ?", [$generalRecoveryEntryId]);
@@ -94,7 +95,11 @@ try {
     $generalRecoveryCredit = array_sum(array_map(static fn($line) => $line['entry_type'] === 'CR' ? floatval($line['amount']) : 0, $generalRecoveryLines));
     assertRegistrationRto($generalRecoveryEntry['transaction_type'] === 'RTO_RECOVERY' && empty($generalRecoveryEntry['car_id']), 'General RTO recovery has no fabricated car link');
     assertRegistrationRto(abs($generalRecoveryDebit - 750.0) < 0.01 && abs($generalRecoveryCredit - 750.0) < 0.01, 'General RTO recovery remains double-entry balanced');
-    assertRegistrationRto(floatval($generalRecoverySummary['recovered']) === 750.0 && floatval($generalRecoverySummary['net']) === 5250.0, 'RTO Book summary includes the general recovery without creating an RTO case');
+    assertRegistrationRto(
+        abs(floatval($generalRecoverySummary['recovered']) - (floatval($summaryBeforeGeneralRecovery['recovered']) + 750.0)) < 0.01
+        && abs(floatval($generalRecoverySummary['net']) - (floatval($summaryBeforeGeneralRecovery['net']) + 750.0)) < 0.01,
+        'RTO Book summary includes the general recovery without creating an RTO case'
+    );
 
     $db->rollBack();
     echo "Registration and RTO opening regression checks completed; test data rolled back.\n";
