@@ -32,7 +32,7 @@ $newEntrySource = file_get_contents(dirname(__DIR__) . '/transactions/new.php');
 assertRegistrationRto(
     str_contains($newEntrySource, 'rtoRecoveryWithoutCar')
         && str_contains($newEntrySource, 'id="rto-car-label"')
-        && str_contains($newEntrySource, 'No car — general RTO recovery'),
+        && str_contains($newEntrySource, 'No car — general RTO receipt'),
     'New Entry marks the RTO recovery car selector as optional with a clear general-recovery path'
 );
 $suffix = strtoupper(substr(str_replace('-', '', Database::uuid()), 0, 4));
