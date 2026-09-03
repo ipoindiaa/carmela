@@ -37,12 +37,12 @@ function renderCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
-        <tr><td colspan="11" class="text-center text-muted empty-table-cell">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
+        <tr><td colspan="9" class="text-center text-muted empty-table-cell">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
         <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
             $carPending = $engine->getCarPendingAmounts($car['id']);
-            $extraCost = max(0, (float) ($carProfitability['total_expenses'] ?? 0));
+            $totalCost = max(0, (float) ($carProfitability['total_cost'] ?? $car['purchase_price']));
             $totalSaleRealisation = (float) ($carProfitability['total_sale_realisation'] ?? 0);
             $profit = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) ? (float) ($carProfitability['profit'] ?? 0) : null;
             $buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
@@ -55,9 +55,7 @@ function renderCarRows($cars, $engine) {
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= clean($car['partner_names'] ?: '-') ?></td>
-            <td><?= renderDateTimeStack($car['purchase_date'], $car['created_at']) ?></td>
-            <td class="text-right amount flow-out"><?= formatAmount($car['purchase_price']) ?></td>
-            <td class="text-right amount flow-out"><?= formatAmount($extraCost) ?></td>
+            <td class="text-right amount flow-out"><?= formatAmount($totalCost) ?></td>
             <td class="text-right amount flow-in">
                 <?php if ($car['sale_price']): ?>
                     <?= formatAmount($totalSaleRealisation) ?>
@@ -133,10 +131,9 @@ $total = $db->fetch("SELECT COUNT(*) as cnt FROM cars c $where", $params);
 $pagination = paginate($total['cnt'], $perPage, $page);
 
 $cars = $db->fetchAll(
-    "SELECT c.*, a.current_balance as total_cost, partner_rollup.partner_names,
+    "SELECT c.*, partner_rollup.partner_names,
             COALESCE(rto.rto_pending, 0) AS rto_pending
      FROM cars c
-     LEFT JOIN accounts a ON a.id = c.account_id
      LEFT JOIN (
         SELECT cp.car_id, GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ') AS partner_names
         FROM car_partnerships cp
@@ -201,9 +198,7 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
                 <th>Make / Model</th>
                 <th>Year</th>
                 <th>Partners</th>
-                <th>Purchase Date / Time</th>
-                <th class="text-right">Purchase Price</th>
-                <th class="text-right">Extra Cost</th>
+                <th class="text-right">Total Cost</th>
                 <th class="text-right">Sale Price</th>
                 <th class="text-right">Profit/Loss</th>
                 <th class="text-center">Status</th>
