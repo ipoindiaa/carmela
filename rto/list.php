@@ -457,8 +457,8 @@ $archiveFilterParams = array_filter([
                                 <a href="../cars/view.php?id=<?= clean($entry['car_id']) ?>"><?= clean(formatRegistrationNo($entry['registration_no'])) ?></a>
                                 <div class="text-muted"><?= clean(trim(($entry['make'] ?? '') . ' ' . ($entry['model'] ?? ''))) ?></div>
                             <?php else: ?>
-                                <span class="text-bold">RTO Book</span>
-                                <div class="text-muted">Opening balance · no car linked</div>
+                                <span class="text-bold"><?= $entry['transaction_type'] === 'RTO_RECOVERY' ? 'General RTO Recovery' : 'RTO Book' ?></span>
+                                <div class="text-muted"><?= $entry['transaction_type'] === 'RTO_RECOVERY' ? 'No car linked' : 'Opening balance · no car linked' ?></div>
                             <?php endif; ?>
                         </td>
                         <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($entry['transaction_type'], $entry)) ?></span></td>

@@ -483,6 +483,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'RTO_RECOVERY':
+                $rtoCarId = trim((string) post('rto_car_id'));
+                if ($rtoCarId === '') {
+                    $generalRtoNarration = trim((string) $narration) ?: trim((string) post('rto_type_name'));
+                    $entryId = $engine->rtoRecoveryWithoutCar($amount, $date, $paymentAccountId, $generalRtoNarration);
+                    break;
+                }
                 $ownsRtoTransaction = !$db->inTransaction();
                 if ($ownsRtoTransaction) $db->beginTransaction();
                 try {
@@ -649,7 +655,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
                             <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
-                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Recovery Received" data-desc="Receive RTO money from buyer/customer for a specific car.">RTO Recovery Received</option>
+                            <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Recovery Received" data-desc="Receive RTO money from buyer/customer. Link the car when this receipt belongs to one car.">RTO Recovery Received</option>
                         </optgroup>
                         <optgroup label="Business">
                             <option value="GENERAL_EXPENSE" data-flow="out" data-icon="ri-receipt-line" data-title="Office / Business Expense" data-desc="Business paid normal running expense.">Office / Business Expense</option>
@@ -1169,12 +1175,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </h4>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Car *</label>
+                        <label class="form-label" id="rto-car-label">Car *</label>
                         <input type="hidden" name="rto_car_id" id="rto_car_id" value="<?= clean($preselectedCarId) ?>">
                         <button type="button" class="picker-trigger picker-trigger-wide" id="rto-car-picker-trigger" onclick="openEntityPicker('rto_car', this)">
                             <span><?= $preselectedCar ? clean($preselectedCar['registration_no']) : 'Select car for RTO' ?></span>
                             <i class="ri-search-line"></i>
                         </button>
+                        <div class="form-hint" id="rto-car-hint">Required for RTO expense and car-linked recovery.</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">RTO Narration (Optional)</label>
@@ -1736,6 +1743,27 @@ function syncTokenReturnUi() {
     buyerInput.disabled = false;
     if (!buyerInput.value && buyerPicker.querySelector('span')) {
         buyerPicker.querySelector('span').textContent = 'Optional — select buyer / customer';
+    }
+}
+
+function syncRtoRecoveryUi() {
+    const type = document.getElementById('transaction_type')?.value || '';
+    const isRecovery = type === 'RTO_RECOVERY';
+    const label = document.getElementById('rto-car-label');
+    const hint = document.getElementById('rto-car-hint');
+    const input = document.getElementById('rto_car_id');
+    const trigger = document.getElementById('rto-car-picker-trigger');
+
+    if (label) label.innerHTML = isRecovery
+        ? 'Car <span class="text-muted">(Optional)</span>'
+        : 'Car *';
+    if (hint) hint.textContent = isRecovery
+        ? 'Leave blank to record a general RTO recovery. Select a car when this receipt belongs to that car’s RTO history.'
+        : 'Required for RTO expense and car-linked recovery.';
+    if (trigger?.querySelector('span') && !input?.value) {
+        trigger.querySelector('span').textContent = isRecovery
+            ? 'No car — general RTO recovery'
+            : 'Select car for RTO';
     }
 }
 
@@ -2420,6 +2448,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(syncCarClearingUi, 0);
         setTimeout(syncCounterpartyUi, 0);
         setTimeout(syncTokenReturnUi, 0);
+        setTimeout(syncRtoRecoveryUi, 0);
         setTimeout(syncEntryExclusiveControls, 0);
         setTimeout(loadPurchaseSourcePanel, 0);
     });
@@ -2438,6 +2467,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncCarClearingUi();
     syncCounterpartyUi();
     syncTokenReturnUi();
+    syncRtoRecoveryUi();
     syncEntryExclusiveControls();
     loadPurchaseSourcePanel();
 });

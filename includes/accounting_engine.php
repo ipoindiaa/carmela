@@ -320,12 +320,27 @@ class AccountingEngine {
              WHERE business_id = ? AND status <> 'CANCELLED'",
             [$this->businessId]
         );
+        // A recovery entered without a car is intentionally not an rto_record:
+        // the RTO case tables require a real car link. Include these journal
+        // receipts in the RTO Book total without inventing a car/case relation.
+        $generalRecovery = $this->db->fetch(
+            "SELECT COALESCE(SUM(jl.amount), 0) AS recovered
+             FROM journal_entries je
+             JOIN journal_lines jl ON jl.journal_entry_id = je.id AND jl.entry_type = 'CR'
+             JOIN accounts a ON a.id = jl.account_id AND a.code = 'RTO-REC'
+             WHERE je.business_id = ?
+               AND je.transaction_type = 'RTO_RECOVERY'
+               AND je.car_id IS NULL
+               AND je.status = 'POSTED'
+               AND je.is_reversal = 0",
+            [$this->businessId]
+        );
         $openingAccount = $this->getRtoOpeningAccount(false);
         $opening = $openingAccount
             ? signedBalanceValue($openingAccount['opening_balance'] ?? 0, $openingAccount['opening_balance_type'] ?? 'DR')
             : 0.0;
         $spent = floatval($totals['spent'] ?? 0);
-        $recovered = floatval($totals['recovered'] ?? 0);
+        $recovered = floatval($totals['recovered'] ?? 0) + floatval($generalRecovery['recovered'] ?? 0);
 
         return [
             'opening' => round($opening, 2),
@@ -2835,6 +2850,24 @@ class AccountingEngine {
             if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Record RTO money received when the operator does not know or need a car
+     * link. This is a general RTO receipt, not an RTO case: the case tables
+     * have mandatory car foreign keys and must not contain fabricated links.
+     */
+    public function rtoRecoveryWithoutCar($amount, $date, $receivingAccount, $narration = '') {
+        $amount = round(floatval($amount), 2);
+        if ($amount <= 0) throw new Exception('Recovery amount must be greater than zero.');
+        $this->validateDateNotLocked($date);
+        $entryNarration = trim((string) $narration) ?: 'General RTO recovery received';
+        $income = $this->getOrCreateSystemAccount('RTO-REC', 'RTO Recovery Income', 'INCOME', 'Direct Income');
+
+        return $this->postJournalEntry('RTO_RECOVERY', $date, $entryNarration, [
+            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => 'General RTO recovery received'],
+            ['account_id' => $income['id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'General RTO recovery income'],
+        ]);
     }
 
     public function recordSecondKeyEvent($carId, $eventType, $date, $narration) {

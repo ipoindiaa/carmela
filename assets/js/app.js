@@ -152,6 +152,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof syncTokenReturnUi === 'function') {
                 syncTokenReturnUi();
             }
+            if (typeof syncRtoRecoveryUi === 'function') {
+                syncRtoRecoveryUi();
+            }
         });
 
         if (txnTypeSelect.dataset.preselectedType) {
