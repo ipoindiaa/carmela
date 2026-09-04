@@ -941,19 +941,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- TOKEN RETURN: a selected car can identify its only open-token buyer. -->
+            <!-- TOKEN RETURN: an unambiguous selected car or token register can identify the buyer. -->
             <div class="txn-section" id="token-return-section" hidden>
                 <div class="alert alert-info token-accounting-note">
                     <i class="ri-shield-check-line"></i>
-                    <div><strong>This returns a buyer advance, not an expense.</strong><span>Choose a buyer, or select a car with one open token buyer and the system will identify the buyer automatically.</span></div>
+                    <div><strong>This returns a buyer advance, not an expense.</strong><span>Choose a buyer or car. If neither is selected, the system continues only when there is one clear buyer with an open token balance.</span></div>
                 </div>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Car <span class="text-muted">(Optional)</span></strong><span>Select a car to return only that car's token. If you leave Buyer blank, this car must have one open token buyer. Leave car blank to return the selected buyer's oldest open token balances across cars.</span></div>
+                        <div><strong>Car <span class="text-muted">(Optional)</span></strong><span>Select a car to return only that car's token. If you leave Buyer blank, this car must have one open token buyer. Leave both blank only when one buyer has an open token balance in the system.</span></div>
                     </div>
                     <input type="hidden" name="token_refund_car_id" id="token_refund_car_id" value="<?= clean($preselectedType === 'TOKEN_REFUND' ? $preselectedCarId : '') ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="token-refund-car-picker-trigger" onclick="openEntityPicker('token_refund_car', this)">
-                        <span><?= $preselectedType === 'TOKEN_REFUND' && $preselectedCar ? clean($preselectedCar['registration_no']) : 'No car — return buyer token balance' ?></span>
+                        <span><?= $preselectedType === 'TOKEN_REFUND' && $preselectedCar ? clean($preselectedCar['registration_no']) : 'No car — auto-select only clear buyer' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
                 </div>
@@ -1506,10 +1506,10 @@ const entityPickerConfig = {
     },
     token_refund_car: {
         title: 'Select Token Car (Optional)',
-        subtitle: 'Choose one business, outside, or commission car to return only that car’s token. Leave it blank to return the buyer’s token balance across cars.',
+        subtitle: 'Choose one business, outside, or commission car to return only that car’s token. Leave it blank to return a selected buyer’s token balance, or to auto-select the only clear open-token buyer.',
         inputId: 'token_refund_car_id',
         triggerId: 'token-refund-car-picker-trigger',
-        emptyLabel: 'No car — return buyer token balance',
+        emptyLabel: 'No car — auto-select only clear buyer',
     },
     debtor: {
         title: 'Search Debtors / Buyers',
@@ -1736,7 +1736,7 @@ function syncTokenReturnUi() {
     if (buyerToggle) buyerToggle.hidden = isTokenReturn;
     if (buyerHeading) {
         buyerHeading.innerHTML = isTokenReturn
-            ? '<strong>Buyer / Customer <span class="text-muted">(Optional)</span></strong><span>Leave blank only after selecting a car with one open token buyer. Select the buyer when the car has more than one token.</span>'
+            ? '<strong>Buyer / Customer <span class="text-muted">(Optional)</span></strong><span>Leave blank when the selected car has one open token buyer, or when there is one clear buyer with an open token balance in the system. Otherwise select the buyer.</span>'
             : '<strong>Buyer / Customer *</strong><span>Select an existing ledger or create it here once.</span>';
     }
     if (!isTokenReturn || !buyerNewFields || !buyerPicker || !buyerInput) return;

@@ -66,6 +66,14 @@ try {
         return $carId;
     };
 
+    $uniqueAutoCarId = $createCar('TU');
+    $uniqueAutoBuyerId = $engine->getOrCreateParty('Only Open Token Buyer ' . $suffix, 'BUYER');
+    $engine->receiveCarToken($uniqueAutoCarId, $uniqueAutoBuyerId, '', '', 1200, $date, $cash['id'], 'Only open token receipt');
+    $uniqueAutoRefundId = $engine->refundBuyerTokenBalance('', 700, $date, $cash['id'], 'Return without selecting buyer or car');
+    $uniqueAutoRefund = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$uniqueAutoRefundId]);
+    assertTokenReturn(empty($uniqueAutoRefund['car_id']) && $uniqueAutoRefund['party_id'] === $uniqueAutoBuyerId, 'Blank buyer and car automatically use the one unambiguous open token buyer');
+    $engine->refundBuyerTokenBalance('', 500, $date, $cash['id'], 'Clear the only open token balance');
+
     $carA = $createCar('TR');
     $carB = $createCar('TS');
     $buyerId = $engine->getOrCreateParty('Token Return Buyer ' . $suffix, 'BUYER');
@@ -112,9 +120,9 @@ try {
 
     try {
         $engine->refundBuyerTokenBalance('', 500, $date, $cash['id'], 'No buyer or car');
-        throw new RuntimeException('Expected token return without buyer and car to be rejected.');
+        throw new RuntimeException('Expected ambiguous token return without buyer and car to require a choice.');
     } catch (Exception $expected) {
-        assertTokenReturn(str_contains($expected->getMessage(), 'Select a buyer / customer or select the car'), 'Token return still requires a buyer or a car for traceable allocation');
+        assertTokenReturn(str_contains($expected->getMessage(), 'More than one buyer has an open token balance'), 'Blank buyer and car require a choice when more than one buyer has an open token balance');
     }
 
     try {

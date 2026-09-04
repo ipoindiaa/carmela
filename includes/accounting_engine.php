@@ -1924,7 +1924,6 @@ class AccountingEngine {
         $carId = trim((string) $carId);
         $amount = round(floatval($amount), 2);
         $narration = trim((string) $narration);
-        if ($partyId === '' && $carId === '') throw new Exception('Select a buyer / customer or select the car whose token is being returned.');
         if ($amount <= 0) throw new Exception('Token return amount must be greater than zero.');
         $this->validateDateNotLocked($date);
         $this->validateCashAvailable($paymentAccount, $amount);
@@ -1937,7 +1936,30 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
-            if ($partyId === '') {
+            if ($partyId === '' && $carId === '') {
+                // A blank buyer and car is safe only when all open token receipts
+                // belong to one buyer.  Never guess which buyer should receive a
+                // refund when the token register contains more than one party.
+                $openTokenRows = $this->db->fetchAll(
+                    "SELECT party_id FROM car_tokens
+                     WHERE business_id = ?
+                       AND status IN ('OPEN', 'PARTIAL')
+                       AND amount - applied_amount - refunded_amount > 0.009
+                     FOR UPDATE",
+                    [$this->businessId]
+                );
+                $candidatePartyIds = array_values(array_unique(array_filter(array_map(
+                    static fn($row) => trim((string) ($row['party_id'] ?? '')),
+                    $openTokenRows
+                ))));
+                if (count($candidatePartyIds) === 0) {
+                    throw new Exception('There is no open buyer token balance to return.');
+                }
+                if (count($candidatePartyIds) > 1) {
+                    throw new Exception('More than one buyer has an open token balance. Select a buyer / customer or select a car whose open token buyer is clear.');
+                }
+                $partyId = $candidatePartyIds[0];
+            } elseif ($partyId === '') {
                 $openTokenRows = $this->db->fetchAll(
                     "SELECT party_id FROM car_tokens
                      WHERE business_id = ? AND car_id = ?
