@@ -2545,6 +2545,24 @@ class AccountingEngine {
         return round(max(0, $outstanding), 2);
     }
 
+    /**
+     * Read a seller's unpaid purchase balance for one car without relying on
+     * the legacy cars.seller_party_id link. Used by the installment picker.
+     */
+    public function getCarLinkedOutstandingAmountForParty($carId, $partyId) {
+        $party = $this->db->fetch(
+            "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ?",
+            [$partyId, $this->businessId]
+        );
+        if (empty($party['account_id'])) return 0.0;
+        return $this->getCarLinkedOutstandingAmount(
+            $carId,
+            $party['account_id'],
+            'CR',
+            ['CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'PURCHASE_AMOUNT_CORRECTION', 'LOAN_REPAID']
+        );
+    }
+
     private function getCarSalePendingFromSalePrice(array $car) {
         $salePrice = round(floatval($car['sale_price'] ?? 0), 2);
         if ($salePrice <= 0) {
@@ -3498,10 +3516,17 @@ class AccountingEngine {
         }
 
         if ($carId) {
-            $carPending = $this->getCarPendingAmounts($carId);
-            $purchasePending = round(floatval($carPending['purchase_pending'] ?? 0), 2);
+            // Use the selected seller's ledger directly. Older cars can have a
+            // valid purchase payable in the journal before seller_party_id was
+            // backfilled on the car row; that must not prevent an installment.
+            $purchasePending = $this->getCarLinkedOutstandingAmount(
+                $carId,
+                $party['account_id'],
+                'CR',
+                ['CAR_PURCHASE', 'PURCHASE_PAYMENT_REPAIR', 'PURCHASE_AMOUNT_CORRECTION', 'LOAN_REPAID']
+            );
             if ($purchasePending <= 0.009) {
-                throw new Exception("This car has no purchase balance pending for payment.");
+                throw new Exception("This car has no unpaid purchase balance with {$party['name']}. To record another installment, select a car with a remaining purchase balance.");
             }
             if ($amount - $purchasePending > 0.01) {
                 throw new Exception(
@@ -3526,12 +3551,25 @@ class AccountingEngine {
             ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Seller payment clearing paid to {$party['name']}" : "Loan repaid to {$party['name']}"],
         ];
 
-        return $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: ($carId ? 'Seller payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, [
+        $entryId = $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: ($carId ? 'Seller payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, [
             'party_id' => $partyId,
             'car_id' => $carId ?: null,
             'entry_type_id' => systemEntryTypeId($carId ? 'SELLER_PAYMENT_CLEARING' : 'LOAN_REPAID'),
             'entry_amount' => $amount,
         ]);
+
+        // Keep historical purchase records connected after their first
+        // installment. This updates only an empty link; a different linked
+        // seller was rejected above and is never overwritten.
+        if ($carId && empty($car['seller_party_id'])) {
+            $this->db->query(
+                "UPDATE cars SET seller_party_id = ? WHERE id = ? AND business_id = ? AND (seller_party_id IS NULL OR seller_party_id = '')",
+                [$partyId, $carId, $this->businessId]
+            );
+            Auth::auditUpdate('car', $carId, ['seller_party_id' => null], ['seller_party_id' => $partyId], 'Seller linked while recording purchase installment', 'transactions');
+        }
+
+        return $entryId;
     }
 
     /**

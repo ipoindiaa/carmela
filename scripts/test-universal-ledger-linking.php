@@ -94,12 +94,20 @@ try {
     );
     assertUll(abs(floatval($dealerPayableLine['amount'] ?? 0) - 15000.0) < 0.01, 'Dealer ledger receives only the commission payable, never the owner purchase amount');
 
-    $firstSellerClearId = $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL first purchase balance payment', $carId);
+    // Simulate a legacy car whose journal has the seller payable but whose
+    // seller link was never backfilled. The first installment must repair only
+    // that missing relationship, then every later installment stays available.
+    $db->query("UPDATE cars SET seller_party_id = NULL WHERE id = ?", [$carId]);
+    $firstSellerClearId = $engine->loanRepaid($car['seller_party_id'], 50000, $date, $cash['id'], 'ULL first purchase balance payment', $carId);
     $firstPurchasePending = $engine->getCarPendingAmounts($carId);
     $firstSellerClear = $db->fetch("SELECT car_id, party_id FROM journal_entries WHERE id = ?", [$firstSellerClearId]);
-    assertUll(abs(floatval($firstPurchasePending['purchase_pending']) - 75000.0) < 0.01, 'Partial purchase balance payment leaves the correct remaining amount on the bought car');
-    assertUll($firstSellerClear['car_id'] === $carId && $firstSellerClear['party_id'] === $car['seller_party_id'], 'Purchase balance payment stays linked to its car and seller');
+    $relinkedCar = $db->fetch("SELECT seller_party_id FROM cars WHERE id = ?", [$carId]);
+    assertUll(abs(floatval($firstPurchasePending['purchase_pending']) - 100000.0) < 0.01, 'First partial purchase payment leaves the correct remaining amount on the bought car');
+    assertUll($firstSellerClear['car_id'] === $carId && $firstSellerClear['party_id'] === $car['seller_party_id'] && $relinkedCar['seller_party_id'] === $car['seller_party_id'], 'First purchase installment stays linked to and repairs the car seller relationship');
 
+    $engine->loanRepaid($car['seller_party_id'], 25000, $date, $cash['id'], 'ULL second purchase balance payment', $carId);
+    $secondPurchasePending = $engine->getCarPendingAmounts($carId);
+    assertUll(abs(floatval($secondPurchasePending['purchase_pending']) - 75000.0) < 0.01, 'Second purchase installment remains available against the same car');
     $engine->loanRepaid($car['seller_party_id'], 75000, $date, $cash['id'], 'ULL final purchase balance payment', $carId);
     $finalPurchasePending = $engine->getCarPendingAmounts($carId);
     assertUll($finalPurchasePending['purchase_pending'] < 0.01, 'Final purchase balance payment clears the bought car payable');

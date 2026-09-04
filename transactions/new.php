@@ -73,9 +73,13 @@ if ($isPostRequest && post('payment_account') !== '') {
 }
 $preselectedType = $isPostRequest ? post('transaction_type') : get('type', '');
 if (!isset(TXN_TYPES[$preselectedType])) $preselectedType = '';
-$preselectedCarId = get('car_id', '');
+$preselectedCarId = $isPostRequest && in_array($preselectedType, ['LOAN_RECEIVED', 'LOAN_REPAID'], true)
+    ? trim((string) post('linked_car_id'))
+    : get('car_id', '');
 $preselectedCar = null;
-$preselectedPartyId = get('party_id', '');
+$preselectedPartyId = $isPostRequest
+    ? trim((string) post($preselectedType === 'LOAN_REPAID' ? 'creditor_id' : ($preselectedType === 'LOAN_RECEIVED' ? 'debtor_id' : 'counterparty_id')))
+    : get('party_id', '');
 $preselectedParty = null;
 $preselectedPartnerId = $isPostRequest ? trim((string) post('partner_id')) : '';
 $preselectedPartner = null;
@@ -1165,6 +1169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="ri-search-line"></i>
                     </button>
                     <div class="form-hint" id="linked-car-hint">Use this when buyer or seller chunk payment belongs to a specific car.</div>
+                    <div class="form-hint text-bold" id="linked-car-pending" hidden></div>
                 </div>
             </div>
 
@@ -2239,7 +2244,7 @@ async function renderEntityPickerResults(query) {
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}">
+            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>
@@ -2255,7 +2260,8 @@ async function renderEntityPickerResults(query) {
                     decodeURIComponent(this.dataset.entityLabel || ''),
                     this.dataset.linkedPartyId || '',
                     decodeURIComponent(this.dataset.linkedPartyLabel || ''),
-                    this.dataset.tokenAvailable || '0'
+                    this.dataset.tokenAvailable || '0',
+                    this.dataset.purchasePending || '0'
                 );
             });
         });
@@ -2281,7 +2287,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
     }
 }
 
-function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0') {
+function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0', purchasePending = '0') {
     const triggerButton = activeEntityPicker?.button || null;
     if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
@@ -2307,6 +2313,9 @@ function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPart
         if (span) span.textContent = label || config.emptyLabel;
     }
     applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel);
+    if (kind === 'payment_car') {
+        syncPaymentCarPendingHint(purchasePending);
+    }
     if (kind === 'car') {
         applyCarTokenContext(linkedPartyId, linkedPartyLabel, tokenAvailable);
         loadPurchaseSourcePanel();
@@ -2419,6 +2428,23 @@ function syncCarClearingUi() {
                 ? 'Select purchased car for seller clearing'
                 : 'Select car if this payment belongs to one car');
     }
+
+    if (!paymentCarInput?.value) syncPaymentCarPendingHint(0);
+}
+
+function syncPaymentCarPendingHint(pendingAmount) {
+    const hint = document.getElementById('linked-car-pending');
+    if (!hint) return;
+    const txnType = document.getElementById('transaction_type')?.value || '';
+    const pending = parseNumericString(pendingAmount || '0');
+    if (txnType !== 'LOAN_REPAID' || !document.getElementById('linked_car_id')?.value) {
+        hint.hidden = true;
+        return;
+    }
+    hint.hidden = false;
+    hint.textContent = pending > 0.009
+        ? `Purchase balance pending: ${formatINR(pending)}. You can record another installment up to this amount.`
+        : 'This car’s purchase balance is already settled. Select another car or leave Car blank to clear a general creditor balance.';
 }
 
 document.addEventListener('DOMContentLoaded', function() {

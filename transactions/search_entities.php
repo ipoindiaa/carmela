@@ -144,13 +144,25 @@ switch ($kind) {
                 $linkedPartyId = $row['token_party_id'] ?? null;
                 $linkedPartyLabel = $row['token_party_name'] ?? '';
             }
+            $purchasePending = 0.0;
+            if ($kind === 'payment_car' && $context === 'LOAN_REPAID' && !empty($linkedPartyId)) {
+                $pending = $engine->getCarLinkedOutstandingAmountForParty($row['id'], $linkedPartyId);
+                $purchasePending = max(0, $pending);
+            }
+            $metaParts = [$row['year'] ?: '', $row['status'] ?? '', $ownershipLabel];
+            if ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
+                $metaParts[] = $purchasePending > 0.009
+                    ? 'Purchase pending ' . formatAmount($purchasePending)
+                    : 'No purchase balance pending';
+            }
             $results[] = [
                 'id' => $row['id'],
                 'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? '')) . ($ownershipType === 'OWNED' ? '' : ' · ' . $ownershipLabel)),
-                'meta' => trim(implode(' · ', array_filter([$row['year'] ?: '', $row['status'] ?? '', $ownershipLabel]))),
+                'meta' => trim(implode(' · ', array_filter($metaParts))),
                 'linked_party_id' => $linkedPartyId,
                 'linked_party_label' => $linkedPartyLabel,
                 'token_available' => floatval($row['token_available'] ?? 0),
+                'purchase_pending' => $purchasePending,
             ];
         }
         break;
