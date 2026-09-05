@@ -311,8 +311,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($sellerPartyId !== '' && $sellerName !== '') {
                     throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
                 }
-                if ($sellerPartyId === '' && $sellerName === '') {
-                    throw new Exception('Select the vehicle owner / seller for this purchase.');
+                if ($sellerPartyId === '' && $sellerName === '' && floatval($purchasePaidNow ?? 0) > 0.009) {
+                    throw new Exception('Select or add the vehicle owner before recording the first purchase payment.');
                 }
                 if ($sellerPartyId === '') {
                     Auth::requireEntityAccess('party', 'write');
@@ -335,6 +335,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($dealerInput['payment_account'] !== '' && !in_array($dealerInput['payment_account'], $writableAccountIds, true)) {
                     throw new Exception('You do not have write access to the dealer payment account.');
                 }
+
+                // A bought car may not have a final price at intake. Its opening
+                // purchase amount is only the money actually recorded now: the
+                // owner payment plus any recorded partner contribution. Later
+                // car purchase payments add to this amount automatically.
+                $initialPartnerFunding = round(array_sum(array_map(
+                    static fn($funding) => floatval($funding['amount'] ?? 0),
+                    $partnerFunding
+                )), 2);
+                $amount = round(floatval($purchasePaidNow ?? 0) + $initialPartnerFunding, 2);
                 $validation = $engine->validateCarPurchaseInput($amount, $date, $paymentAccountId, $partnerFunding, $sellerLabel, $purchasePaidNow);
                 $partnerFunding = $validation['partner_funding'];
                 $purchasePaidNow = $validation['paid_now'];
@@ -364,6 +374,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'purchase_date' => $date,
                         'purchase_price' => $amount,
                         'purchase_paid_amount' => $purchasePaidNow,
+                        'purchase_amount_mode' => 'PAYMENTS',
                         'ownership_type' => 'OWNED',
                         'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
                         'partner_id' => null,
@@ -652,7 +663,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="">— Select Transaction Type —</option>
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Custom Entry Type" data-desc="Admin-defined money-in or money-out type.">Custom Entry Type</option>
                         <optgroup label="Cars">
-                            <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Business paid money to buy stock.">Bought a Car</option>
+                            <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Record the car and its first owner payment. Later owner payments build its purchase amount.">Bought a Car</option>
                             <option value="OUTSIDE_CAR_RECEIVED" data-flow="both" data-icon="ri-steering-2-line" data-title="Add Outside Car" data-desc="Receive a source entity's car on commission basis; never adds it to owned stock.">Add Outside Car</option>
                             <option value="CAR_TOKEN_RECEIVED" data-flow="in" data-icon="ri-hand-coin-line" data-title="Car Token Received" data-desc="Buyer advance held for one specific car; not income yet.">Car Token Received</option>
                             <option value="TOKEN_REFUND" data-flow="out" data-icon="ri-refund-2-line" data-title="Return Car Token" data-desc="Return a recorded buyer token from Cash or Bank. Car selection is optional.">Return Car Token</option>
@@ -791,7 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Owner's Name <span class="text-muted">(Vehicle Owner / Seller)</span> *</strong><span>The legal owner of this car. Their ledger receives the purchase payable — never a duplicate account.</span></div>
+                        <div><strong>Owner's Name <span class="text-muted">(Vehicle Owner / Seller)</span> <span class="section-optional">(Optional)</span></strong><span>Link the legal owner before recording money to them. Their ledger then records every purchase amount and payment — never a duplicate account.</span></div>
                         <button type="button" class="btn btn-outline btn-sm" id="vehicle-owner-new-toggle" onclick="toggleNewParty('vehicle_owner')"><i class="ri-user-add-line"></i> Add New Owner</button>
                     </div>
                     <input type="hidden" name="seller_party_id" id="seller_party_id">
@@ -806,12 +817,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Paid to Owner Now (₹)</label>
+                        <label class="form-label">First Payment to Owner (₹)</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
-                            <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                            <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank when nothing is paid now" inputmode="decimal" autocomplete="off">
                         </div>
-                        <div class="form-hint">Anything not paid now stays as the owner's pending balance. This payment is never an expense.</div>
+                        <div class="form-hint">This starts the purchase amount. Every later Car Purchase Payment will add to this car's purchase amount automatically.</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Pay Owner From</label>
@@ -995,7 +1006,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <table class="detail-table">
                             <tr><td class="text-muted">Owner's Name</td><td id="ps-owner">—</td></tr>
                             <tr><td class="text-muted">Dealer's Name</td><td id="ps-dealer">—</td></tr>
-                            <tr><td class="text-muted">Purchase Price</td><td class="amount" id="ps-price">—</td></tr>
+                            <tr><td class="text-muted">Purchase Amount to Date</td><td class="amount" id="ps-price">—</td></tr>
                             <tr><td class="text-muted">Paid to Owner</td><td class="amount flow-in" id="ps-owner-paid">—</td></tr>
                             <tr><td class="text-muted">Owner Balance Pending</td><td class="amount" id="ps-owner-pending">—</td></tr>
                             <tr><td class="text-muted">Dealer Commission</td><td class="amount" id="ps-dealer-commission">—</td></tr>
@@ -2112,8 +2123,12 @@ function syncSaleAmountUi() {
 
     const isCarSale = txnType === 'CAR_SALE';
     const isOutsideCarReceipt = txnType === 'OUTSIDE_CAR_RECEIVED';
-    amountGroup.style.display = (isCarSale || isOutsideCarReceipt) ? 'none' : '';
-    amountInput.required = !(isCarSale || isOutsideCarReceipt);
+    const isCarPurchase = txnType === 'CAR_PURCHASE';
+    const hidesAmount = isCarSale || isOutsideCarReceipt || isCarPurchase;
+    amountGroup.style.display = hidesAmount ? 'none' : '';
+    amountInput.required = !hidesAmount;
+    amountInput.disabled = isCarPurchase || isOutsideCarReceipt;
+    if (isCarPurchase || isOutsideCarReceipt) amountInput.value = '';
     if (narrationInput) {
         narrationInput.required = false;
         narrationInput.placeholder = 'Optional — add a note if needed';
@@ -2417,7 +2432,7 @@ function syncCarClearingUi() {
         linkedCarHint.textContent = txnType === 'LOAN_RECEIVED'
             ? 'Select the sold car when buyer pays later in chunks. The buyer will auto-fill when available.'
             : (txnType === 'LOAN_REPAID'
-                ? 'Select the purchased car when seller is paid later in chunks. The seller auto-fills, and the payment cannot exceed this car’s purchase balance.'
+                ? 'Select the purchased car. For fixed-price cars this clears the remaining balance; for payment-based cars this owner payment increases the purchase amount.'
                 : 'Use this when buyer or seller chunk payment belongs to a specific car.');
     }
 

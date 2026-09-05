@@ -146,6 +146,50 @@ try {
     assertUll(count($decreaseLines) === 2 && in_array('DR', array_column($decreaseLines, 'entry_type'), true) && in_array('CR', array_column($decreaseLines, 'entry_type'), true), 'Purchase amount decrease is a balanced seller-and-car journal correction with no cash line');
     assertUll(abs(floatval($costAfterPurchaseCorrection['total_cost']) - 465000.0) < 0.01, 'Car profitability uses the corrected signed vehicle cost after purchase amount changes');
 
+    $paymentBasedCarId = Database::uuid();
+    $paymentBasedRegistration = 'GJ99PB' . random_int(1000, 9999);
+    $paymentBasedCarAccountId = $engine->createAccount('ULL-PB-' . $suffix, "ULL Payment-Based Car - $paymentBasedRegistration", 'ASSET', 'Inventory', 'CAR', $paymentBasedCarId);
+    $db->insert('cars', [
+        'id' => $paymentBasedCarId,
+        'business_id' => $business['id'],
+        'registration_no' => $paymentBasedRegistration,
+        'make' => 'ULL',
+        'model' => 'Payment based purchase',
+        'purchase_date' => $date,
+        'purchase_price' => 30000,
+        'purchase_paid_amount' => 30000,
+        'purchase_amount_mode' => 'PAYMENTS',
+        'status' => 'IN_STOCK',
+        'account_id' => $paymentBasedCarAccountId,
+    ]);
+    $engine->carPurchase($paymentBasedCarId, 30000, $date, $cash['id'], 'ULL first payment-based car purchase', [], 'ULL Payment-Based Seller ' . $suffix, 30000);
+    $paymentBasedCar = $db->fetch("SELECT * FROM cars WHERE id = ?", [$paymentBasedCarId]);
+    $paymentBasedSellerId = $paymentBasedCar['seller_party_id'];
+    $paymentBasedEntryId = $engine->loanRepaid($paymentBasedSellerId, 12000, $date, $cash['id'], 'ULL second payment increases purchase amount', $paymentBasedCarId);
+    $paymentBasedCar = $db->fetch("SELECT purchase_price, purchase_paid_amount, seller_party_id FROM cars WHERE id = ?", [$paymentBasedCarId]);
+    $paymentBasedPending = $engine->getCarPendingAmounts($paymentBasedCarId);
+    $paymentBasedLines = $db->fetchAll("SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? ORDER BY entry_type, amount", [$paymentBasedEntryId]);
+    assertUll(
+        abs(floatval($paymentBasedCar['purchase_price']) - 42000.0) < 0.01
+        && abs(floatval($paymentBasedCar['purchase_paid_amount']) - 42000.0) < 0.01
+        && $paymentBasedCar['seller_party_id'] === $paymentBasedSellerId,
+        'A later car purchase payment increases the payment-based purchase amount instead of requiring a fixed pending balance'
+    );
+    assertUll($paymentBasedPending['purchase_pending'] < 0.01 && count($paymentBasedLines) === 4, 'Payment-based purchase payment keeps the seller ledger settled and posts a four-line balanced voucher');
+    $engine->reverseEntry($paymentBasedEntryId, 'ULL reverse payment-based purchase payment', $date);
+    $paymentBasedCarAfterReversal = $db->fetch("SELECT purchase_price, purchase_paid_amount FROM cars WHERE id = ?", [$paymentBasedCarId]);
+    assertUll(
+        abs(floatval($paymentBasedCarAfterReversal['purchase_price']) - 30000.0) < 0.01
+        && abs(floatval($paymentBasedCarAfterReversal['purchase_paid_amount']) - 30000.0) < 0.01,
+        'Reversing a payment-based purchase payment removes it from the car purchase amount'
+    );
+    try {
+        $engine->correctCarPurchaseAmount($paymentBasedCarId, 50000, $date, 'This must use another payment instead.');
+        throw new RuntimeException('Expected payment-based purchase amount correction to be blocked.');
+    } catch (Exception $expected) {
+        assertUll(str_contains($expected->getMessage(), 'calculated from recorded owner payments'), 'Payment-based cars direct operators to Add Purchase Payment instead of a fixed-price correction');
+    }
+
     $legacyCarId = Database::uuid();
     $legacyRegistration = 'GJ99LH' . random_int(1000, 9999);
     $legacyCarAccountId = $engine->createAccount('ULL-LEG-' . $suffix, "ULL Legacy Car - $legacyRegistration", 'ASSET', 'Inventory', 'CAR', $legacyCarId);

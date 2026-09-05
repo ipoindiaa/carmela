@@ -99,7 +99,7 @@ $clearUrl = 'car_inventory.php';
 
 <div class="table-container table-container-fill table-container-fit">
     <table>
-        <thead><tr><th>Car</th><th>Purchase Date</th><th>Status</th><th>Inventory Account</th><th class="text-right">Purchase Price</th><th class="text-right">Ledger Balance</th><th></th></tr></thead>
+        <thead><tr><th>Car</th><th>Purchase Date</th><th>Status</th><th>Inventory Account</th><th class="text-right">Purchase Amount</th><th class="text-right">Ledger Balance</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car): ?>
             <tr>

@@ -124,6 +124,8 @@ $sellerImages = fetchEntityAttachments($businessId, 'CAR', $id, 'SELLER');
 
 $buyerParty = !empty($car['buyer_party_id']) ? $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$car['buyer_party_id'], $businessId]) : null;
 $sellerParty = !empty($car['seller_party_id']) ? $db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$car['seller_party_id'], $businessId]) : null;
+$isPaymentBasedPurchase = strtoupper(trim((string) ($car['purchase_amount_mode'] ?? 'FIXED'))) === 'PAYMENTS';
+$purchaseAmountLabel = $isPaymentBasedPurchase ? 'Purchase Amount (from Payments)' : 'Purchase Price';
 $carPending = $engine->getCarPendingAmounts($id);
 $buyerOutstanding = (float) ($carPending['sale_pending'] ?? 0);
 $sellerOutstanding = (float) ($carPending['purchase_pending'] ?? 0);
@@ -367,7 +369,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
     <div class="card-body">
         <form method="POST" data-confirm-submit="Save these car detail changes? Every changed field will be recorded in History.">
             <?= csrfField() ?><input type="hidden" name="action" value="update_details">
-            <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase date, sale amounts, and status come from accounting entries and remain read-only. Use the Purchase Amount Correction section below to safely correct a wrongly entered buying amount.</div>
+            <div class="alert alert-info"><i class="ri-information-line"></i> Registration, purchase date, sale amounts, and status come from accounting entries and remain read-only. <?= $isPaymentBasedPurchase ? 'This car’s purchase amount is calculated from recorded owner payments.' : 'Use the Purchase Amount Correction section below to safely correct a wrongly entered buying amount.' ?></div>
             <div class="form-row-3">
                 <div class="form-group"><label class="form-label">Make</label><input type="text" name="make" class="form-control" value="<?= clean($car['make']) ?>"></div>
                 <div class="form-group"><label class="form-label">Model</label><input type="text" name="model" class="form-control" value="<?= clean($car['model']) ?>"></div>
@@ -391,7 +393,10 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
 <div class="card car-edit-card" id="purchase-amount-correction">
     <div class="card-header"><div><h3><i class="ri-edit-2-line"></i> Correct Purchase Amount</h3><div class="card-header-note">Use this only when the original buying amount was entered wrongly.</div></div></div>
     <div class="card-body">
-        <?php if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
+        <?php if ($isPaymentBasedPurchase): ?>
+            <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Purchase amount is calculated from payments.</strong><span>There is no fixed purchase price to edit. Add a payment whenever money is paid to the owner; the car cost and owner ledger update together.</span></div></div>
+            <div class="form-actions form-actions-start"><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-primary"><i class="ri-hand-coin-line"></i> Add Purchase Payment</a></div>
+        <?php elseif (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This is not a bought business car.</strong><span>Commission and outside cars do not have a business purchase amount to correct.</span></div></div>
         <?php elseif ($car['status'] !== 'IN_STOCK'): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This car is no longer in stock.</strong><span>Reverse the sale first, then correct its purchase amount so profit and sale history remain traceable.</span></div></div>
@@ -421,7 +426,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon stat-icon-blue"><i class="ri-shopping-cart-line"></i></div></div>
         <div class="stat-value flow-out"><?= formatAmount($car['purchase_price']) ?></div>
-        <div class="stat-label">Purchase Price</div>
+        <div class="stat-label"><?= clean($purchaseAmountLabel) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-header"><div class="stat-icon stat-icon-amber"><i class="ri-tools-line"></i></div></div>
@@ -459,7 +464,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
     <div class="card-header">
         <div><h3><i class="ri-shopping-bag-3-line"></i> Purchase Source &amp; Settlement</h3><div class="card-header-note">Who this car was bought from, who it was bought through, and exactly what is still owed to each of them.</div></div>
         <div class="card-header-actions">
-            <?php if ($sellerParty): ?><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $sellerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> Pay Pending Owner Balance</a><?php endif; ?>
+            <?php if ($isPaymentBasedPurchase || $sellerParty): ?><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= ($isPaymentBasedPurchase || $sellerOutstanding > 0.009) ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-hand-coin-line"></i> <?= $isPaymentBasedPurchase ? 'Add Purchase Payment' : 'Pay Pending Owner Balance' ?></a><?php endif; ?>
             <a href="dealer_payment.php?id=<?= clean($car['id']) ?>" class="btn <?= $dealerOutstanding > 0.009 ? 'btn-primary' : 'btn-outline' ?> btn-sm"><i class="ri-secure-payment-line"></i> <?= $dealerParty ? 'Pay Pending Dealer Commission' : 'Add Purchase Dealer' ?></a>
         </div>
     </div>
@@ -470,11 +475,11 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                     <tr><td class="text-muted">Vehicle Owner / Seller</td><td>
                         <?php if ($sellerParty): ?><a href="../parties/view.php?id=<?= urlencode($sellerParty['id']) ?>" class="text-bold"><?= clean($sellerParty['name']) ?></a><?php else: ?><span class="text-muted">Not recorded</span><?php endif; ?>
                     </td></tr>
-                    <tr><td class="text-muted">Purchase Price</td><td class="amount flow-out"><?= formatAmount($car['purchase_price']) ?></td></tr>
+                    <tr><td class="text-muted"><?= clean($purchaseAmountLabel) ?></td><td class="amount flow-out"><?= formatAmount($car['purchase_price']) ?></td></tr>
                     <tr><td class="text-muted">Paid at Purchase</td><td class="amount flow-in"><?= formatAmount($purchasePaidAtPurchase) ?></td></tr>
                     <tr><td class="text-muted">Paid Later to Owner</td><td class="amount flow-in"><?= formatAmount($sellerPaidLater) ?></td></tr>
                     <tr><td class="text-muted">Total Paid to Owner</td><td class="amount text-bold flow-in"><?= formatAmount($purchaseTotalPaid) ?></td></tr>
-                    <tr><td class="text-muted">Owner Balance Pending</td><td class="amount text-bold <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></td></tr>
+                    <tr><td class="text-muted"><?= $isPaymentBasedPurchase ? 'Final Price Balance Pending' : 'Owner Balance Pending' ?></td><td class="amount text-bold <?= $sellerOutstanding > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($sellerOutstanding) ?></td></tr>
                     <?php if ($sellerRefundDue > 0.009): ?><tr><td class="text-muted">Owner Refund / Advance Due</td><td class="amount text-bold flow-in"><?= formatAmount($sellerRefundDue) ?></td></tr><?php endif; ?>
                 </table>
             </div>
@@ -497,7 +502,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
             <i class="ri-information-line"></i>
             <div>
                 <strong>In plain language</strong>
-                <span>Purchase <?= formatAmount($car['purchase_price']) ?>: <?= formatAmount($purchasePaidAtPurchase) ?> paid while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?> paid to the owner. Pending: <?= formatAmount($sellerOutstanding) ?>.<?php if ($sellerRefundDue > 0.009): ?> The owner has <?= formatAmount($sellerRefundDue) ?> to refund or carry as an advance because the corrected purchase value is lower than the amount already paid.<?php endif; ?><?php if ($dealerCommissionTotal > 0.009): ?> Dealer commission <?= formatAmount($dealerCommissionTotal) ?>: <?= formatAmount($dealerPaidTotal) ?> paid, <?= formatAmount($dealerOutstanding) ?> pending. This commission is part of this car's total cost; money paid to the owner is not an expense.<?php endif; ?></span>
+                <span><?php if ($isPaymentBasedPurchase): ?>Purchase amount is built from actual owner payments: <?= formatAmount($purchasePaidAtPurchase) ?> while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?>. Add another purchase payment whenever money is paid to the owner.<?php else: ?>Purchase <?= formatAmount($car['purchase_price']) ?>: <?= formatAmount($purchasePaidAtPurchase) ?> paid while buying + <?= formatAmount($sellerPaidLater) ?> paid later = <?= formatAmount($purchaseTotalPaid) ?> paid to the owner. Pending: <?= formatAmount($sellerOutstanding) ?>.<?php endif; ?><?php if ($sellerRefundDue > 0.009): ?> The owner has <?= formatAmount($sellerRefundDue) ?> to refund or carry as an advance because the corrected purchase value is lower than the amount already paid.<?php endif; ?><?php if ($dealerCommissionTotal > 0.009): ?> Dealer commission <?= formatAmount($dealerCommissionTotal) ?>: <?= formatAmount($dealerPaidTotal) ?> paid, <?= formatAmount($dealerOutstanding) ?> pending. This commission is part of this car's total cost; money paid to the owner is not an expense.<?php endif; ?></span>
             </div>
         </div>
         <?php if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true) && ($sellerOutstanding > 0.009 || $dealerOutstanding > 0.009)): ?>
@@ -975,7 +980,7 @@ updateFundingEditTotal();
                     <tr>
                         <td><?= renderDateTimeStack($l['entry_date'], $l['created_at']) ?></td>
                         <td><a href="../transactions/view.php?id=<?= urlencode($l['entry_id']) ?>"><?= clean($l['reference_no']) ?></a></td>
-                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span><?php if ($l['transaction_type'] === 'CAR_PURCHASE'): ?><div class="table-note table-note-compact">Purchase <?= formatAmount($car['purchase_price']) ?> · paid now <?= formatAmount($purchasePaidAtPurchase) ?> · balance then <?= formatAmount($purchaseBalanceAtBuying) ?></div><?php endif; ?></td>
+                        <td><span class="badge badge-blue"><?= clean(transactionTypeLabel($l['transaction_type'], $l)) ?></span><?php if ($l['transaction_type'] === 'CAR_PURCHASE'): ?><div class="table-note table-note-compact"><?php if ($isPaymentBasedPurchase): ?>Purchase amount started at <?= formatAmount($purchasePaidAtPurchase) ?> from the first owner payment<?php else: ?>Purchase <?= formatAmount($car['purchase_price']) ?> · paid now <?= formatAmount($purchasePaidAtPurchase) ?> · balance then <?= formatAmount($purchaseBalanceAtBuying) ?><?php endif; ?></div><?php endif; ?></td>
                         <td>
                             <div><?= clean(mb_substr($l['narration'] ?? '', 0, 90)) ?></div>
                             <?php if (!empty($l['voucher_id'])): ?>

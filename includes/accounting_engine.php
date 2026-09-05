@@ -810,6 +810,12 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_paid_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `purchase_price`");
             }
         });
+        $this->runMigrationStep('add-column-cars.purchase_amount_mode', function () {
+            if (!$this->columnExists('cars', 'purchase_amount_mode')) {
+                $this->db->query("ALTER TABLE `cars` ADD COLUMN `purchase_amount_mode` VARCHAR(20) NOT NULL DEFAULT 'FIXED' AFTER `purchase_paid_amount`");
+            }
+            $this->db->query("UPDATE cars SET purchase_amount_mode = 'FIXED' WHERE purchase_amount_mode IS NULL OR purchase_amount_mode = ''");
+        });
         $this->runMigrationStep('add-column-cars.ownership_type', function () {
             if (!$this->columnExists('cars', 'ownership_type')) {
                 $this->db->query("ALTER TABLE `cars` ADD COLUMN `ownership_type` ENUM('OWNED','COMMISSION') NOT NULL DEFAULT 'OWNED' AFTER `purchase_paid_amount`");
@@ -1546,6 +1552,10 @@ class AccountingEngine {
             'paid_now' => $paidNow,
             'seller_outstanding' => $sellerOutstanding,
         ];
+    }
+
+    private function usesPaymentBasedPurchaseAmount(array $car): bool {
+        return strtoupper(trim((string) ($car['purchase_amount_mode'] ?? 'FIXED'))) === 'PAYMENTS';
     }
 
     /**
@@ -3523,7 +3533,7 @@ class AccountingEngine {
             throw new Exception('This party has a commission car settlement. Open Commission Cars and use Pay Vehicle Owner so the per-car balance and history remain correct.');
         }
         if ($carId) {
-            $car = $this->db->fetch("SELECT id, registration_no, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+            $car = $this->db->fetch("SELECT id, registration_no, seller_party_id, account_id, purchase_amount_mode, purchase_price, purchase_paid_amount FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             if (!$car) {
                 throw new Exception("Linked car not found.");
             }
@@ -3535,6 +3545,48 @@ class AccountingEngine {
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) {
             throw new Exception("Repayment amount must be greater than zero.");
+        }
+
+        // For a car bought without a fixed final price, every owner payment is
+        // the next part of the purchase amount.  We create and settle the
+        // seller payable in the same voucher so the seller ledger shows both
+        // the acquisition amount and the payment, while the car inventory cost
+        // grows only from money actually paid.
+        if ($carId && $this->usesPaymentBasedPurchaseAmount($car)) {
+            if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
+                throw new Exception('Select the vehicle owner / seller for a car purchase payment. Dealer commission uses its separate payment flow.');
+            }
+            $this->validateCashAvailable($paymentAccount, $amount);
+            $ownsTransaction = !$this->db->inTransaction();
+            if ($ownsTransaction) $this->db->beginTransaction();
+            try {
+                $entryId = $this->postJournalEntry('LOAN_REPAID', $date, $narration ?: 'Car purchase payment - ' . $car['registration_no'], [
+                    ['account_id' => $car['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'Purchase amount added for ' . $car['registration_no']],
+                    ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => 'Purchase payable to ' . $party['name']],
+                    ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'Purchase payment to ' . $party['name']],
+                    ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => 'Paid for car purchase'],
+                ], [
+                    'party_id' => $partyId,
+                    'car_id' => $carId,
+                    'entry_type_id' => systemEntryTypeId('CAR_PURCHASE_PAYMENT'),
+                    'entry_amount' => $amount,
+                ]);
+                $this->db->query(
+                    "UPDATE cars
+                     SET purchase_price = purchase_price + ?,
+                         purchase_paid_amount = purchase_paid_amount + ?,
+                         seller_party_id = COALESCE(seller_party_id, ?)
+                     WHERE id = ? AND business_id = ?",
+                    [$amount, $amount, $partyId, $carId, $this->businessId]
+                );
+                $updatedCar = $this->db->fetch("SELECT purchase_price, purchase_paid_amount, seller_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
+                Auth::auditUpdate('car', $carId, $car, $updatedCar ?: [], 'Purchase amount increased from a recorded owner payment', 'transactions');
+                if ($ownsTransaction) $this->db->commit();
+                return $entryId;
+            } catch (Throwable $e) {
+                if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+                throw $e;
+            }
         }
 
         if ($carId) {
@@ -3730,6 +3782,7 @@ class AccountingEngine {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception('Car not found.');
         if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Purchase amount correction is available only for bought business cars.');
+        if ($this->usesPaymentBasedPurchaseAmount($car)) throw new Exception('This car’s purchase amount is calculated from recorded owner payments. Use Add Purchase Payment instead of correcting a fixed amount.');
         if (($car['status'] ?? '') !== 'IN_STOCK') throw new Exception('Purchase amount can be corrected only while the car is in stock. Reverse the sale first if this car has already been sold.');
         if (empty($car['seller_party_id'])) throw new Exception('This car has no linked vehicle owner / seller. First use Fix Historical Purchase Record so the correction can keep the seller ledger matched.');
 
@@ -4721,6 +4774,44 @@ class AccountingEngine {
                         'paid_to_owner_amount' => $newPaid,
                         'status' => $newStatus,
                     ], 'Commission car owner payment reversed', 'commission_cars');
+                }
+
+                // A payment-based car has no fixed purchase price. Its stored
+                // purchase amount is the sum of its posted owner payments, so
+                // reversing one of those vouchers must also remove that amount
+                // from the car summary. The reversal journal itself restores
+                // the ledger and cash/bank balances.
+                if (
+                    !$ownerPayment
+                    && !empty($entry['car_id'])
+                    && ($entry['entry_type_id'] ?? '') === systemEntryTypeId('CAR_PURCHASE_PAYMENT')
+                ) {
+                    $car = $this->db->fetch(
+                        "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+                        [$entry['car_id'], $this->businessId]
+                    );
+                    $amount = round(floatval($entry['entry_amount'] ?? 0), 2);
+                    if ($car && $this->usesPaymentBasedPurchaseAmount($car) && $amount > 0.009) {
+                        $this->db->query(
+                            "UPDATE cars
+                             SET purchase_price = GREATEST(0, purchase_price - ?),
+                                 purchase_paid_amount = GREATEST(0, purchase_paid_amount - ?)
+                             WHERE id = ? AND business_id = ?",
+                            [$amount, $amount, $car['id'], $this->businessId]
+                        );
+                        $updatedCar = $this->db->fetch(
+                            "SELECT * FROM cars WHERE id = ? AND business_id = ?",
+                            [$car['id'], $this->businessId]
+                        );
+                        Auth::auditUpdate(
+                            'car',
+                            $car['id'],
+                            $car,
+                            $updatedCar ?: [],
+                            'Reversed owner payment removed from payment-based purchase amount',
+                            'transactions'
+                        );
+                    }
                 }
                 break;
 

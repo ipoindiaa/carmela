@@ -24,6 +24,7 @@ if (!$car) {
 if (($car['ownership_type'] ?? 'OWNED') === 'COMMISSION') {
     redirect('commission_view.php?id=' . urlencode($carId));
 }
+$isPaymentBasedPurchase = strtoupper(trim((string) ($car['purchase_amount_mode'] ?? 'FIXED'))) === 'PAYMENTS';
 
 $sellerParty = !empty($car['seller_party_id']) ? $db->fetch(
     "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?",
@@ -69,6 +70,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('Deleted cars are read-only. Their history remains available.');
         }
         $action = post('action');
+        if ($action === 'pay_unlinked_payment_based_purchase') {
+            if (!$isPaymentBasedPurchase) {
+                throw new Exception('This payment action is available only for a payment-based purchase amount.');
+            }
+            if (!in_array(post('payment_account'), $paymentAccountIds, true)) {
+                throw new Exception('Select an accessible cash or bank account.');
+            }
+            $selectedSellerId = trim((string) post('seller_party_id'));
+            $newSellerName = trim((string) post('new_seller_name'));
+            if ($selectedSellerId !== '' && $newSellerName !== '') {
+                throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
+            }
+            if ($selectedSellerId === '' && $newSellerName === '') {
+                throw new Exception('Select or add the vehicle owner before recording a purchase payment.');
+            }
+            if ($selectedSellerId !== '') {
+                $seller = $engine->getVehicleOwnerParty($selectedSellerId);
+            } else {
+                Auth::requireEntityAccess('party', 'write');
+                $sellerId = $engine->getOrCreateParty($newSellerName, 'SELLER', post('new_seller_phone'));
+                $seller = $engine->getVehicleOwnerParty($sellerId);
+            }
+            $entryId = $engine->loanRepaid(
+                $seller['id'],
+                parseDecimalInput(post('amount')),
+                post('payment_date'),
+                post('payment_account'),
+                post('narration'),
+                $carId
+            );
+            setFlash('success', 'Purchase payment recorded and vehicle owner linked for ' . formatRegistrationNo($car['registration_no']) . '. Entry: ' . $entryId);
+            redirect('purchase_payment.php?id=' . urlencode($carId));
+        }
         if ($action === 'repair_purchase_record') {
             if ($sellerParty) {
                 throw new Exception('This car already has a seller link. Use the normal purchase-payment form.');
@@ -184,6 +218,28 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <?php if (!$sellerParty): ?>
+<?php if ($isPaymentBasedPurchase && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
+<div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Link the owner with the first payment.</strong><span>This car has no fixed purchase price. Select or add the vehicle owner, then record the amount actually paid; it becomes this car’s purchase amount.</span></div></div>
+<form method="POST" class="card purchase-payment-form" data-confirm-submit="Link this owner and record the car purchase payment?">
+    <?= csrfField() ?>
+    <input type="hidden" name="action" value="pay_unlinked_payment_based_purchase">
+    <div class="card-header"><div><h3><i class="ri-hand-coin-line"></i> Add First Purchase Payment</h3><div class="card-header-note">The owner, car, payment account and purchase amount are all linked automatically.</div></div></div>
+    <div class="card-body">
+        <div class="form-row-3">
+            <div class="form-group"><label class="form-label" for="seller_party_id">Existing Vehicle Owner</label><select id="seller_party_id" name="seller_party_id" class="form-control searchable-select"><option value="">Add a new owner below</option><?php foreach ($availableSellers as $seller): ?><option value="<?= clean($seller['id']) ?>"><?= clean($seller['name']) ?> · <?= clean(ucfirst(strtolower($seller['type']))) ?></option><?php endforeach; ?></select></div>
+            <div class="form-group"><label class="form-label" for="new_seller_name">New Vehicle Owner</label><input id="new_seller_name" name="new_seller_name" class="form-control" maxlength="150" placeholder="Full name or company name"></div>
+            <div class="form-group"><label class="form-label" for="new_seller_phone">Phone</label><input id="new_seller_phone" name="new_seller_phone" class="form-control" inputmode="tel" maxlength="20" placeholder="Optional"></div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group"><label class="form-label" for="amount">Amount (₹) *</label><input id="amount" name="amount" class="form-control currency-input" inputmode="decimal" required><div class="form-hint">Added to this car’s purchase amount.</div></div>
+            <div class="form-group"><label class="form-label" for="payment_date">Payment Date *</label><input id="payment_date" type="date" name="payment_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-group"><label class="form-label" for="payment_account">Pay From *</label><select id="payment_account" name="payment_account" class="form-control searchable-select" required><option value="">Select Cash / Bank</option><?php foreach ($paymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= ($account['entity_type'] ?? '') === 'CASH' ? '💵' : '🏦' ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>) · <?= formatAmount($account['current_balance']) ?> <?= clean($account['current_balance_type']) ?></option><?php endforeach; ?></select></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="narration">Narration (Optional)</label><input id="narration" name="narration" class="form-control" value="Car purchase payment - <?= clean($car['registration_no']) ?>"></div>
+        <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-check-line"></i> Record Purchase Payment</button><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Cancel</a></div>
+    </div>
+</form>
+<?php else: ?>
 <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>Fix this historical purchase before making a payment.</strong><span>The earlier entry has no seller payable. This guided correction restores the amount that was wrongly reduced from Cash/Bank and links the balance to the correct seller and car.</span></div></div>
 
 <?php if (!empty($historicalPaymentAccounts) && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
@@ -210,34 +266,39 @@ require_once __DIR__ . '/../includes/header.php';
 <?php else: ?>
 <div class="card"><div class="card-body"><div class="empty-state"><i class="ri-file-search-line"></i><h3>Original payment source is not available</h3><p>No Cash/Bank payment was found on this car’s original purchase entry, so the system cannot safely guess a correction. Review the original entry and its audit trail before changing it.</p><div class="form-actions form-actions-center"><a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($carId) ?>" class="btn btn-primary">Open Car History</a><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Back to Car</a></div></div></div></div>
 <?php endif; ?>
+<?php endif; ?>
 <?php else: ?>
 <div class="stats-grid compact-operational-grid purchase-payment-summary-grid">
-    <div class="stat-card"><div class="stat-value"><?= formatAmount($sellerPurchaseAmount) ?></div><div class="stat-label">Seller Purchase Amount</div></div>
+    <div class="stat-card"><div class="stat-value"><?= formatAmount($sellerPurchaseAmount) ?></div><div class="stat-label"><?= $isPaymentBasedPurchase ? 'Purchase Amount to Date' : 'Seller Purchase Amount' ?></div></div>
     <div class="stat-card"><div class="stat-value flow-in"><?= formatAmount($paidToSeller) ?></div><div class="stat-label">Paid to Seller</div></div>
-    <div class="stat-card"><div class="stat-value <?= $purchasePending > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($purchasePending) ?></div><div class="stat-label">Purchase Balance Pending</div></div>
+    <div class="stat-card"><div class="stat-value <?= $purchasePending > 0.009 ? 'flow-out' : 'flow-in' ?>"><?= formatAmount($purchasePending) ?></div><div class="stat-label"><?= $isPaymentBasedPurchase ? 'Fixed Balance Pending' : 'Purchase Balance Pending' ?></div></div>
 </div>
 
 <?php if ($sellerRefundDue > 0.009): ?>
 <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Owner refund / advance due: <?= formatAmount($sellerRefundDue) ?></strong><span>The corrected purchase amount is lower than the amount already paid. This is a recoverable owner balance; it is not another purchase payment.</span></div></div>
 <?php endif; ?>
 
-<?php if ($purchasePending > 0.009 && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
-<form method="POST" class="card purchase-payment-form" data-confirm-submit="Record this payment against the purchase balance of this car?">
+<?php if (($isPaymentBasedPurchase || $purchasePending > 0.009) && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
+<form method="POST" class="card purchase-payment-form" data-confirm-submit="Record this payment against this car's purchase amount?">
     <?= csrfField() ?>
     <input type="hidden" name="action" value="pay_purchase_balance">
-    <div class="card-header"><div><h3><i class="ri-money-rupee-circle-line"></i> Pay Pending Purchase Balance</h3><div class="card-header-note">This payment will reduce only <?= clean(formatRegistrationNo($car['registration_no'])) ?>’s payable to <?= clean($sellerParty['name']) ?>.</div></div></div>
+    <div class="card-header"><div><h3><i class="ri-money-rupee-circle-line"></i> <?= $isPaymentBasedPurchase ? 'Add Car Purchase Payment' : 'Pay Pending Purchase Balance' ?></h3><div class="card-header-note"><?= $isPaymentBasedPurchase ? 'This payment adds to ' . clean(formatRegistrationNo($car['registration_no'])) . '’s purchase amount and is recorded in ' . clean($sellerParty['name']) . '’s ledger.' : 'This payment will reduce only ' . clean(formatRegistrationNo($car['registration_no'])) . '’s payable to ' . clean($sellerParty['name']) . '.' ?></div></div></div>
     <div class="card-body">
+        <?php if ($isPaymentBasedPurchase): ?>
+        <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>No final purchase price is required.</strong><span>Enter the amount actually paid to the owner. It is added to this car’s purchase amount automatically; there is no artificial pending-balance limit.</span></div></div>
+        <?php else: ?>
         <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>Balance pending: <?= formatAmount($purchasePending) ?></strong><span>Enter any instalment up to this amount. The seller, car and ledger links are set automatically.</span></div></div>
+        <?php endif; ?>
         <div class="form-row-3">
-            <div class="form-group"><label class="form-label" for="amount">Amount (₹) *</label><input id="amount" name="amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($purchasePending) ?>" required><div class="form-hint">Maximum <?= formatAmount($purchasePending) ?></div></div>
+            <div class="form-group"><label class="form-label" for="amount">Amount (₹) *</label><input id="amount" name="amount" class="form-control currency-input" inputmode="decimal" value="<?= $isPaymentBasedPurchase ? '' : clean($purchasePending) ?>" required><div class="form-hint"><?= $isPaymentBasedPurchase ? 'This amount will be added to the purchase amount.' : 'Maximum ' . formatAmount($purchasePending) ?></div></div>
             <div class="form-group"><label class="form-label" for="payment_date">Payment Date *</label><input id="payment_date" type="date" name="payment_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
             <div class="form-group"><label class="form-label" for="payment_account">Pay From *</label><select id="payment_account" name="payment_account" class="form-control searchable-select" required><option value="">Select Cash / Bank</option><?php foreach ($paymentAccounts as $account): ?><option value="<?= clean($account['id']) ?>"><?= ($account['entity_type'] ?? '') === 'CASH' ? '💵' : '🏦' ?> <?= clean($account['name']) ?> (<?= clean($account['code']) ?>) · <?= formatAmount($account['current_balance']) ?> <?= clean($account['current_balance_type']) ?></option><?php endforeach; ?></select></div>
         </div>
-        <div class="form-group"><label class="form-label" for="narration">Narration (Optional)</label><input id="narration" name="narration" class="form-control" value="Purchase balance payment - <?= clean($car['registration_no']) ?>" placeholder="e.g. Second instalment paid by bank"></div>
+        <div class="form-group"><label class="form-label" for="narration">Narration (Optional)</label><input id="narration" name="narration" class="form-control" value="<?= $isPaymentBasedPurchase ? 'Car purchase payment - ' : 'Purchase balance payment - ' ?><?= clean($car['registration_no']) ?>" placeholder="e.g. Second instalment paid by bank"></div>
         <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-check-line"></i> Record Purchase Payment</button><a href="view.php?id=<?= clean($carId) ?>" class="btn btn-outline">Cancel</a></div>
     </div>
 </form>
-<?php elseif ($purchasePending <= 0.009): ?>
+<?php elseif (!$isPaymentBasedPurchase && $purchasePending <= 0.009): ?>
 <div class="alert alert-success"><i class="ri-checkbox-circle-line"></i><div><strong>Purchase payment is complete.</strong><span>No balance remains payable to this seller for this car.</span></div></div>
 <?php endif; ?>
 

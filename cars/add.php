@@ -42,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($existingCar) {
             throw new Exception('A car with this registration number already exists.');
         }
-        // A car may be received before the final purchase price is known.
-        // Store a blank price as zero; no purchase-cost journal is posted until
-        // a real price is entered through the controlled correction workflow.
-        $purchasePrice = parseDecimalInput(post('purchase_price'));
+        // The final amount is not required at intake. This car's purchase
+        // amount starts with actual payments and grows with each later owner
+        // payment, rather than asking the operator to guess a fixed price.
+        $purchasePrice = 0.0;
         $purchaseDate = trim((string) post('purchase_date'));
         if ($purchaseDate === '') {
             throw new Exception('Purchase date is required.');
@@ -126,6 +126,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
+        $initialPartnerFunding = round(array_sum(array_map(
+            static fn($funding) => floatval($funding['amount'] ?? 0),
+            $partnerFunding
+        )), 2);
+        $purchasePrice = round(floatval($purchasePaidNow ?? 0) + $initialPartnerFunding, 2);
+        if ($purchasePaidNow > 0.009 && $sellerLabel === '') {
+            throw new Exception('Select or add the vehicle owner before recording the first purchase payment.');
+        }
         $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerLabel, $purchasePaidNow);
         $partnerFunding = $validation['partner_funding'];
         $purchasePaidNow = $validation['paid_now'];
@@ -146,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'purchase_date' => $purchaseDate,
             'purchase_price' => $purchasePrice,
             'purchase_paid_amount' => $purchasePaidNow,
+            'purchase_amount_mode' => 'PAYMENTS',
             'ownership_type' => 'OWNED',
             'expected_sale_price' => $expectedSalePrice,
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
@@ -168,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $uploadWarning = ' Seller file upload failed: ' . $uploadError->getMessage();
         }
 
-        setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added and purchase of " . formatAmount($purchasePrice) . " recorded successfully!" . $uploadWarning);
+        setFlash($uploadWarning ? 'warning' : 'success', "Car $regNo added. Purchase amount to date: " . formatAmount($purchasePrice) . '.' . $uploadWarning);
         redirect("view.php?id=$carId");
     } catch (Throwable $e) {
         if ($ownsTransaction && $db->inTransaction()) $db->rollBack();
@@ -225,14 +234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Color</label>
                     <input type="text" name="color" class="form-control" placeholder="e.g., White">
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Purchase Price (₹) <span class="section-optional">(Optional)</span></label>
-                    <div class="input-group">
-                        <span class="input-prefix">₹</span>
-                        <input type="text" name="purchase_price" class="form-control currency-input" placeholder="Leave blank if not known" inputmode="decimal" autocomplete="off">
-                    </div>
-                    <div class="form-hint">A blank price is saved as ₹0. Add the confirmed amount later using Correct Purchase Amount.</div>
-                </div>
             </div>
             <hr class="form-divider">
             <h3 class="form-section-title form-section-title-standalone section-accent-green"><i class="ri-bank-card-line"></i> Payment Details</h3>
@@ -246,21 +247,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="<?= clean($party['id']) ?>" <?= post('seller_party_id') === $party['id'] ? 'selected' : '' ?>><?= clean($party['name']) ?> · <?= clean(ucfirst(strtolower($party['type']))) ?><?= $party['phone'] ? ' · ' . clean($party['phone']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created. An owner is required only if a purchase balance remains pending.</div>
+                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created. Link the owner before recording any payment.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="seller_name">New Owner / Seller Name</label>
                     <input type="text" name="seller_name" id="seller_name" class="form-control" placeholder="Fill only if the owner is new" value="<?= clean(post('seller_name')) ?>">
-                    <div class="form-hint">Leave blank when an existing owner is selected, or when the car is fully paid and the owner will be linked later.</div>
+                    <div class="form-hint">Leave blank when an existing owner is selected, or when no payment has been made and the owner will be linked later.</div>
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label class="form-label">Amount Paid to Owner Now (₹)</label>
+                    <label class="form-label">First Payment to Owner (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank for full payment" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank when nothing is paid now" inputmode="decimal" autocomplete="off">
                     </div>
+                    <div class="form-hint">This starts the purchase amount. Each later Car Purchase Payment is added to the same car's purchase amount.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Reference Selling Price (₹)</label>
