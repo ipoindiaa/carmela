@@ -250,7 +250,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'CATEGORY_ENTRY':
                 $categoryAccountId = post('dynamic_category_account_id');
                 $categoryDirection = post('dynamic_category_direction');
-                $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration);
+                $linkCustomEntryToCar = post('custom_category_link_car') === '1';
+                $customCategoryCarId = $linkCustomEntryToCar ? trim((string) post('custom_category_car_id')) : null;
+                if ($linkCustomEntryToCar && $customCategoryCarId === '') {
+                    throw new Exception('Select the car to link with this custom expense.');
+                }
+                $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration, $customCategoryCarId);
                 break;
 
             case 'CAR_PURCHASE':
@@ -589,7 +594,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ) : null;
         $postedEntryLabel = transactionTypeLabel($type, $postedEntry ?: [
             'business_id' => $businessId,
-            'car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select') ?: post('commission_car_id'),
+            'car_id' => post('linked_car_id') ?: post('sale_car_id') ?: post('expense_car_select') ?: post('commission_car_id') ?: post('custom_category_car_id'),
         ]);
         if ($entryId) {
             try {
@@ -735,6 +740,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label" id="narration-label">Narration / Description (Optional)</label>
                     <input type="text" name="narration" class="form-control" placeholder="Optional — add a note if needed" value="<?= clean($preselectedNarration) ?>">
                 </div>
+            </div>
+        </div>
+
+        <!-- CUSTOM PAYMENT CATEGORY: optional, explicit car-cost allocation. -->
+        <div class="entry-relation-panel" id="custom-category-car-link-section" hidden>
+            <div class="entry-relation-heading">
+                <div>
+                    <strong>Car Link <span class="text-muted">(Optional)</span></strong>
+                    <span>Use this only when this custom payment is a direct cost of one car.</span>
+                </div>
+            </div>
+            <label class="check-row">
+                <input type="checkbox" name="custom_category_link_car" id="custom_category_link_car" value="1">
+                <span><strong>Link this custom expense to a car</strong><small>The expense will appear in that car’s history and total cost.</small></span>
+            </label>
+            <div class="entry-relation-panel nested-relation-panel" id="custom-category-car-picker" hidden>
+                <div class="entry-relation-heading">
+                    <div><strong>Select Car *</strong><span>Search business, outside, or commission cars by registration number, make, or model.</span></div>
+                </div>
+                <input type="hidden" name="custom_category_car_id" id="custom_category_car_id">
+                <button type="button" class="picker-trigger picker-trigger-wide" id="custom-category-car-picker-trigger" onclick="openEntityPicker('custom_category_car', this)">
+                    <span>Select car for this custom expense</span>
+                    <i class="ri-search-line"></i>
+                </button>
             </div>
         </div>
 
@@ -1494,6 +1523,13 @@ const entityPickerConfig = {
         triggerId: 'car-picker-trigger',
         emptyLabel: 'Select car',
     },
+    custom_category_car: {
+        title: 'Search Business & Outside Cars',
+        subtitle: 'Select the car that this custom expense belongs to. Outside and commission cars are marked clearly.',
+        inputId: 'custom_category_car_id',
+        triggerId: 'custom-category-car-picker-trigger',
+        emptyLabel: 'Select car for this custom expense',
+    },
     partner: {
         title: 'Search Partners',
         subtitle: 'Search every active partner by name or phone number.',
@@ -2079,7 +2115,10 @@ function clearDynamicCategorySelection() {
 function syncDynamicCategoryEntryState() {
     const select = document.getElementById('transaction_type');
     const categoryDirection = document.getElementById('dynamic_category_direction')?.value || '';
-    if (select?.value !== 'CATEGORY_ENTRY') return;
+    if (select?.value !== 'CATEGORY_ENTRY') {
+        syncCustomCategoryCarLink();
+        return;
+    }
 
     document.querySelectorAll('.txn-section').forEach((section) => {
         section.hidden = true;
@@ -2089,6 +2128,37 @@ function syncDynamicCategoryEntryState() {
     if (paymentAccountGroup) paymentAccountGroup.style.display = '';
     const paymentLabel = document.getElementById('payment-account-label');
     if (paymentLabel) paymentLabel.textContent = categoryDirection === 'in' ? 'Receiving Account' : 'Payment Account';
+    syncCustomCategoryCarLink();
+}
+
+function syncCustomCategoryCarLink() {
+    const section = document.getElementById('custom-category-car-link-section');
+    const checkbox = document.getElementById('custom_category_link_car');
+    const picker = document.getElementById('custom-category-car-picker');
+    const carInput = document.getElementById('custom_category_car_id');
+    const pickerTrigger = document.getElementById('custom-category-car-picker-trigger');
+    const type = document.getElementById('transaction_type')?.value || '';
+    const direction = document.getElementById('dynamic_category_direction')?.value || '';
+    if (!section || !checkbox || !picker || !carInput) return;
+
+    const isCustomPayment = type === 'CATEGORY_ENTRY' && direction === 'out';
+    section.hidden = !isCustomPayment;
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(section, isCustomPayment, { clear: !isCustomPayment });
+    }
+    if (!isCustomPayment) {
+        if (pickerTrigger?.querySelector('span')) pickerTrigger.querySelector('span').textContent = 'Select car for this custom expense';
+        return;
+    }
+
+    const isLinked = checkbox.checked;
+    picker.hidden = !isLinked;
+    if (typeof setConditionalControls === 'function') {
+        setConditionalControls(picker, isLinked, { clear: !isLinked });
+    }
+    if (!isLinked && pickerTrigger?.querySelector('span')) {
+        pickerTrigger.querySelector('span').textContent = 'Select car for this custom expense';
+    }
 }
 
 function filterPrimaryPaymentAccounts(type) {
@@ -2241,7 +2311,7 @@ async function renderEntityPickerResults(query) {
     const kind = activeEntityPicker.kind;
     const searchQuery = (query || '').trim();
     const txnType = document.getElementById('transaction_type')?.value || '';
-    const contextParam = (kind === 'car' || kind === 'payment_car' || kind === 'rto_car' || kind === 'commission_car') ? `&context=${encodeURIComponent(txnType)}` : '';
+    const contextParam = (kind === 'car' || kind === 'payment_car' || kind === 'rto_car' || kind === 'commission_car' || kind === 'custom_category_car') ? `&context=${encodeURIComponent(txnType)}` : '';
     results.innerHTML = '<div class="picker-empty">Searching...</div>';
 
     try {
@@ -2495,6 +2565,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
+    document.getElementById('custom_category_link_car')?.addEventListener('change', syncCustomCategoryCarLink);
     document.querySelector('input[name="vouchers[]"]')?.addEventListener('change', (event) => {
         const status = document.querySelector('.voucher-file-status');
         const count = event.target.files ? event.target.files.length : 0;
@@ -2509,6 +2580,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncCounterpartyUi();
     syncTokenReturnUi();
     syncRtoRecoveryUi();
+    syncCustomCategoryCarLink();
     syncEntryExclusiveControls();
     loadPurchaseSourcePanel();
 });

@@ -2964,9 +2964,10 @@ class AccountingEngine {
         return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines);
     }
 
-    public function categoryEntry($categoryAccountId, $direction, $amount, $date, $primaryAccountId, $narration) {
+    public function categoryEntry($categoryAccountId, $direction, $amount, $date, $primaryAccountId, $narration, $carId = null) {
         $direction = strtolower((string) $direction);
         $amount = round(floatval($amount), 2);
+        $carId = trim((string) $carId);
         if ($amount <= 0) {
             throw new Exception("Amount must be greater than zero.");
         }
@@ -2991,6 +2992,23 @@ class AccountingEngine {
         );
         if (!$primaryAccount) {
             throw new Exception("Cash or bank account is required.");
+        }
+
+        $car = null;
+        if ($carId !== '') {
+            if ($direction !== 'out') {
+                throw new Exception('Only a custom payment can be linked to a car.');
+            }
+            $car = $this->db->fetch(
+                "SELECT * FROM cars WHERE id = ? AND business_id = ? AND status <> 'CANCELLED'",
+                [$carId, $this->businessId]
+            );
+            if (!$car) {
+                throw new Exception('Select a valid active car for this custom expense.');
+            }
+            if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)) {
+                throw new Exception('Cannot add a custom expense to a sold car. Admin override required.');
+            }
         }
 
         if ($direction === 'in') {
@@ -3020,10 +3038,35 @@ class AccountingEngine {
             }
             $lines[] = ['account_id' => $primaryAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => $narration];
 
-            return $this->postJournalEntry('GENERAL_EXPENSE', $date, $narration, $lines, [
-                'entry_type_id' => customEntryTypeId($categoryAccountId),
-                'entry_amount' => $grossAmount,
-            ]);
+            $ownsTransaction = !$this->db->inTransaction();
+            if ($ownsTransaction) $this->db->beginTransaction();
+            try {
+                $entryId = $this->postJournalEntry($car ? 'CAR_EXPENSE' : 'GENERAL_EXPENSE', $date, $narration, $lines, [
+                    'car_id' => $car['id'] ?? null,
+                    'entry_type_id' => customEntryTypeId($categoryAccountId),
+                    'entry_amount' => $grossAmount,
+                ]);
+
+                // Direct costs of owned stock belong in its inventory account. The
+                // original custom category entry stays intact, then this balanced
+                // allocation moves the same cost into the selected car’s total cost.
+                if ($car && ($car['ownership_type'] ?? 'OWNED') === 'OWNED' && !empty($car['account_id'])) {
+                    $this->postJournalEntry('CAR_EXPENSE', $date, "Allocate {$categoryAccount['name']} to {$car['registration_no']}", [
+                        ['account_id' => $car['account_id'], 'amount' => $grossAmount, 'type' => 'DR', 'narration' => "{$categoryAccount['name']} for {$car['registration_no']}"],
+                        ['account_id' => $categoryAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => 'Custom expense allocated to car'],
+                    ], [
+                        'car_id' => $car['id'],
+                        'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'),
+                        'entry_amount' => 0,
+                    ]);
+                }
+
+                if ($ownsTransaction) $this->db->commit();
+                return $entryId;
+            } catch (Throwable $e) {
+                if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+                throw $e;
+            }
         }
 
         throw new Exception("Invalid category direction.");
