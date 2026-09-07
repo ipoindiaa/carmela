@@ -76,21 +76,14 @@ switch ($kind) {
     case 'commission_car':
     case 'token_refund_car':
     case 'custom_category_car':
-        $statusFilterSql = "AND status <> 'CANCELLED'";
-        if (in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED', 'CAR_EXPENSE', 'CATEGORY_ENTRY'], true)) {
-            $statusFilterSql = "AND status = 'IN_STOCK'";
-        } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED') {
-            $statusFilterSql = "AND status IN ('SOLD', 'PENDING_PAYMENT')";
-        } elseif ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
-            $statusFilterSql = "AND status IN ('IN_STOCK', 'PENDING_PAYMENT', 'SOLD')";
-        }
+        // All active cars must remain discoverable throughout the system so an
+        // operator can find historical sold-car records as easily as stock.
+        // The `selectable` flag below preserves the individual posting rules.
+        $statusFilterSql = "AND c.status <> 'CANCELLED'";
         // Every operational car picker can discover business, commission, and
-        // outside cars. The normal "Sold a Car" flow is the one exception: it
-        // creates inventory/COGS entries and must remain limited to owned stock.
+        // outside cars. A picker may show a car as unavailable when its flow
+        // cannot legally post against that particular status/ownership.
         $ownershipFilterSql = "AND COALESCE(c.ownership_type, 'OWNED') IN ('OWNED', 'COMMISSION', 'OUTSIDE')";
-        if ($context === 'CAR_SALE') {
-            $ownershipFilterSql = "AND COALESCE(c.ownership_type, 'OWNED') = 'OWNED'";
-        }
         $rows = $db->fetchAll(
             "SELECT c.id, c.registration_no, c.make, c.model, c.year, c.status, c.ownership_type,
                     buyer.id AS buyer_party_id, buyer.name AS buyer_name,
@@ -150,12 +143,29 @@ switch ($kind) {
                 $pending = $engine->getCarLinkedOutstandingAmountForParty($row['id'], $linkedPartyId);
                 $purchasePending = max(0, $pending);
             }
+            $isSelectable = true;
+            $selectionNote = '';
+            $status = strtoupper((string) ($row['status'] ?? ''));
+            if ($context === 'CAR_SALE' && ($status !== 'IN_STOCK' || $ownershipType !== 'OWNED')) {
+                $isSelectable = false;
+                $selectionNote = 'Unavailable for a new sale';
+            } elseif ($context === 'CAR_TOKEN_RECEIVED' && $status !== 'IN_STOCK') {
+                $isSelectable = false;
+                $selectionNote = 'Unavailable for a new token';
+            } elseif (in_array($context, ['CAR_EXPENSE', 'CATEGORY_ENTRY'], true) && in_array($status, ['SOLD', 'PENDING_PAYMENT'], true)) {
+                $isSelectable = false;
+                $selectionNote = 'Unavailable for a new expense';
+            } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED' && ($status !== 'SOLD' && $status !== 'PENDING_PAYMENT')) {
+                $isSelectable = false;
+                $selectionNote = 'Available after the car is sold';
+            }
             $metaParts = [$row['year'] ?: '', $row['status'] ?? '', $ownershipLabel];
             if ($kind === 'payment_car' && $context === 'LOAN_REPAID') {
                 $metaParts[] = $purchasePending > 0.009
                     ? 'Purchase pending ' . formatAmount($purchasePending)
                     : 'No purchase balance pending';
             }
+            if ($selectionNote !== '') $metaParts[] = $selectionNote;
             $results[] = [
                 'id' => $row['id'],
                 'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? '')) . ($ownershipType === 'OWNED' ? '' : ' · ' . $ownershipLabel)),
@@ -164,6 +174,7 @@ switch ($kind) {
                 'linked_party_label' => $linkedPartyLabel,
                 'token_available' => floatval($row['token_available'] ?? 0),
                 'purchase_pending' => $purchasePending,
+                'selectable' => $isSelectable,
             ];
         }
         break;

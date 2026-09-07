@@ -2272,9 +2272,7 @@ function openEntityPicker(kind, button) {
     const txnType = document.getElementById('transaction_type')?.value || '';
     if (title) title.innerHTML = `<i class="ri-search-eye-line"></i> ${config.title}`;
     if (subtitle) {
-        subtitle.textContent = kind === 'car' && txnType === 'CAR_SALE'
-            ? 'Only in-stock cars are shown here. Already sold cars are hidden.'
-            : config.subtitle;
+        subtitle.textContent = `${config.subtitle} In-stock and sold cars are both shown; unavailable records are marked clearly.`;
     }
     if (search) search.value = '';
     renderEntityPickerResults('');
@@ -2299,14 +2297,12 @@ async function renderEntityPickerResults(query) {
         const payload = await response.json();
         const matches = payload.results || [];
         if (!matches.length) {
-            results.innerHTML = kind === 'car' && txnType === 'CAR_SALE'
-                ? '<div class="picker-empty">No in-stock car found. Sold cars are hidden from sale entry.</div>'
-                : '<div class="picker-empty">No match found.</div>';
+            results.innerHTML = '<div class="picker-empty">No match found.</div>';
             return;
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result" data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}">
+            <button type="button" class="picker-result${item.selectable === false ? ' is-unavailable' : ''}" ${item.selectable === false ? 'disabled aria-disabled="true"' : ''} data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>

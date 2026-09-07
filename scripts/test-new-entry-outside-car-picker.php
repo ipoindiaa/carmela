@@ -57,6 +57,20 @@ try {
         'make' => 'Outside',
         'model' => 'Picker Test',
     ]);
+    $soldCarId = Database::uuid();
+    $soldRegistration = 'GJ99SC' . str_pad((string) ((hexdec($suffix) + 1) % 10000), 4, '0', STR_PAD_LEFT);
+    $soldCarAccountId = $engine->createAccount('OUT-SOLD-' . $suffix, "Sold Picker Car - $soldRegistration", 'ASSET', 'Inventory', 'CAR', $soldCarId);
+    $db->insert('cars', [
+        'id' => $soldCarId,
+        'business_id' => $business['id'],
+        'registration_no' => $soldRegistration,
+        'make' => 'Sold',
+        'model' => 'Picker Test',
+        'purchase_date' => date('Y-m-d'),
+        'purchase_price' => 0,
+        'status' => 'SOLD',
+        'account_id' => $soldCarAccountId,
+    ]);
 
     $rtoResults = loadCarPicker($root, ['kind' => 'rto_car', 'q' => $registration, 'context' => 'RTO_RECOVERY']);
     $expenseResults = loadCarPicker($root, ['kind' => 'car', 'q' => $registration, 'context' => 'CAR_EXPENSE']);
@@ -70,7 +84,19 @@ try {
     assertOutsidePicker(count($rtoMatch) === 1 && str_contains($rtoMatch[0]['label'] ?? '', 'Outside Car'), 'RTO car picker includes and labels outside cars');
     assertOutsidePicker(count($expenseMatch) === 1 && str_contains($expenseMatch[0]['meta'] ?? '', 'Outside Car'), 'Car expense picker includes and labels outside cars');
     assertOutsidePicker(count($paymentMatch) === 1 && str_contains($paymentMatch[0]['label'] ?? '', 'Outside Car'), 'Payment car picker includes and labels outside cars');
-    assertOutsidePicker(count($find($saleResults)) === 0, 'Normal owned-car sale picker keeps outside cars out of inventory sale posting');
+    $outsideSaleMatch = $find($saleResults);
+    assertOutsidePicker(count($outsideSaleMatch) === 1 && ($outsideSaleMatch[0]['selectable'] ?? true) === false && str_contains($outsideSaleMatch[0]['meta'] ?? '', 'Unavailable for a new sale'), 'Outside cars remain visible but are blocked from an owned-inventory sale');
+
+    $soldRtoResults = loadCarPicker($root, ['kind' => 'rto_car', 'q' => $soldRegistration, 'context' => 'RTO_RECOVERY']);
+    $soldExpenseResults = loadCarPicker($root, ['kind' => 'car', 'q' => $soldRegistration, 'context' => 'CAR_EXPENSE']);
+    $soldSaleResults = loadCarPicker($root, ['kind' => 'car', 'q' => $soldRegistration, 'context' => 'CAR_SALE']);
+    $findSold = static fn(array $items) => array_values(array_filter($items, static fn($item) => ($item['id'] ?? '') === $soldCarId));
+    $soldRtoMatch = $findSold($soldRtoResults);
+    $soldExpenseMatch = $findSold($soldExpenseResults);
+    $soldSaleMatch = $findSold($soldSaleResults);
+    assertOutsidePicker(count($soldRtoMatch) === 1 && ($soldRtoMatch[0]['selectable'] ?? false) === true, 'Sold cars remain visible and selectable for RTO entries');
+    assertOutsidePicker(count($soldExpenseMatch) === 1 && ($soldExpenseMatch[0]['selectable'] ?? true) === false && str_contains($soldExpenseMatch[0]['meta'] ?? '', 'Unavailable for a new expense'), 'Sold cars remain visible but are blocked for new car expenses');
+    assertOutsidePicker(count($soldSaleMatch) === 1 && ($soldSaleMatch[0]['selectable'] ?? true) === false && str_contains($soldSaleMatch[0]['meta'] ?? '', 'Unavailable for a new sale'), 'Sold cars remain visible but are blocked from a duplicate sale');
 
     $db->rollBack();
     echo "New Entry outside-car picker checks completed and test data rolled back.\n";
