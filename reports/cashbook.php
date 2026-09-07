@@ -84,7 +84,7 @@ $openingBalanceType = $openingBalanceSigned >= 0 ? 'DR' : 'CR';
 $closingBalanceType = $bal >= 0 ? 'DR' : 'CR';
 ?>
 
-<div class="page-header">
+<div class="page-header cashbook-report-page-header">
     <h1><i class="ri-book-2-line"></i> Cash Book</h1>
     <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
 </div>
@@ -116,7 +116,7 @@ $closingBalanceType = $bal >= 0 ? 'DR' : 'CR';
     <div class="alert alert-info"><i class="ri-information-line"></i> No active cash account found. Add one from Account Settings.</div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card cashbook-print-summary">
     <div class="card-body summary-strip">
         <div><span class="text-muted">Report Period:</span> <strong><?= formatDate($dateFrom) ?><?= $dateFrom !== $dateTo ? ' to ' . formatDate($dateTo) : '' ?></strong></div>
         <div><span class="text-muted">Opening Balance:</span> <strong class="amount <?= $openingBalanceType === 'DR' ? 'debit-amount' : 'credit-amount' ?>"><?= formatAmount(abs($openingBalanceSigned)) ?> <?= $openingBalanceType ?></strong></div>
@@ -124,9 +124,21 @@ $closingBalanceType = $bal >= 0 ? 'DR' : 'CR';
     </div>
 </div>
 
-<div class="table-container table-container-fill">
-    <table class="table-total-room">
-        <thead><tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Car / Party</th><th>Narration</th><th class="text-right debit-amount">Receipt (Dr)</th><th class="text-right credit-amount">Payment (Cr)</th><th class="text-right">Balance</th></tr></thead>
+<div class="table-container table-container-fill cashbook-report-shell">
+    <table class="table-total-room cashbook-report-table">
+        <thead>
+            <tr class="print-report-heading">
+                <th colspan="8">
+                    <div class="print-report-title">Cash Book</div>
+                    <div class="print-report-meta">
+                        <span>Period: <?= formatDate($dateFrom) ?><?= $dateFrom !== $dateTo ? ' to ' . formatDate($dateTo) : '' ?></span>
+                        <span>Opening: <?= formatAmount(abs($openingBalanceSigned)) ?> <?= $openingBalanceType ?></span>
+                        <span>Closing: <?= formatAmount(abs($bal)) ?> <?= $closingBalanceType ?></span>
+                    </div>
+                </th>
+            </tr>
+            <tr><th>Date / Time</th><th>Ref</th><th>Type</th><th>Car / Party</th><th>Narration</th><th class="text-right debit-amount">Receipt (Dr)</th><th class="text-right credit-amount">Payment (Cr)</th><th class="text-right">Balance</th></tr>
+        </thead>
         <tbody>
         <tr class="table-summary-row">
             <td><?= formatDate($dateFrom) ?><div class="table-secondary">Start of report</div></td>
