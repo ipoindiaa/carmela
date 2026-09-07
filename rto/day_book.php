@@ -137,45 +137,20 @@ $reportGenerated = (string) get('generated', '') === '1';
 $rtoEntryCount = count($rtoRows);
 $reportPeriodLabel = formatDate($fromDate) . ($fromDate !== $toDate ? ' to ' . formatDate($toDate) : '');
 
-$rowsByDate = [];
-foreach ($rtoRows as $row) {
-    $rowsByDate[$row['entry_date']][] = $row;
-}
-
-$rtoDays = [];
 $totalDebit = 0.0;
 $totalCredit = 0.0;
 $runningBalance = $openingBalance;
-$cursor = new DateTime($fromDate);
-$lastDate = new DateTime($toDate);
-while ($cursor <= $lastDate) {
-    $dateKey = $cursor->format('Y-m-d');
-    $dayOpening = $runningBalance;
-    $dayDebit = 0.0;
-    $dayCredit = 0.0;
-    $dayEntries = [];
-    foreach ($rowsByDate[$dateKey] ?? [] as $row) {
-        $debit = round(floatval($row['money_paid']), 2);
-        $credit = round(floatval($row['money_received']), 2);
-        $runningBalance = round($runningBalance + $credit - $debit, 2);
-        $dayDebit += $debit;
-        $dayCredit += $credit;
-        $row['debit_amount'] = $debit;
-        $row['credit_amount'] = $credit;
-        $row['running_balance'] = $runningBalance;
-        $dayEntries[] = $row;
-    }
-    $totalDebit += $dayDebit;
-    $totalCredit += $dayCredit;
-    $rtoDays[] = [
-        'date' => $dateKey,
-        'opening' => $dayOpening,
-        'entries' => $dayEntries,
-        'total_debit' => $dayDebit,
-        'total_credit' => $dayCredit,
-        'closing' => $runningBalance,
-    ];
-    $cursor->modify('+1 day');
+$rtoEntries = [];
+foreach ($rtoRows as $row) {
+    $debit = round(floatval($row['money_paid']), 2);
+    $credit = round(floatval($row['money_received']), 2);
+    $runningBalance = round($runningBalance + $credit - $debit, 2);
+    $totalDebit += $debit;
+    $totalCredit += $credit;
+    $row['debit_amount'] = $debit;
+    $row['credit_amount'] = $credit;
+    $row['running_balance'] = $runningBalance;
+    $rtoEntries[] = $row;
 }
 $closingBalance = $runningBalance;
 
@@ -196,28 +171,22 @@ if ($isRtoDayBookExport) {
     header('Content-Disposition: attachment; filename="rto-day-book-' . $fromDate . '-to-' . $toDate . '.csv"');
     $output = fopen('php://output', 'w');
     fputcsv($output, ['Date', 'Opening Balance', 'Reference', 'Type', 'Narration', 'Related', 'Debit (RTO Paid)', 'Credit (RTO Received)', 'Closing Balance']);
-    foreach ($rtoDays as $day) {
-        if (empty($day['entries'])) {
-            fputcsv($output, [$day['date'], $day['opening'], '', 'No RTO movement', '', '', 0, 0, $day['closing']]);
-            continue;
-        }
-        foreach ($day['entries'] as $index => $entry) {
-            $related = trim(($entry['car_reg'] ? formatRegistrationNo($entry['car_reg']) : '') . ' ' . ($entry['party_name'] ?: $entry['agent_name'] ?: ''));
-            fputcsv($output, [
-                $day['date'],
-                $index === 0 ? $day['opening'] : '',
-                $entry['reference_no'],
-                $rtoDayBookTypeLabel($entry),
-                $entry['narration'],
-                $related,
-                $entry['debit_amount'],
-                $entry['credit_amount'],
-                $index === count($day['entries']) - 1 ? $day['closing'] : '',
-            ]);
-        }
-        fputcsv($output, [$day['date'], '', 'DAY TOTAL', '', '', '', $day['total_debit'], $day['total_credit'], $day['closing']]);
+    fputcsv($output, [$fromDate, $openingBalance, '', 'Opening Balance', '', '', '', '', $openingBalance]);
+    foreach ($rtoEntries as $entry) {
+        $related = trim(($entry['car_reg'] ? formatRegistrationNo($entry['car_reg']) : '') . ' ' . ($entry['party_name'] ?: $entry['agent_name'] ?: ''));
+        fputcsv($output, [
+            $entry['entry_date'],
+            '',
+            $entry['reference_no'],
+            $rtoDayBookTypeLabel($entry),
+            $entry['narration'],
+            $related,
+            $entry['debit_amount'],
+            $entry['credit_amount'],
+            $entry['running_balance'],
+        ]);
     }
-    fputcsv($output, ['REPORT TOTAL', $openingBalance, '', '', '', '', $totalDebit, $totalCredit, $closingBalance]);
+    fputcsv($output, [$toDate, '', '', 'Closing Balance', '', '', '', '', $closingBalance]);
     fclose($output);
     exit;
 }
@@ -226,7 +195,7 @@ if ($isRtoDayBookExport) {
 <div class="page-header entries-page-header">
     <div>
         <h1><i class="ri-book-2-line"></i> RTO Day Book</h1>
-        <div class="text-muted">Date-wise RTO receipts, payments, and carry-forward balance.</div>
+        <div class="text-muted">RTO receipts, payments, and balance for a selected period.</div>
     </div>
     <div class="page-actions">
         <a href="list.php" class="btn btn-outline"><i class="ri-arrow-left-line"></i> RTO Book</a>
@@ -279,7 +248,7 @@ if ($isRtoDayBookExport) {
 
 <div class="alert alert-info">
     <i class="ri-information-line"></i>
-    <div><strong>How this RTO Day Book works</strong><span>Closing Balance = Opening Balance + Credit (RTO received) − Debit (RTO paid). Each date carries its closing balance into the next date. The report is built from posted RTO journal lines, including reversals, so it stays matched to the RTO Book and financial reports.</span></div>
+    <div><strong>How this RTO Day Book works</strong><span>Closing Balance = Opening Balance + Credit (RTO received) − Debit (RTO paid). The report shows one opening balance on the first selected date, every posted RTO transaction in the period, and one closing balance on the final selected date.</span></div>
 </div>
 
 <?php $exportUrl = 'day_book.php?' . http_build_query(['from_date' => $fromDate, 'to_date' => $toDate, 'export' => 'csv']); ?>
@@ -292,9 +261,8 @@ if ($isRtoDayBookExport) {
     <table class="table-total-room">
         <thead><tr><th>Date / Time</th><th>Reference</th><th>Type</th><th>Narration</th><th>Related</th><th class="text-right credit-amount">Debit / Paid</th><th class="text-right debit-amount">Credit / Received</th><th class="text-right">Balance</th></tr></thead>
         <tbody>
-        <?php foreach ($rtoDays as $day): ?>
-            <tr class="table-group-row"><td colspan="8"><strong><?= formatDate($day['date']) ?></strong> <span class="text-muted">Opening Balance: <?= $formatRtoBalance($day['opening']) ?></span></td></tr>
-            <?php foreach ($day['entries'] as $entry): ?>
+            <tr class="table-group-row"><td><strong><?= formatDate($fromDate) ?></strong></td><td colspan="6"><strong>Opening Balance</strong> <span class="text-muted">Balance at the start of this report period</span></td><td class="text-right amount <?= $openingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($openingBalance) ?></td></tr>
+            <?php foreach ($rtoEntries as $entry): ?>
             <tr>
                 <td><?= renderDateTimeStack($entry['entry_date'], $entry['created_at']) ?></td>
                 <td><a href="../transactions/view.php?id=<?= clean($entry['id']) ?>" class="text-bold"><?= clean($entry['reference_no']) ?></a></td>
@@ -310,11 +278,9 @@ if ($isRtoDayBookExport) {
                 <td class="text-right amount <?= $entry['running_balance'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($entry['running_balance']) ?></td>
             </tr>
             <?php endforeach; ?>
-            <?php if (empty($day['entries'])): ?><tr><td><?= formatDate($day['date']) ?></td><td colspan="6" class="text-muted">No RTO movement</td><td class="text-right amount <?= $day['closing'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($day['closing']) ?></td></tr><?php endif; ?>
-            <tr class="table-summary-row"><td colspan="5">Daily Total · Closing Balance</td><td class="text-right amount credit-amount"><?= formatAmount($day['total_debit']) ?></td><td class="text-right amount debit-amount"><?= formatAmount($day['total_credit']) ?></td><td class="text-right amount <?= $day['closing'] >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($day['closing']) ?></td></tr>
-        <?php endforeach; ?>
+            <?php if (empty($rtoEntries)): ?><tr><td colspan="7" class="text-muted">No RTO receipts or payments were posted in this selected period.</td><td class="text-right amount <?= $closingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($closingBalance) ?></td></tr><?php endif; ?>
         </tbody>
-        <tfoot><tr><td colspan="5"><strong>Report Total · Closing Balance as at <?= formatDate($toDate) ?></strong></td><td class="text-right amount credit-amount"><?= formatAmount($totalDebit) ?></td><td class="text-right amount debit-amount"><?= formatAmount($totalCredit) ?></td><td class="text-right amount <?= $closingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($closingBalance) ?></td></tr></tfoot>
+        <tfoot><tr><td><strong><?= formatDate($toDate) ?></strong></td><td colspan="6"><strong>Closing Balance</strong> <span class="text-muted">Balance at the end of this report period</span></td><td class="text-right amount <?= $closingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($closingBalance) ?></td></tr></tfoot>
     </table>
 </div>
 

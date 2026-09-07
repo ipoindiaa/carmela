@@ -19,7 +19,8 @@ assertRtoDayBook(str_contains($report, '$isLatestActivityDefault') && str_contai
 assertRtoDayBook(str_contains($report, 'action="day_book.php#rto-day-book-report"') && str_contains($report, 'name="generated" value="1"'), 'RTO Day Book filter anchors the submitted report result into view');
 assertRtoDayBook(str_contains($report, '$reportGenerated') && str_contains($report, 'RTO Day Book generated for'), 'RTO Day Book confirms the selected report period and empty periods');
 assertRtoDayBook(str_contains($report, '$runningBalance = round($runningBalance + $credit - $debit, 2);'), 'RTO Day Book uses day-book carry-forward balance logic');
-assertRtoDayBook(str_contains($report, 'Daily Total · Closing Balance'), 'RTO Day Book renders per-day totals and closing balance');
+assertRtoDayBook(str_contains($report, '$rtoEntries = []') && str_contains($report, 'Balance at the start of this report period') && str_contains($report, 'Balance at the end of this report period'), 'RTO Day Book renders one opening and one closing balance for the selected period');
+assertRtoDayBook(!str_contains($report, 'Daily Total · Closing Balance') && !str_contains($report, '$rtoDays = []'), 'RTO Day Book omits daily totals and empty date rows');
 assertRtoDayBook(str_contains($report, '$isRtoDayBookExport') && str_contains($report, 'Download CSV'), 'RTO Day Book supports CSV export');
 
 echo "RTO Day Book report checks completed.\n";
