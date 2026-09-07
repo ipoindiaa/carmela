@@ -190,6 +190,33 @@ try {
         assertUll(str_contains($expected->getMessage(), 'calculated from recorded owner payments'), 'Payment-based cars direct operators to Add Purchase Payment instead of a fixed-price correction');
     }
 
+    $ownerOptionalCarId = Database::uuid();
+    $ownerOptionalRegistration = 'GJ99OP' . random_int(1000, 9999);
+    $ownerOptionalCarAccountId = $engine->createAccount('ULL-OP-' . $suffix, "ULL Owner Optional Car - $ownerOptionalRegistration", 'ASSET', 'Inventory', 'CAR', $ownerOptionalCarId);
+    $db->insert('cars', [
+        'id' => $ownerOptionalCarId,
+        'business_id' => $business['id'],
+        'registration_no' => $ownerOptionalRegistration,
+        'make' => 'ULL',
+        'model' => 'Owner optional purchase',
+        'purchase_date' => $date,
+        'purchase_price' => 18000,
+        'purchase_paid_amount' => 18000,
+        'purchase_amount_mode' => 'PAYMENTS',
+        'status' => 'IN_STOCK',
+        'account_id' => $ownerOptionalCarAccountId,
+    ]);
+    $ownerOptionalEntryId = $engine->carPurchase($ownerOptionalCarId, 18000, $date, $cash['id'], 'ULL direct car purchase while owner is unknown', [], null, 18000);
+    $ownerOptionalCar = $db->fetch("SELECT seller_party_id, purchase_price, purchase_paid_amount FROM cars WHERE id = ?", [$ownerOptionalCarId]);
+    $ownerOptionalLines = $db->fetchAll("SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? ORDER BY entry_type, amount", [$ownerOptionalEntryId]);
+    assertUll(
+        empty($ownerOptionalCar['seller_party_id'])
+        && abs(floatval($ownerOptionalCar['purchase_price']) - 18000.0) < 0.01
+        && abs(floatval($ownerOptionalCar['purchase_paid_amount']) - 18000.0) < 0.01
+        && count($ownerOptionalLines) === 2,
+        'A first car payment can be recorded without an owner while keeping a balanced car-and-cash voucher'
+    );
+
     $legacyCarId = Database::uuid();
     $legacyRegistration = 'GJ99LH' . random_int(1000, 9999);
     $legacyCarAccountId = $engine->createAccount('ULL-LEG-' . $suffix, "ULL Legacy Car - $legacyRegistration", 'ASSET', 'Inventory', 'CAR', $legacyCarId);

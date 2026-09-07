@@ -313,10 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($sellerPartyId !== '' && $sellerName !== '') {
                     throw new Exception('Choose an existing vehicle owner or add a new one, not both.');
                 }
-                if ($sellerPartyId === '' && $sellerName === '' && floatval($purchasePaidNow ?? 0) > 0.009) {
-                    throw new Exception('Select or add the vehicle owner before recording the first purchase payment.');
-                }
-                if ($sellerPartyId === '') {
+                if ($sellerPartyId === '' && $sellerName !== '') {
                     Auth::requireEntityAccess('party', 'write');
                 }
                 $sellerLabel = $sellerName;
@@ -820,7 +817,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="entry-relation-panel">
                     <div class="entry-relation-heading">
-                        <div><strong>Owner's Name <span class="text-muted">(Vehicle Owner / Seller)</span> <span class="section-optional">(Optional)</span></strong><span>Link the legal owner before recording money to them. Their ledger then records every purchase amount and payment — never a duplicate account.</span></div>
+                        <div><strong>Owner's Name <span class="text-muted">(Vehicle Owner / Seller)</span> <span class="section-optional">(Optional)</span></strong><span>Leave this blank when the owner is not known yet. The first payment still records against this car and Cash/Bank; link the owner before later owner payments.</span></div>
                         <button type="button" class="btn btn-outline btn-sm" id="vehicle-owner-new-toggle" onclick="toggleNewParty('vehicle_owner')"><i class="ri-user-add-line"></i> Add New Owner</button>
                     </div>
                     <input type="hidden" name="seller_party_id" id="seller_party_id">
