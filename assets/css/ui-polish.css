@@ -1101,27 +1101,106 @@ tbody tr:last-child td { border-bottom: 0; }
 
     .cashbook-report-table .print-report-heading { display: table-row !important; }
     .cashbook-report-table .print-report-heading th {
-        padding: 0 0 8pt !important;
+        padding: 0 0 4pt !important;
         background: #ffffff !important;
-        color: #111111 !important;
+        color: #000000 !important;
         text-align: left !important;
         text-transform: none !important;
         letter-spacing: normal !important;
         white-space: normal !important;
+        border: 0 !important;
     }
 
     .cashbook-report-table .print-report-title {
-        font-size: 14pt;
+        display: inline;
+        font-size: 10pt;
         font-weight: 800;
-        margin-bottom: 3pt;
+        margin: 0;
     }
 
     .cashbook-report-table .print-report-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4pt 16pt;
-        font-size: 9pt;
+        display: inline;
+        margin-left: 12pt;
+        font-size: 7.5pt;
         font-weight: 600;
+    }
+
+    .cashbook-report-table .print-report-meta span + span::before {
+        content: " | ";
+        margin: 0 5pt;
+    }
+
+    .cashbook-report-table {
+        border-collapse: collapse !important;
+        color: #000000 !important;
+        font-size: 7.5pt !important;
+        line-height: 1.12 !important;
+    }
+
+    .cashbook-report-table th,
+    .cashbook-report-table td {
+        padding: 3pt 4pt !important;
+        color: #000000 !important;
+        background: #ffffff !important;
+        border: 0 !important;
+        border-bottom: 0.35pt solid #9a9a9a !important;
+        vertical-align: top !important;
+    }
+
+    .cashbook-report-table thead tr:not(.print-report-heading) th {
+        font-size: 7pt !important;
+        font-weight: 800 !important;
+        border-top: 0.8pt solid #000000 !important;
+        border-bottom: 0.8pt solid #000000 !important;
+    }
+
+    .cashbook-report-table tfoot td {
+        font-weight: 800 !important;
+        border-top: 0.8pt solid #000000 !important;
+        border-bottom: 0.8pt solid #000000 !important;
+    }
+
+    .cashbook-report-table .badge,
+    .cashbook-report-table .transaction-context-chip {
+        display: inline !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        color: #000000 !important;
+        font-size: inherit !important;
+        font-weight: 600 !important;
+        letter-spacing: normal !important;
+    }
+
+    .cashbook-report-table .date-time-stack {
+        display: inline-flex !important;
+        flex-direction: row !important;
+        gap: 3pt !important;
+        white-space: nowrap;
+    }
+
+    .cashbook-report-table .date-time-primary,
+    .cashbook-report-table .date-time-secondary,
+    .cashbook-report-table .table-note,
+    .cashbook-report-table .table-secondary {
+        color: #000000 !important;
+        font-size: inherit !important;
+        font-weight: 400 !important;
+    }
+
+    .cashbook-report-table .table-note {
+        display: inline !important;
+        margin: 0 0 0 3pt !important;
+    }
+
+    .cashbook-report-table a,
+    .cashbook-report-table .debit-amount,
+    .cashbook-report-table .credit-amount,
+    .cashbook-report-table .amount {
+        color: #000000 !important;
+        text-decoration: none !important;
     }
 }
 
