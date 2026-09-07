@@ -37,7 +37,7 @@ function renderCarRows($cars, $engine) {
     ob_start();
     ?>
     <?php if (empty($cars)): ?>
-        <tr><td colspan="10" class="text-center text-muted empty-table-cell">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
+        <tr><td colspan="9" class="text-center text-muted empty-table-cell">No cars found.<?php if (Auth::hasEntityAccess('car', 'write')): ?> <a href="add.php">Add your first car</a><?php endif; ?></td></tr>
         <?php else: ?>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -53,18 +53,15 @@ function renderCarRows($cars, $engine) {
         ?>
         <tr>
             <td class="car-registration-cell"><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
-            <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
+            <td class="car-vehicle-cell">
+                <div><?= clean($car['make'] . ' ' . $car['model']) ?></div>
+                <?php if ($referenceSellingPrice > 0): ?>
+                    <div class="table-secondary car-reference-selling-price">Ref. sale <?= formatAmount($referenceSellingPrice) ?></div>
+                <?php endif; ?>
+            </td>
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= clean($car['partner_names'] ?: '-') ?></td>
             <td class="text-right amount flow-out"><?= formatAmount($totalCost) ?></td>
-            <td class="text-right amount">
-                <?php if ($referenceSellingPrice > 0): ?>
-                    <?= formatAmount($referenceSellingPrice) ?>
-                    <div class="table-secondary">Reference only</div>
-                <?php else: ?>
-                    <span class="text-muted">—</span>
-                <?php endif; ?>
-            </td>
             <td class="text-right amount flow-in">
                 <?php if ($car['sale_price']): ?>
                     <?= formatAmount($totalSaleRealisation) ?>
@@ -204,11 +201,10 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
         <thead>
             <tr>
                 <th class="car-registration-cell">Reg. No.</th>
-                <th>Make / Model</th>
+                <th>Vehicle</th>
                 <th>Year</th>
                 <th>Partners</th>
                 <th class="text-right">Total Cost</th>
-                <th class="text-right">Reference Selling Price</th>
                 <th class="text-right">Sale Price</th>
                 <th class="text-right">Profit/Loss</th>
                 <th class="text-center">Status</th>

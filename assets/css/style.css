@@ -1119,6 +1119,15 @@ tbody td {
     white-space: nowrap;
 }
 
+.cars-list-table .car-vehicle-cell {
+    min-width: 11rem;
+}
+
+.cars-list-table .car-reference-selling-price {
+    margin-top: var(--space-1);
+    white-space: nowrap;
+}
+
 .table-container td:first-child,
 .table-container th:first-child {
     padding-left: var(--space-5);
