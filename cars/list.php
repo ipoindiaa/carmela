@@ -52,7 +52,7 @@ function renderCarRows($cars, $engine) {
             $rtoPending = (float) ($car['rto_pending'] ?? 0);
         ?>
         <tr>
-            <td><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
+            <td class="car-registration-cell"><a href="view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= $car['year'] ?: '-' ?></td>
             <td><?= clean($car['partner_names'] ?: '-') ?></td>
@@ -200,10 +200,10 @@ $nextUrl = $page < $pagination['total_pages'] ? carsListUrl($page + 1, $filter, 
 </div>
 
 <div class="table-container table-container-fill" data-lazy-list data-next-url="<?= clean($nextUrl) ?>">
-    <table>
+    <table class="cars-list-table">
         <thead>
             <tr>
-                <th>Reg. No.</th>
+                <th class="car-registration-cell">Reg. No.</th>
                 <th>Make / Model</th>
                 <th>Year</th>
                 <th>Partners</th>
