@@ -261,6 +261,7 @@ $archiveFilterParams = array_filter([
 <div class="page-header">
     <h1><i class="ri-file-shield-2-line"></i> RTO Book</h1>
     <div class="page-actions">
+        <a href="day_book.php" class="btn btn-outline"><i class="ri-book-2-line"></i> RTO Day Book</a>
         <?php if (Auth::isAdmin() && $rtoOpeningAccount): ?><a href="../settings/opening_balances.php?account_id=<?= clean($rtoOpeningAccount['id']) ?>&amp;return=rto" class="btn btn-outline"><i class="ri-scales-3-line"></i> RTO Opening Balance</a><?php endif; ?>
         <?php if ($canWriteRto): ?><a href="#rto-form" class="btn btn-primary"><i class="ri-add-line"></i> Add RTO Money</a><?php endif; ?>
     </div>
