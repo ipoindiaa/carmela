@@ -133,6 +133,9 @@ $rtoRows = $db->fetchAll(
      ORDER BY je.entry_date ASC, je.created_at ASC, je.reference_no ASC",
     array_merge([$businessId, $fromDate, $toDate], $rtoAccountParams)
 );
+$reportGenerated = (string) get('generated', '') === '1';
+$rtoEntryCount = count($rtoRows);
+$reportPeriodLabel = formatDate($fromDate) . ($fromDate !== $toDate ? ' to ' . formatDate($toDate) : '');
 
 $rowsByDate = [];
 foreach ($rtoRows as $row) {
@@ -231,8 +234,9 @@ if ($isRtoDayBookExport) {
     </div>
 </div>
 
-<div class="filter-bar entries-filter-bar">
-    <form method="GET" class="entries-filter-form">
+<div id="rto-day-book-filters" class="filter-bar entries-filter-bar">
+    <form method="GET" action="day_book.php#rto-day-book-report" class="entries-filter-form">
+        <input type="hidden" name="generated" value="1">
         <div class="entries-filter-field entries-filter-date">
             <label class="form-label">From</label>
             <input type="date" name="from_date" class="form-control" value="<?= clean($fromDate) ?>">
@@ -242,8 +246,8 @@ if ($isRtoDayBookExport) {
             <input type="date" name="to_date" class="form-control" value="<?= clean($toDate) ?>">
         </div>
         <div class="entries-filter-actions">
-            <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Generate Report</button>
-            <a href="day_book.php" class="btn btn-outline btn-sm">Clear</a>
+            <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Generate &amp; View Report</button>
+            <a href="day_book.php#rto-day-book-filters" class="btn btn-outline btn-sm">Clear</a>
         </div>
     </form>
 </div>
@@ -252,12 +256,23 @@ if ($isRtoDayBookExport) {
 <div class="filter-context-note">Showing the latest RTO activity day. Choose From and To to generate any other day or date-range report.</div>
 <?php endif; ?>
 
+<?php if ($reportGenerated): ?>
+<div id="rto-day-book-report" class="alert alert-success report-generation-confirmation" tabindex="-1">
+    <i class="ri-checkbox-circle-line"></i>
+    <div>
+        <strong>RTO Day Book generated for <?= clean($reportPeriodLabel) ?></strong>
+        <span><?php if ($rtoEntryCount > 0): ?><?= $rtoEntryCount ?> RTO transaction<?= $rtoEntryCount === 1 ? '' : 's' ?> included below.<?php else: ?>No RTO receipt or payment was posted for this period. The opening and closing balances are shown below.<?php endif; ?></span>
+    </div>
+</div>
+<?php else: ?>
+<div id="rto-day-book-report" class="report-anchor" aria-hidden="true"></div>
+<?php endif; ?>
+
 <div class="card">
     <div class="card-body summary-strip">
         <div><span class="text-muted">RTO Book:</span> <strong>RTO receipts and payments</strong></div>
         <div><span class="text-muted">Opening:</span> <strong class="amount <?= $openingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($openingBalance) ?></strong></div>
         <div><span class="text-muted">Total Debit / Paid:</span> <strong class="amount credit-amount"><?= formatAmount($totalDebit) ?></strong></div>
-        <div><span class="text-muted">Total Credit / Received:</span> <strong class="amount debit-amount"><?= formatAmount($totalCredit) ?></strong></div>
         <div><span class="text-muted">Closing:</span> <strong class="amount <?= $closingBalance >= 0 ? 'debit-amount' : 'credit-amount' ?>"><?= $formatRtoBalance($closingBalance) ?></strong></div>
     </div>
 </div>
