@@ -897,6 +897,11 @@ class AccountingEngine {
                 $this->db->query("ALTER TABLE `accounts` ADD COLUMN `opening_entry_id` CHAR(36) DEFAULT NULL AFTER `opening_balance_date`");
             }
         });
+        $this->runMigrationStep('add-column-accounts.requires_car_selection', function () {
+            if (!$this->columnExists('accounts', 'requires_car_selection')) {
+                $this->db->query("ALTER TABLE `accounts` ADD COLUMN `requires_car_selection` TINYINT(1) NOT NULL DEFAULT 0 AFTER `opening_entry_id`");
+            }
+        });
         $this->runMigrationStep('employee-columns', function () {
             foreach ([
                 'email' => "VARCHAR(100) DEFAULT NULL AFTER `phone`",
@@ -2994,8 +2999,19 @@ class AccountingEngine {
             throw new Exception("Cash or bank account is required.");
         }
 
+        $requiresCar = !empty($categoryAccount['requires_car_selection']);
+        if ($requiresCar && $categoryAccount['group_name'] !== 'EXPENSE') {
+            throw new Exception('Only custom money-out types can require a car selection.');
+        }
+        if ($requiresCar && $carId === '') {
+            throw new Exception('Select the car for this car-linked custom entry type.');
+        }
+        if (!$requiresCar && $carId !== '') {
+            throw new Exception('This custom entry type is not configured as car-linked. Update it in Custom Entry Types first.');
+        }
+
         $car = null;
-        if ($carId !== '') {
+        if ($requiresCar) {
             if ($direction !== 'out') {
                 throw new Exception('Only a custom payment can be linked to a car.');
             }

@@ -91,7 +91,7 @@ $preselectedAmount = $isPostRequest ? post('amount', '') : get('amount', '');
 $preselectedNarration = $isPostRequest ? post('narration', '') : get('narration', '');
 $entryCategorySystemCodes = ['CAR-REV', 'PNL', 'BAD-DEBT', 'ADV-WOFF', 'SAL-EXP', 'EMP-COMM'];
 $entryCategories = $db->fetchAll(
-    "SELECT id, code, name, group_name, sub_group
+    "SELECT id, code, name, group_name, sub_group, requires_car_selection
      FROM accounts
      WHERE business_id = ?
        AND entity_type = 'GENERAL'
@@ -116,6 +116,7 @@ $entryCategoryOptions = array_map(static function ($account) {
         'value' => 'CATEGORY_ENTRY',
         'categoryAccountId' => $account['id'],
         'direction' => $isIncome ? 'in' : 'out',
+        'requiresCar' => !$isIncome && !empty($account['requires_car_selection']),
         'title' => $account['name'],
         'desc' => ($isIncome ? 'Custom money-in type' : 'Custom money-out type') . ' - posts to ' . $account['code'],
         'icon' => $isIncome ? 'ri-arrow-down-circle-line' : 'ri-arrow-up-circle-line',
@@ -250,11 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'CATEGORY_ENTRY':
                 $categoryAccountId = post('dynamic_category_account_id');
                 $categoryDirection = post('dynamic_category_direction');
-                $linkCustomEntryToCar = post('custom_category_link_car') === '1';
-                $customCategoryCarId = $linkCustomEntryToCar ? trim((string) post('custom_category_car_id')) : null;
-                if ($linkCustomEntryToCar && $customCategoryCarId === '') {
-                    throw new Exception('Select the car to link with this custom expense.');
-                }
+                $customCategoryCarId = trim((string) post('custom_category_car_id'));
                 $entryId = $engine->categoryEntry($categoryAccountId, $categoryDirection, $amount, $date, $paymentAccountId, $narration, $customCategoryCarId);
                 break;
 
@@ -715,6 +712,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-error" id="txn-type-error" hidden>Please choose Receive/Jama, Payments, or Split Bill.</div>
                     <input type="hidden" name="dynamic_category_account_id" id="dynamic_category_account_id">
                     <input type="hidden" name="dynamic_category_direction" id="dynamic_category_direction">
+                    <input type="hidden" id="dynamic_category_requires_car" value="0">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Date *</label>
@@ -743,28 +741,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
-        <!-- CUSTOM PAYMENT CATEGORY: optional, explicit car-cost allocation. -->
+        <!-- CUSTOM CATEGORY: configured types can require a car-cost allocation. -->
         <div class="entry-relation-panel" id="custom-category-car-link-section" hidden>
             <div class="entry-relation-heading">
                 <div>
-                    <strong>Car Link <span class="text-muted">(Optional)</span></strong>
-                    <span>Use this only when this custom payment is a direct cost of one car.</span>
+                    <strong>Related Car *</strong>
+                    <span>This custom expense type is configured as car-related. Select the car this payment belongs to.</span>
                 </div>
             </div>
-            <label class="check-row">
-                <input type="checkbox" name="custom_category_link_car" id="custom_category_link_car" value="1">
-                <span><strong>Link this custom expense to a car</strong><small>The expense will appear in that car’s history and total cost.</small></span>
-            </label>
-            <div class="entry-relation-panel nested-relation-panel" id="custom-category-car-picker" hidden>
-                <div class="entry-relation-heading">
-                    <div><strong>Select Car *</strong><span>Search business, outside, or commission cars by registration number, make, or model.</span></div>
-                </div>
-                <input type="hidden" name="custom_category_car_id" id="custom_category_car_id">
-                <button type="button" class="picker-trigger picker-trigger-wide" id="custom-category-car-picker-trigger" onclick="openEntityPicker('custom_category_car', this)">
-                    <span>Select car for this custom expense</span>
-                    <i class="ri-search-line"></i>
-                </button>
-            </div>
+            <input type="hidden" name="custom_category_car_id" id="custom_category_car_id">
+            <button type="button" class="picker-trigger picker-trigger-wide" id="custom-category-car-picker-trigger" onclick="openEntityPicker('custom_category_car', this)">
+                <span>Select car for this custom expense</span>
+                <i class="ri-search-line"></i>
+            </button>
         </div>
 
             <!-- OUTSIDE CAR RECEIPT SECTION: no financial entry is posted at receipt. -->
@@ -1894,7 +1883,7 @@ function selectMoneyFlow(flow) {
     activeMoneyFlow = flow;
     const defaultCategory = (entryCategoryOptions || []).find((option) => option.flow === flow);
     if (defaultCategory) {
-        setDynamicCategorySelection(defaultCategory.categoryAccountId || '', defaultCategory.direction || '');
+        setDynamicCategorySelection(defaultCategory.categoryAccountId || '', defaultCategory.direction || '', !!defaultCategory.requiresCar);
         select.value = 'CATEGORY_ENTRY';
     } else {
         clearDynamicCategorySelection();
@@ -2014,7 +2003,7 @@ function renderTransactionTypePicker() {
         const activeClass = getSelectedTransactionKey() === getTransactionOptionKey(option) ? 'active' : '';
         return `
             ${groupLabel}
-            <button type="button" class="txn-type-item ${flowClass} ${activeClass}" data-value="${escapeHtml(option.value)}" data-category-account-id="${escapeHtml(option.categoryAccountId || '')}" data-category-direction="${escapeHtml(option.direction || '')}" role="option" aria-selected="${activeClass ? 'true' : 'false'}">
+            <button type="button" class="txn-type-item ${flowClass} ${activeClass}" data-value="${escapeHtml(option.value)}" data-category-account-id="${escapeHtml(option.categoryAccountId || '')}" data-category-direction="${escapeHtml(option.direction || '')}" data-category-requires-car="${option.requiresCar ? '1' : '0'}" role="option" aria-selected="${activeClass ? 'true' : 'false'}">
                 <span class="txn-type-icon"><i class="${escapeHtml(option.icon)}"></i></span>
                 <span>
                     <strong>${escapeHtml(option.title)}</strong>
@@ -2026,7 +2015,7 @@ function renderTransactionTypePicker() {
 
     list.querySelectorAll('.txn-type-item').forEach((button) => {
         button.addEventListener('click', () => {
-            setDynamicCategorySelection(button.dataset.categoryAccountId || '', button.dataset.categoryDirection || '');
+            setDynamicCategorySelection(button.dataset.categoryAccountId || '', button.dataset.categoryDirection || '', button.dataset.categoryRequiresCar === '1');
             select.value = button.dataset.value || '';
             select.dispatchEvent(new Event('change'));
             syncDynamicCategoryEntryState();
@@ -2101,15 +2090,17 @@ function getSelectedTransactionKey() {
     return select?.value === 'CATEGORY_ENTRY' && categoryAccountId ? `category:${categoryAccountId}` : `type:${select?.value || ''}`;
 }
 
-function setDynamicCategorySelection(accountId, direction) {
+function setDynamicCategorySelection(accountId, direction, requiresCar = false) {
     const accountInput = document.getElementById('dynamic_category_account_id');
     const directionInput = document.getElementById('dynamic_category_direction');
+    const requiresCarInput = document.getElementById('dynamic_category_requires_car');
     if (accountInput) accountInput.value = accountId || '';
     if (directionInput) directionInput.value = direction || '';
+    if (requiresCarInput) requiresCarInput.value = requiresCar ? '1' : '0';
 }
 
 function clearDynamicCategorySelection() {
-    setDynamicCategorySelection('', '');
+    setDynamicCategorySelection('', '', false);
 }
 
 function syncDynamicCategoryEntryState() {
@@ -2133,31 +2124,20 @@ function syncDynamicCategoryEntryState() {
 
 function syncCustomCategoryCarLink() {
     const section = document.getElementById('custom-category-car-link-section');
-    const checkbox = document.getElementById('custom_category_link_car');
-    const picker = document.getElementById('custom-category-car-picker');
     const carInput = document.getElementById('custom_category_car_id');
     const pickerTrigger = document.getElementById('custom-category-car-picker-trigger');
     const type = document.getElementById('transaction_type')?.value || '';
     const direction = document.getElementById('dynamic_category_direction')?.value || '';
-    if (!section || !checkbox || !picker || !carInput) return;
+    const requiresCar = document.getElementById('dynamic_category_requires_car')?.value === '1';
+    if (!section || !carInput) return;
 
-    const isCustomPayment = type === 'CATEGORY_ENTRY' && direction === 'out';
-    section.hidden = !isCustomPayment;
+    const isCarLinkedCustomPayment = type === 'CATEGORY_ENTRY' && direction === 'out' && requiresCar;
+    section.hidden = !isCarLinkedCustomPayment;
     if (typeof setConditionalControls === 'function') {
-        setConditionalControls(section, isCustomPayment, { clear: !isCustomPayment });
+        setConditionalControls(section, isCarLinkedCustomPayment, { clear: !isCarLinkedCustomPayment });
     }
-    if (!isCustomPayment) {
+    if (!isCarLinkedCustomPayment) {
         if (pickerTrigger?.querySelector('span')) pickerTrigger.querySelector('span').textContent = 'Select car for this custom expense';
-        return;
-    }
-
-    const isLinked = checkbox.checked;
-    picker.hidden = !isLinked;
-    if (typeof setConditionalControls === 'function') {
-        setConditionalControls(picker, isLinked, { clear: !isLinked });
-    }
-    if (!isLinked && pickerTrigger?.querySelector('span')) {
-        pickerTrigger.querySelector('span').textContent = 'Select car for this custom expense';
     }
 }
 
@@ -2565,7 +2545,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
-    document.getElementById('custom_category_link_car')?.addEventListener('change', syncCustomCategoryCarLink);
     document.querySelector('input[name="vouchers[]"]')?.addEventListener('change', (event) => {
         const status = document.querySelector('.voucher-file-status');
         const count = event.target.files ? event.target.files.length : 0;

@@ -67,6 +67,7 @@ CREATE TABLE `accounts` (
     `opening_balance_type` ENUM('DR','CR') NOT NULL DEFAULT 'DR',
     `opening_balance_date` DATE DEFAULT NULL,
     `opening_entry_id` CHAR(36) DEFAULT NULL,
+    `requires_car_selection` TINYINT(1) NOT NULL DEFAULT 0,
     `current_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `current_balance_type` ENUM('DR','CR') NOT NULL DEFAULT 'DR',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

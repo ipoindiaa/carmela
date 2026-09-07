@@ -76,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $meta = $categoryGroups[$direction];
+            $requiresCarSelection = $direction === 'out' && post('requires_car_selection') === '1' ? 1 : 0;
             $accountId = Database::uuid();
             $db->insert('accounts', [
                 'id' => $accountId,
@@ -89,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'is_active' => 1,
                 'opening_balance' => 0,
                 'opening_balance_type' => $direction === 'in' ? 'CR' : 'DR',
+                'requires_car_selection' => $requiresCarSelection,
                 'current_balance' => 0,
                 'current_balance_type' => $direction === 'in' ? 'CR' : 'DR',
             ]);
@@ -115,9 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Custom entry type not found.');
             }
 
+            $requiresCarSelection = $account['group_name'] === 'EXPENSE' && post('requires_car_selection') === '1' ? 1 : 0;
             $db->query(
-                "UPDATE accounts SET name = ?, is_active = ? WHERE id = ? AND business_id = ?",
-                [$name, $isActive, $accountId, $businessId]
+                "UPDATE accounts SET name = ?, is_active = ?, requires_car_selection = ? WHERE id = ? AND business_id = ?",
+                [$name, $isActive, $requiresCarSelection, $accountId, $businessId]
             );
             $updatedCategory = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$accountId, $businessId]);
             Auth::auditUpdate('account', $accountId, $account, $updatedCategory ?: [], "Updated custom entry type $name", 'categories');
@@ -187,7 +190,7 @@ $categories = $db->fetchAll(
             <div class="form-row-3">
                 <div class="form-group">
                     <label class="form-label">Type *</label>
-                    <select name="direction" class="form-control searchable-select">
+                    <select name="direction" id="category-direction" class="form-control searchable-select">
                         <option value="out">Payment / Money Out</option>
                         <option value="in">Receive / Money In</option>
                     </select>
@@ -201,6 +204,10 @@ $categories = $db->fetchAll(
                     <input type="text" name="code" class="form-control" placeholder="Auto if blank">
                 </div>
             </div>
+            <label class="check-row" id="category-car-link-option">
+                <input type="checkbox" name="requires_car_selection" id="requires_car_selection" value="1">
+                <span><strong>This is a car-related expense type</strong><small>When selected in New Entry, a car search is shown and required. The payment will appear in that car’s history and total cost.</small></span>
+            </label>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Add Entry Type</button>
         </form>
     </div>
@@ -216,6 +223,7 @@ $categories = $db->fetchAll(
                         <th>Type</th>
                         <th>Code</th>
                         <th>Name</th>
+                        <th class="text-center">Car Link</th>
                         <th class="text-right">Current Total</th>
                         <th class="text-center">Entries</th>
                         <th class="text-center">Status</th>
@@ -233,6 +241,16 @@ $categories = $db->fetchAll(
                             <td><i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?></td>
                             <td class="text-bold"><?= clean($category['code']) ?></td>
                             <td><input type="text" name="name" class="form-control" value="<?= clean($category['name']) ?>" form="<?= clean($formId) ?>" required></td>
+                            <td class="text-center">
+                                <?php if ($direction === 'out'): ?>
+                                    <label class="check-row compact-check-row">
+                                        <input type="checkbox" name="requires_car_selection" value="1" form="<?= clean($formId) ?>" <?= !empty($category['requires_car_selection']) ? 'checked' : '' ?>>
+                                        <span><strong>Car required</strong></span>
+                                    </label>
+                                <?php else: ?>
+                                    <span class="badge badge-gray">Not applicable</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="text-right amount <?= $direction === 'in' ? 'credit-amount' : 'debit-amount' ?>"><?= formatAmount($category['current_balance']) ?> <?= clean($category['current_balance_type']) ?></td>
                             <td class="text-center"><?= intval($category['linked_entries'] ?? 0) ?></td>
                             <td class="text-center">
@@ -265,7 +283,7 @@ $categories = $db->fetchAll(
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($categories)): ?>
-                        <tr><td colspan="7" class="text-center text-muted empty-table-cell">No custom entry types yet.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted empty-table-cell">No custom entry types yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -274,3 +292,20 @@ $categories = $db->fetchAll(
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
+<script>
+(() => {
+    const direction = document.getElementById('category-direction');
+    const option = document.getElementById('category-car-link-option');
+    const checkbox = document.getElementById('requires_car_selection');
+    const sync = () => {
+        const available = direction?.value === 'out';
+        if (option) option.hidden = !available;
+        if (checkbox) {
+            checkbox.disabled = !available;
+            if (!available) checkbox.checked = false;
+        }
+    };
+    direction?.addEventListener('change', sync);
+    sync();
+})();
+</script>

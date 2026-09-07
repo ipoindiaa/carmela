@@ -31,11 +31,12 @@ $root = dirname(__DIR__);
 $newEntrySource = file_get_contents($root . '/transactions/new.php');
 $entitySearchSource = file_get_contents($root . '/transactions/search_entities.php');
 assertEntryTaxonomy(
-    str_contains($newEntrySource, 'id="custom_category_link_car"')
+    str_contains($newEntrySource, 'requires_car_selection')
+        && str_contains($newEntrySource, 'data-category-requires-car')
         && str_contains($newEntrySource, "openEntityPicker('custom_category_car', this)")
         && str_contains($newEntrySource, "custom_category_car: {")
         && str_contains($entitySearchSource, "case 'custom_category_car':"),
-    'Custom payment entries expose an opt-in searchable car link'
+    'Only custom entry types configured as car-related expose the searchable car link'
 );
 
 $db = Database::getInstance();
@@ -112,15 +113,25 @@ try {
     assertEntryTaxonomy($customEntry['entry_type_id'] === customEntryTypeId($customAccountId), 'Custom entry type remains a separate top-level type with stable identity');
     assertEntryTaxonomy(debitAccountCode($db, $customEntryId) === 'TX-CUSTOM-' . $suffix, 'Custom entry posts directly to its own ledger account');
 
+    $carLinkedCustomAccountId = $engine->createAccount('TXCAR-' . $suffix, 'Taxonomy Car-linked Expense', 'EXPENSE', 'Daily Udhar Categories', 'GENERAL');
+    $db->query("UPDATE accounts SET requires_car_selection = 1 WHERE id = ? AND business_id = ?", [$carLinkedCustomAccountId, $business['id']]);
+    $carRequiredBlocked = false;
+    try {
+        $engine->categoryEntry($carLinkedCustomAccountId, 'out', 275, date('Y-m-d'), $cash['id'], 'Missing linked car');
+    } catch (Throwable $e) {
+        $carRequiredBlocked = str_contains($e->getMessage(), 'Select the car');
+    }
+    assertEntryTaxonomy($carRequiredBlocked, 'A custom type marked car-related requires a car on every entry');
+
     $costBeforeLinkedCustomExpense = $engine->getCarTotalCost($carId);
-    $linkedCustomEntryId = $engine->categoryEntry($customAccountId, 'out', 275, date('Y-m-d'), $cash['id'], 'Taxonomy custom car expense', $carId);
+    $linkedCustomEntryId = $engine->categoryEntry($carLinkedCustomAccountId, 'out', 275, date('Y-m-d'), $cash['id'], 'Taxonomy custom car expense', $carId);
     $linkedCustomEntry = $db->fetch("SELECT car_id, transaction_type, entry_type_id FROM journal_entries WHERE id = ?", [$linkedCustomEntryId]);
     $linkedCustomAllocation = $db->fetch(
         "SELECT id FROM journal_entries
          WHERE business_id = ? AND car_id = ? AND transaction_type = 'CAR_EXPENSE'
            AND entry_type_id = ? AND narration LIKE ? AND status = 'POSTED'
          ORDER BY created_at DESC LIMIT 1",
-        [$business['id'], $carId, systemEntryTypeId('INTERNAL_ALLOCATION'), 'Allocate Taxonomy Custom Expense%']
+        [$business['id'], $carId, systemEntryTypeId('INTERNAL_ALLOCATION'), 'Allocate Taxonomy Car-linked Expense%']
     );
     $linkedCustomLines = $db->fetchAll(
         "SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ? ORDER BY entry_type",
@@ -129,7 +140,7 @@ try {
     assertEntryTaxonomy(
         $linkedCustomEntry['car_id'] === $carId
             && $linkedCustomEntry['transaction_type'] === 'CAR_EXPENSE'
-            && $linkedCustomEntry['entry_type_id'] === customEntryTypeId($customAccountId),
+            && $linkedCustomEntry['entry_type_id'] === customEntryTypeId($carLinkedCustomAccountId),
         'Linked custom expense keeps its custom type identity and the selected car link'
     );
     assertEntryTaxonomy(

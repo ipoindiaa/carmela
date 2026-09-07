@@ -77,7 +77,7 @@ switch ($kind) {
     case 'token_refund_car':
     case 'custom_category_car':
         $statusFilterSql = "AND status <> 'CANCELLED'";
-        if (in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED', 'CAR_EXPENSE'], true)) {
+        if (in_array($context, ['CAR_SALE', 'CAR_TOKEN_RECEIVED', 'CAR_EXPENSE', 'CATEGORY_ENTRY'], true)) {
             $statusFilterSql = "AND status = 'IN_STOCK'";
         } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED') {
             $statusFilterSql = "AND status IN ('SOLD', 'PENDING_PAYMENT')";
