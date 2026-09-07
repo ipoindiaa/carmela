@@ -24,8 +24,10 @@ $validReportDate = static function ($value, $fallback) {
     return $date && $date->format('Y-m-d') === $value ? $value : $fallback;
 };
 
-$fromDate = $validReportDate(get('from_date', ''), getCurrentFY() . '-04-01');
-$toDate = $validReportDate(get('to_date', ''), date('Y-m-d'));
+$requestedFromDate = trim((string) get('from_date', ''));
+$requestedToDate = trim((string) get('to_date', ''));
+$fromDate = $validReportDate($requestedFromDate, getCurrentFY() . '-04-01');
+$toDate = $validReportDate($requestedToDate, date('Y-m-d'));
 if ($toDate < $fromDate) {
     [$fromDate, $toDate] = [$toDate, $fromDate];
 }
@@ -38,6 +40,28 @@ $rtoAccountParams = [];
 if (!empty($rtoOpeningAccount['id'])) {
     $rtoAccountScope = "($rtoAccountScope OR a.id = ?)";
     $rtoAccountParams[] = $rtoOpeningAccount['id'];
+}
+
+// Opening the report should show useful RTO data immediately. The full
+// financial-year default can contain months of empty dates before the first
+// RTO transaction and looks like a broken report. A selected date range always
+// wins; otherwise start on the latest day that has RTO movement.
+$isLatestActivityDefault = $requestedFromDate === '' && $requestedToDate === '';
+if ($isLatestActivityDefault) {
+    $latestActivity = $db->fetch(
+        "SELECT MAX(je.entry_date) AS latest_date
+         FROM journal_entries je
+         JOIN journal_lines jl ON jl.journal_entry_id = je.id
+         JOIN accounts a ON a.id = jl.account_id
+         WHERE je.business_id = ?
+           AND je.status IN ('POSTED', 'REVERSED')
+           AND $rtoAccountScope",
+        array_merge([$businessId], $rtoAccountParams)
+    );
+    if (!empty($latestActivity['latest_date'])) {
+        $fromDate = $latestActivity['latest_date'];
+        $toDate = $latestActivity['latest_date'];
+    }
 }
 
 $receivedExpression = "CASE
@@ -223,6 +247,10 @@ if ($isRtoDayBookExport) {
         </div>
     </form>
 </div>
+
+<?php if ($isLatestActivityDefault): ?>
+<div class="filter-context-note">Showing the latest RTO activity day. Choose From and To to generate any other day or date-range report.</div>
+<?php endif; ?>
 
 <div class="card">
     <div class="card-body summary-strip">
