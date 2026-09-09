@@ -3,12 +3,11 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/accounting_engine.php';
 
 /**
- * Testing-data cleanup with accounting-safe scopes.
+ * Administrator-authorized business-data cleanup with accounting-safe scopes.
  *
- * This service is intentionally unavailable in production. Live records must
- * use the normal reversal/individual-delete flow so the audit trail stays
- * intact. The testing environment can be reset without throwing away every
- * master option an operator has already configured.
+ * These actions are for deliberate cleanup, not normal accounting corrections.
+ * A live cleanup keeps its audit trail; an individual incorrect voucher should
+ * still use the normal reversal or individual-delete flow.
  */
 class BusinessDataResetService {
     public const SCOPE_DAILY_ENTRIES = 'DAILY_ENTRIES';
@@ -28,9 +27,10 @@ class BusinessDataResetService {
     /**
      * The label/copy is shared by the settings page and server validation.
      * The phrase is not the authorization boundary; active-admin password
-     * verification and the testing-environment guard are both required too.
+     * verification and the server-side environment check are both required too.
      */
     public static function cleanupScopes(): array {
+        $isTesting = defined('APP_IS_TESTING') && APP_IS_TESTING;
         return [
             self::SCOPE_DAILY_ENTRIES => [
                 'label' => 'Clear Daily Entries',
@@ -51,21 +51,22 @@ class BusinessDataResetService {
                 'keeps' => 'Cash/bank and custom accounts, categories, parties, partners, employees, users, permissions, financial years, unrelated entries, and audit history.',
             ],
             self::SCOPE_ALL_BUSINESS_DATA => [
-                'label' => 'Erase Everything',
+                'label' => 'Reset All Business Data',
                 'confirmation_phrase' => 'CLEAR EVERYTHING',
                 'icon' => 'ri-delete-bin-6-line',
                 'severity' => 'danger',
-                'description' => 'Start the testing business from a blank accounting setup.',
-                'removes' => 'All transactions, cars, accounts, categories, parties, partners, employees, RTO records, alerts, audit history, and uploaded files.',
-                'keeps' => 'Only the business profile, user logins, and their permissions. Clean default accounts and the current financial year are recreated.',
+                'description' => 'Start the business again with clean default accounts and a fresh current financial year.',
+                'removes' => 'All transactions, cars, accounts, categories, parties, partners, employees, RTO records, alerts, and uploaded files.' . ($isTesting ? ' Test audit history is also replaced with one reset event.' : ''),
+                'keeps' => $isTesting
+                    ? 'Only the business profile, user logins, and their permissions. Clean default accounts and the current financial year are recreated.'
+                    : 'The business profile, user logins, permissions, and audit history. Clean default accounts and the current financial year are recreated.',
             ],
         ];
     }
 
     /**
      * Backwards-compatible entry point for existing callers. The old CLEAR
-     * phrase still maps to the explicit full-reset scope, but that scope is
-     * now testing-only like every other bulk cleanup.
+     * phrase still maps to the explicit full-reset scope.
      */
     public function reset($password, $confirmationPhrase) {
         $phrase = trim((string) $confirmationPhrase);
@@ -79,10 +80,10 @@ class BusinessDataResetService {
         $scopes = self::cleanupScopes();
         $scope = strtoupper(trim((string) $scope));
         if (!isset($scopes[$scope])) {
-            throw new Exception('Choose a valid testing cleanup option.');
+            throw new Exception('Choose a valid data-cleanup option.');
         }
 
-        $this->assertTestingEnvironment();
+        $this->assertCleanupEnvironment();
         $meta = $scopes[$scope];
         if (!hash_equals($meta['confirmation_phrase'], trim((string) $confirmationPhrase))) {
             throw new Exception('Type ' . $meta['confirmation_phrase'] . ' exactly to confirm this cleanup.');
@@ -130,12 +131,17 @@ class BusinessDataResetService {
 
         $result['scope'] = $scope;
         $result['scope_label'] = $meta['label'];
+        $result['environment'] = defined('APP_ENV') ? APP_ENV : null;
+        if (!array_key_exists('audit_history_retained', $result)) {
+            $result['audit_history_retained'] = true;
+        }
         return $result;
     }
 
-    private function assertTestingEnvironment(): void {
-        if (!defined('APP_IS_TESTING') || !APP_IS_TESTING) {
-            throw new Exception('Bulk cleanup is disabled in live accounts. Use the normal reversal or individual delete action instead.');
+    private function assertCleanupEnvironment(): void {
+        $environment = defined('APP_ENV') ? APP_ENV : '';
+        if (!in_array($environment, ['testing', 'production'], true)) {
+            throw new Exception('Data cleanup is unavailable in this application environment.');
         }
     }
 
@@ -148,7 +154,7 @@ class BusinessDataResetService {
             [$this->userId, $this->businessId]
         );
         if (!$user || empty($user['is_active']) || $user['role'] !== ROLE_ADMIN) {
-            throw new Exception('Only an active administrator can clear testing data.');
+            throw new Exception('Only an active administrator can clear business data.');
         }
         if (!password_verify((string) $password, $user['password_hash'])) {
             usleep(300000);
@@ -307,11 +313,18 @@ class BusinessDataResetService {
         ];
     }
 
-    /** The prior all-data reset, now explicitly the final testing-only scope. */
+    /** The final scope: remove all business data and rebuild clean defaults. */
     private function clearEverything(): array {
         $engine = new AccountingEngine($this->businessId, $this->userId);
         $availableTables = $this->availableTables();
         $businessDataTables = $this->businessDataTables();
+        $preserveAuditHistory = !(defined('APP_IS_TESTING') && APP_IS_TESTING);
+        if ($preserveAuditHistory) {
+            $businessDataTables = array_values(array_filter(
+                $businessDataTables,
+                static fn($table) => $table !== 'audit_log'
+            ));
+        }
         $deletedRows = 0;
         $foreignKeyChecksDisabled = false;
 
@@ -340,16 +353,27 @@ class BusinessDataResetService {
                 'is_active' => 1,
             ]);
 
-            // Keep one high-signal event rather than audit noise from seeded defaults.
+            // In TEST a full reset intentionally starts with one high-signal event.
+            // In live, the existing audit history is retained and the reset is
+            // appended to it so the action remains traceable.
             if (isset($availableTables['audit_log'])) {
-                $this->db->query("DELETE FROM audit_log WHERE business_id = ?", [$this->businessId]);
+                if (!$preserveAuditHistory) {
+                    $this->db->query("DELETE FROM audit_log WHERE business_id = ?", [$this->businessId]);
+                }
                 Auth::auditLog(
                     'SETTING_CHANGE',
-                    'business_data',
+                    'business_data_cleanup',
                     $this->businessId,
-                    'All testing business data cleared and clean defaults recreated after password confirmation.',
+                    $preserveAuditHistory
+                        ? 'All live business data cleared and clean defaults recreated after password confirmation; prior audit history was retained.'
+                        : 'All testing business data cleared and clean defaults recreated after password confirmation.',
                     null,
-                    ['deleted_rows' => $deletedRows, 'scope' => self::SCOPE_ALL_BUSINESS_DATA],
+                    [
+                        'deleted_rows' => $deletedRows,
+                        'scope' => self::SCOPE_ALL_BUSINESS_DATA,
+                        'environment' => defined('APP_ENV') ? APP_ENV : null,
+                        'audit_history_retained' => $preserveAuditHistory,
+                    ],
                     'settings'
                 );
             }
@@ -377,6 +401,7 @@ class BusinessDataResetService {
             'updated_rows' => 0,
             'deleted_files' => $fileCleanup['deleted_files'],
             'file_cleanup_failed' => $fileCleanup['failed'],
+            'audit_history_retained' => $preserveAuditHistory,
         ];
     }
 
@@ -769,11 +794,17 @@ class BusinessDataResetService {
         if (isset($availableTables['audit_log'])) {
             Auth::auditLog(
                 'SETTING_CHANGE',
-                'testing_data_cleanup',
+                'business_data_cleanup',
                 $this->businessId,
-                'Scoped testing cleanup (' . $scope . ') completed after password confirmation.',
+                'Scoped business-data cleanup (' . $scope . ') completed after password confirmation.',
                 null,
-                ['scope' => $scope, 'deleted_rows' => $deletedRows, 'updated_rows' => $updatedRows],
+                [
+                    'scope' => $scope,
+                    'deleted_rows' => $deletedRows,
+                    'updated_rows' => $updatedRows,
+                    'environment' => defined('APP_ENV') ? APP_ENV : null,
+                    'audit_history_retained' => true,
+                ],
                 'settings'
             );
         }

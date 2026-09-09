@@ -353,14 +353,17 @@ $customAfterCars = $db->fetch("SELECT current_balance, current_balance_type FROM
 assertResetTest(floatval($customAfterCars['current_balance']) === 123.0 && $customAfterCars['current_balance_type'] === 'DR', 'Retained account balance excludes deleted car activity');
 $scopedAudit = $db->fetch(
     "SELECT * FROM audit_log
-     WHERE business_id = ? AND entity_type = 'testing_data_cleanup'
-     ORDER BY created_at DESC LIMIT 1",
-    [$business['id']]
+     WHERE business_id = ?
+       AND entity_type = 'business_data_cleanup'
+       AND new_value LIKE ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1",
+    [$business['id'], '%' . BusinessDataResetService::SCOPE_CARS_AND_LINKED_ENTRIES . '%']
 );
 assertResetTest((bool) $scopedAudit, 'Scoped cleanup leaves a security audit event');
 assertResetTest(str_contains((string) ($scopedAudit['new_value'] ?? ''), BusinessDataResetService::SCOPE_CARS_AND_LINKED_ENTRIES), 'Scoped audit identifies the cleanup choice used');
 
-// Full reset remains available only as the explicit final testing scope.
+// Full reset remains available as the explicit final cleanup scope.
 $fullAttachmentPath = insertResetFixtureAttachment($db, $business['id'], $admin['id'], 'JOURNAL_ENTRY', $unrelatedEntryId, 'full-reset');
 $businessFolder = preg_replace('/[^a-zA-Z0-9-]/', '', $business['id']);
 $agreementDir = dirname(__DIR__) . '/uploads/agreements/' . $businessFolder;
@@ -380,5 +383,6 @@ $defaultAccountCount = (int) $db->fetch("SELECT COUNT(*) AS cnt FROM accounts WH
 assertResetTest($defaultAccountCount === 18, 'Full reset recreates clean default accounts');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM financial_years WHERE business_id = ?", [$business['id']])['cnt'] === 1, 'Full reset recreates current financial year');
 assertResetTest((int) $db->fetch("SELECT COUNT(*) AS cnt FROM audit_log WHERE business_id = ?", [$business['id']])['cnt'] === 1, 'Full reset leaves one security audit event');
+assertResetTest(empty($fullResult['audit_history_retained']), 'Testing full reset replaces prior audit history by design');
 
 echo "Scoped business data cleanup checks completed.\n";

@@ -9,6 +9,8 @@ Auth::requireAdmin();
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $cleanupScopes = BusinessDataResetService::cleanupScopes();
+$isTestingEnvironment = APP_IS_TESTING;
+$cleanupEnvironmentLabel = $isTestingEnvironment ? 'Testing' : 'Live';
 $accountTypes = [
     'CASH' => ['label' => 'Cash Account', 'prefix' => 'CASH', 'icon' => 'ri-wallet-3-line'],
     'BANK' => ['label' => 'Bank Account', 'prefix' => 'BANK', 'icon' => 'ri-bank-line'],
@@ -38,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post('action');
 
     try {
-        if ($action === 'clear_test_data') {
+        if (in_array($action, ['clear_scoped_data', 'clear_test_data'], true)) {
             $resetService = new BusinessDataResetService($businessId, Auth::user('user_id'));
             $result = $resetService->clear(
                 post('cleanup_scope'),
@@ -51,16 +53,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $deletedRows = intval($result['deleted_rows'] ?? 0);
             $updatedRows = intval($result['updated_rows'] ?? 0);
             $deletedFiles = intval($result['deleted_files'] ?? 0);
-            $scopeLabel = (string) ($result['scope_label'] ?? 'Testing cleanup');
+            $scopeLabel = (string) ($result['scope_label'] ?? 'Data cleanup');
             $updatedSummary = $updatedRows > 0 ? " Updated {$updatedRows} kept records." : '';
+            $auditSummary = !empty($result['audit_history_retained']) ? ' Audit history was retained.' : '';
             setFlash(
                 'success',
-                $scopeLabel . " completed. Removed {$deletedRows} data rows and {$deletedFiles} attachment files." . $updatedSummary
+                $scopeLabel . " completed. Removed {$deletedRows} data rows and {$deletedFiles} attachment files." . $updatedSummary . $auditSummary
             );
         }
 
         if ($action === 'clear_database') {
-            throw new Exception('The previous all-data reset action has been replaced by the scoped testing cleanup choices below.');
+            throw new Exception('The previous all-data reset action has been replaced by the scoped data-cleanup choices below.');
         }
 
         if ($action === 'create') {
@@ -278,110 +281,108 @@ $accounts = $db->fetchAll(
     </div>
 </div>
 
-<?php if (APP_IS_TESTING): ?>
-    <div class="card danger-zone">
-        <div class="card-header">
-            <h3 class="text-red"><i class="ri-flask-line"></i> Testing Data Cleanup</h3>
+<div class="card danger-zone" id="data-cleanup">
+    <div class="card-header">
+        <h3 class="text-red"><i class="<?= $isTestingEnvironment ? 'ri-flask-line' : 'ri-shield-keyhole-line' ?>"></i> <?= clean($cleanupEnvironmentLabel) ?> Data Cleanup</h3>
+    </div>
+    <div class="card-body danger-zone-content">
+        <div class="alert alert-warning">
+            <i class="ri-information-line"></i>
+            <span>
+                <?php if ($isTestingEnvironment): ?>
+                    Use the smallest cleanup that solves your test so saved setup is kept.
+                <?php else: ?>
+                    These actions permanently change live data. Choose the smallest cleanup needed; the active administrator, selected scope, and time are recorded in the Audit Log.
+                <?php endif; ?>
+            </span>
         </div>
-        <div class="card-body danger-zone-content">
-            <div class="alert alert-warning">
-                <i class="ri-information-line"></i>
-                <span>These tools are available only in the TEST environment. Choose the smallest cleanup that solves your test, so saved setup is kept.</span>
+        <p class="text-muted"><strong>For one incorrect record:</strong> use the normal individual delete or reversal action. These controls are for planned data cleanup. <a href="../reports/audit_log.php">View Audit Log</a></p>
+        <div class="grid-3">
+            <?php foreach ($cleanupScopes as $scope => $meta): ?>
+                <?php $isFullReset = $scope === BusinessDataResetService::SCOPE_ALL_BUSINESS_DATA; ?>
+                <section class="card" aria-labelledby="cleanup-<?= clean($scope) ?>-title">
+                    <div class="card-body">
+                        <h4 id="cleanup-<?= clean($scope) ?>-title" class="<?= $isFullReset ? 'text-red' : '' ?>">
+                            <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
+                        </h4>
+                        <p><?= clean($meta['description']) ?></p>
+                        <p class="text-muted"><strong>Removes:</strong> <?= clean($meta['removes']) ?></p>
+                        <p class="text-muted"><strong>Keeps:</strong> <?= clean($meta['keeps']) ?></p>
+                        <button
+                            type="button"
+                            class="btn <?= $isFullReset ? 'btn-danger' : 'btn-outline' ?>"
+                            onclick="openScopedCleanupModal('<?= clean($scope) ?>')"
+                        >
+                            <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
+                        </button>
+                    </div>
+                </section>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="scopedCleanupModal" role="dialog" aria-modal="true" aria-labelledby="scopedCleanupModalTitle">
+    <div class="modal">
+        <form method="POST" autocomplete="off">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="clear_scoped_data">
+            <input type="hidden" name="cleanup_scope" id="scopedCleanupScope">
+            <div class="modal-header">
+                <h3 id="scopedCleanupModalTitle"><i class="ri-lock-password-line text-red"></i> Confirm <?= clean(strtolower($cleanupEnvironmentLabel)) ?> cleanup</h3>
+                <button type="button" class="modal-close" onclick="closeModal('scopedCleanupModal')" aria-label="Close">&times;</button>
             </div>
-            <div class="grid-3">
-                <?php foreach ($cleanupScopes as $scope => $meta): ?>
-                    <?php $isFullReset = $scope === BusinessDataResetService::SCOPE_ALL_BUSINESS_DATA; ?>
-                    <section class="card" aria-labelledby="cleanup-<?= clean($scope) ?>-title">
-                        <div class="card-body">
-                            <h4 id="cleanup-<?= clean($scope) ?>-title" class="<?= $isFullReset ? 'text-red' : '' ?>">
-                                <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
-                            </h4>
-                            <p><?= clean($meta['description']) ?></p>
-                            <p class="text-muted"><strong>Removes:</strong> <?= clean($meta['removes']) ?></p>
-                            <p class="text-muted"><strong>Keeps:</strong> <?= clean($meta['keeps']) ?></p>
-                            <button
-                                type="button"
-                                class="btn <?= $isFullReset ? 'btn-danger' : 'btn-outline' ?>"
-                                onclick="openTestingCleanupModal('<?= clean($scope) ?>')"
-                            >
-                                <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
-                            </button>
-                        </div>
-                    </section>
-                <?php endforeach; ?>
+            <div class="modal-body">
+                <div class="alert alert-error">
+                    <i class="ri-alarm-warning-line"></i>
+                    <span id="scopedCleanupWarning">This cleanup cannot be undone.</span>
+                </div>
+                <div class="stack stack-sm">
+                    <p id="scopedCleanupDescription"></p>
+                    <p class="text-muted"><strong>Kept:</strong> <span id="scopedCleanupKeeps"></span></p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="scopedCleanupPassword">Your current password *</label>
+                    <input type="password" id="scopedCleanupPassword" name="current_password" class="form-control" autocomplete="current-password" required>
+                </div>
+                <div class="form-group form-group-last">
+                    <label class="form-label" id="scopedCleanupPhraseLabel" for="scopedCleanupPhrase">Confirmation phrase *</label>
+                    <input type="text" id="scopedCleanupPhrase" name="confirmation_phrase" class="form-control" autocomplete="off" required>
+                    <div class="form-hint">Type the phrase exactly. This is in addition to your administrator password.</div>
+                </div>
             </div>
-        </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeModal('scopedCleanupModal')">Cancel</button>
+                <button type="submit" id="scopedCleanupSubmit" class="btn btn-danger"><i class="ri-delete-bin-6-line"></i> Confirm Cleanup</button>
+            </div>
+        </form>
     </div>
+</div>
 
-    <div class="modal-overlay" id="testingCleanupModal" role="dialog" aria-modal="true" aria-labelledby="testingCleanupModalTitle">
-        <div class="modal">
-            <form method="POST" autocomplete="off">
-                <?= csrfField() ?>
-                <input type="hidden" name="action" value="clear_test_data">
-                <input type="hidden" name="cleanup_scope" id="testingCleanupScope">
-                <div class="modal-header">
-                    <h3 id="testingCleanupModalTitle"><i class="ri-lock-password-line text-red"></i> Confirm testing cleanup</h3>
-                    <button type="button" class="modal-close" onclick="closeModal('testingCleanupModal')" aria-label="Close">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-error">
-                        <i class="ri-alarm-warning-line"></i>
-                        <span id="testingCleanupWarning">This cleanup cannot be undone.</span>
-                    </div>
-                    <div class="stack stack-sm">
-                        <p id="testingCleanupDescription"></p>
-                        <p class="text-muted"><strong>Kept:</strong> <span id="testingCleanupKeeps"></span></p>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="testingCleanupPassword">Your current password *</label>
-                        <input type="password" id="testingCleanupPassword" name="current_password" class="form-control" autocomplete="current-password" required>
-                    </div>
-                    <div class="form-group form-group-last">
-                        <label class="form-label" id="testingCleanupPhraseLabel" for="testingCleanupPhrase">Confirmation phrase *</label>
-                        <input type="text" id="testingCleanupPhrase" name="confirmation_phrase" class="form-control" autocomplete="off" required>
-                        <div class="form-hint">Type the phrase exactly. This is in addition to your administrator password.</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('testingCleanupModal')">Cancel</button>
-                    <button type="submit" id="testingCleanupSubmit" class="btn btn-danger"><i class="ri-delete-bin-6-line"></i> Confirm Cleanup</button>
-                </div>
-            </form>
-        </div>
-    </div>
+<script>
+    const scopedCleanupScopes = <?= json_encode($cleanupScopes, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
-    <script>
-        const testingCleanupScopes = <?= json_encode($cleanupScopes, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+    function openScopedCleanupModal(scope) {
+        const meta = scopedCleanupScopes[scope];
+        if (!meta) return;
 
-        function openTestingCleanupModal(scope) {
-            const meta = testingCleanupScopes[scope];
-            if (!meta) return;
-
-            document.getElementById('testingCleanupScope').value = scope;
-            document.getElementById('testingCleanupModalTitle').innerHTML = '<i class="' + meta.icon + ' text-red"></i> Confirm ' + meta.label;
-            document.getElementById('testingCleanupWarning').textContent = meta.removes;
-            document.getElementById('testingCleanupDescription').textContent = meta.description;
-            document.getElementById('testingCleanupKeeps').textContent = meta.keeps;
-            const phraseLabel = document.getElementById('testingCleanupPhraseLabel');
-            phraseLabel.textContent = 'Type ' + meta.confirmation_phrase + ' to confirm *';
-            const phraseInput = document.getElementById('testingCleanupPhrase');
-            phraseInput.value = '';
-            phraseInput.placeholder = meta.confirmation_phrase;
-            phraseInput.pattern = meta.confirmation_phrase;
-            const submit = document.getElementById('testingCleanupSubmit');
-            submit.className = 'btn ' + (scope === 'ALL_BUSINESS_DATA' ? 'btn-danger' : 'btn-outline');
-            submit.innerHTML = '<i class="' + meta.icon + '"></i> Confirm ' + meta.label;
-            openModal('testingCleanupModal');
-            window.setTimeout(() => document.getElementById('testingCleanupPassword').focus(), 100);
-        }
-    </script>
-<?php else: ?>
-    <div class="card">
-        <div class="card-body">
-            <h4><i class="ri-shield-check-line"></i> Safe record deletion</h4>
-            <p class="text-muted">Bulk cleanup is disabled in the live system. Use the normal individual delete or reversal action so accounting history and linked records remain traceable.</p>
-        </div>
-    </div>
-<?php endif; ?>
+        document.getElementById('scopedCleanupScope').value = scope;
+        document.getElementById('scopedCleanupModalTitle').innerHTML = '<i class="' + meta.icon + ' text-red"></i> Confirm ' + meta.label;
+        document.getElementById('scopedCleanupWarning').textContent = meta.removes;
+        document.getElementById('scopedCleanupDescription').textContent = meta.description;
+        document.getElementById('scopedCleanupKeeps').textContent = meta.keeps;
+        const phraseLabel = document.getElementById('scopedCleanupPhraseLabel');
+        phraseLabel.textContent = 'Type ' + meta.confirmation_phrase + ' to confirm *';
+        const phraseInput = document.getElementById('scopedCleanupPhrase');
+        phraseInput.value = '';
+        phraseInput.placeholder = meta.confirmation_phrase;
+        phraseInput.pattern = meta.confirmation_phrase;
+        const submit = document.getElementById('scopedCleanupSubmit');
+        submit.className = 'btn ' + (scope === 'ALL_BUSINESS_DATA' ? 'btn-danger' : 'btn-outline');
+        submit.innerHTML = '<i class="' + meta.icon + '"></i> Confirm ' + meta.label;
+        openModal('scopedCleanupModal');
+        window.setTimeout(() => document.getElementById('scopedCleanupPassword').focus(), 100);
+    }
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
