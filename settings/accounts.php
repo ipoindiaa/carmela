@@ -8,6 +8,7 @@ Auth::requireAdmin();
 
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
+$cleanupScopes = BusinessDataResetService::cleanupScopes();
 $accountTypes = [
     'CASH' => ['label' => 'Cash Account', 'prefix' => 'CASH', 'icon' => 'ri-wallet-3-line'],
     'BANK' => ['label' => 'Bank Account', 'prefix' => 'BANK', 'icon' => 'ri-bank-line'],
@@ -37,13 +38,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post('action');
 
     try {
-        if ($action === 'clear_database') {
+        if ($action === 'clear_test_data') {
             $resetService = new BusinessDataResetService($businessId, Auth::user('user_id'));
-            $result = $resetService->reset(post('current_password'), post('confirmation_phrase'));
+            $result = $resetService->clear(
+                post('cleanup_scope'),
+                post('current_password'),
+                post('confirmation_phrase')
+            );
             if (!empty($result['file_cleanup_failed'])) {
-                setFlash('warning', 'Business data was cleared, but one or more old attachment files could not be removed from storage.');
+                setFlash('warning', 'The cleanup completed, but one or more removed attachment files could not be deleted from storage.');
             }
-            setFlash('success', 'All business data was cleared. Your users and business profile were kept, and clean default accounts were recreated.');
+            $deletedRows = intval($result['deleted_rows'] ?? 0);
+            $updatedRows = intval($result['updated_rows'] ?? 0);
+            $deletedFiles = intval($result['deleted_files'] ?? 0);
+            $scopeLabel = (string) ($result['scope_label'] ?? 'Testing cleanup');
+            $updatedSummary = $updatedRows > 0 ? " Updated {$updatedRows} kept records." : '';
+            setFlash(
+                'success',
+                $scopeLabel . " completed. Removed {$deletedRows} data rows and {$deletedFiles} attachment files." . $updatedSummary
+            );
+        }
+
+        if ($action === 'clear_database') {
+            throw new Exception('The previous all-data reset action has been replaced by the scoped testing cleanup choices below.');
         }
 
         if ($action === 'create') {
@@ -261,72 +278,110 @@ $accounts = $db->fetchAll(
     </div>
 </div>
 
-<div class="card danger-zone">
-    <div class="card-header">
-        <h3 class="text-red"><i class="ri-alarm-warning-line"></i> Danger Zone</h3>
+<?php if (APP_IS_TESTING): ?>
+    <div class="card danger-zone">
+        <div class="card-header">
+            <h3 class="text-red"><i class="ri-flask-line"></i> Testing Data Cleanup</h3>
+        </div>
+        <div class="card-body danger-zone-content">
+            <div class="alert alert-warning">
+                <i class="ri-information-line"></i>
+                <span>These tools are available only in the TEST environment. Choose the smallest cleanup that solves your test, so saved setup is kept.</span>
+            </div>
+            <div class="grid-3">
+                <?php foreach ($cleanupScopes as $scope => $meta): ?>
+                    <?php $isFullReset = $scope === BusinessDataResetService::SCOPE_ALL_BUSINESS_DATA; ?>
+                    <section class="card" aria-labelledby="cleanup-<?= clean($scope) ?>-title">
+                        <div class="card-body">
+                            <h4 id="cleanup-<?= clean($scope) ?>-title" class="<?= $isFullReset ? 'text-red' : '' ?>">
+                                <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
+                            </h4>
+                            <p><?= clean($meta['description']) ?></p>
+                            <p class="text-muted"><strong>Removes:</strong> <?= clean($meta['removes']) ?></p>
+                            <p class="text-muted"><strong>Keeps:</strong> <?= clean($meta['keeps']) ?></p>
+                            <button
+                                type="button"
+                                class="btn <?= $isFullReset ? 'btn-danger' : 'btn-outline' ?>"
+                                onclick="openTestingCleanupModal('<?= clean($scope) ?>')"
+                            >
+                                <i class="<?= clean($meta['icon']) ?>"></i> <?= clean($meta['label']) ?>
+                            </button>
+                        </div>
+                    </section>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
-    <div class="card-body danger-zone-content">
-        <h4>Clear all business data</h4>
-        <p class="text-muted">
-            Permanently erase transactions, cars, parties, partners, employees, RTO records, accounts, audit history, alerts, categories, and attachments.
-            Your business profile, user logins, and book permissions will be kept. Clean default accounts and the current financial year will be recreated.
-        </p>
-        <button type="button" class="btn btn-danger" onclick="openModal('clearDatabaseWarningModal')">
-            <i class="ri-delete-bin-6-line"></i> Clear Database
-        </button>
-    </div>
-</div>
 
-<div class="modal-overlay" id="clearDatabaseWarningModal" role="dialog" aria-modal="true" aria-labelledby="clearDatabaseWarningTitle">
-    <div class="modal">
-        <div class="modal-header">
-            <h3 id="clearDatabaseWarningTitle"><i class="ri-error-warning-line text-red"></i> Permanent data deletion</h3>
-            <button type="button" class="modal-close" onclick="closeModal('clearDatabaseWarningModal')" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div class="alert alert-error">
-                <i class="ri-alarm-warning-line"></i>
-                <span>This action cannot be undone. There is no recovery option inside the application.</span>
-            </div>
-            <div class="stack stack-sm">
-                <p>This will remove all accounting and operational data for <strong><?= clean(Auth::user('business_name')) ?></strong>, including uploaded attachments.</p>
-                <p class="text-muted">Only the business profile, user logins, and their permissions will remain.</p>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-outline" onclick="closeModal('clearDatabaseWarningModal')">Cancel</button>
-            <button type="button" class="btn btn-danger" onclick="closeModal('clearDatabaseWarningModal'); openModal('clearDatabasePasswordModal'); document.getElementById('clearDatabasePassword').focus();">
-                I understand, continue
-            </button>
+    <div class="modal-overlay" id="testingCleanupModal" role="dialog" aria-modal="true" aria-labelledby="testingCleanupModalTitle">
+        <div class="modal">
+            <form method="POST" autocomplete="off">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="clear_test_data">
+                <input type="hidden" name="cleanup_scope" id="testingCleanupScope">
+                <div class="modal-header">
+                    <h3 id="testingCleanupModalTitle"><i class="ri-lock-password-line text-red"></i> Confirm testing cleanup</h3>
+                    <button type="button" class="modal-close" onclick="closeModal('testingCleanupModal')" aria-label="Close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-error">
+                        <i class="ri-alarm-warning-line"></i>
+                        <span id="testingCleanupWarning">This cleanup cannot be undone.</span>
+                    </div>
+                    <div class="stack stack-sm">
+                        <p id="testingCleanupDescription"></p>
+                        <p class="text-muted"><strong>Kept:</strong> <span id="testingCleanupKeeps"></span></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="testingCleanupPassword">Your current password *</label>
+                        <input type="password" id="testingCleanupPassword" name="current_password" class="form-control" autocomplete="current-password" required>
+                    </div>
+                    <div class="form-group form-group-last">
+                        <label class="form-label" id="testingCleanupPhraseLabel" for="testingCleanupPhrase">Confirmation phrase *</label>
+                        <input type="text" id="testingCleanupPhrase" name="confirmation_phrase" class="form-control" autocomplete="off" required>
+                        <div class="form-hint">Type the phrase exactly. This is in addition to your administrator password.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('testingCleanupModal')">Cancel</button>
+                    <button type="submit" id="testingCleanupSubmit" class="btn btn-danger"><i class="ri-delete-bin-6-line"></i> Confirm Cleanup</button>
+                </div>
+            </form>
         </div>
     </div>
-</div>
 
-<div class="modal-overlay" id="clearDatabasePasswordModal" role="dialog" aria-modal="true" aria-labelledby="clearDatabasePasswordTitle">
-    <div class="modal">
-        <form method="POST" autocomplete="off">
-            <?= csrfField() ?>
-            <input type="hidden" name="action" value="clear_database">
-            <div class="modal-header">
-                <h3 id="clearDatabasePasswordTitle"><i class="ri-lock-password-line text-red"></i> Confirm database reset</h3>
-                <button type="button" class="modal-close" onclick="closeModal('clearDatabasePasswordModal')" aria-label="Close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label" for="clearDatabasePassword">Your current password *</label>
-                    <input type="password" id="clearDatabasePassword" name="current_password" class="form-control" autocomplete="current-password" required>
-                </div>
-                <div class="form-group form-group-last">
-                    <label class="form-label" for="clearDatabasePhrase">Type CLEAR to confirm *</label>
-                    <input type="text" id="clearDatabasePhrase" name="confirmation_phrase" class="form-control" placeholder="CLEAR" pattern="CLEAR" autocomplete="off" required>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline" onclick="closeModal('clearDatabasePasswordModal')">Cancel</button>
-                <button type="submit" class="btn btn-danger"><i class="ri-delete-bin-6-line"></i> Permanently Clear Data</button>
-            </div>
-        </form>
+    <script>
+        const testingCleanupScopes = <?= json_encode($cleanupScopes, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
+        function openTestingCleanupModal(scope) {
+            const meta = testingCleanupScopes[scope];
+            if (!meta) return;
+
+            document.getElementById('testingCleanupScope').value = scope;
+            document.getElementById('testingCleanupModalTitle').innerHTML = '<i class="' + meta.icon + ' text-red"></i> Confirm ' + meta.label;
+            document.getElementById('testingCleanupWarning').textContent = meta.removes;
+            document.getElementById('testingCleanupDescription').textContent = meta.description;
+            document.getElementById('testingCleanupKeeps').textContent = meta.keeps;
+            const phraseLabel = document.getElementById('testingCleanupPhraseLabel');
+            phraseLabel.textContent = 'Type ' + meta.confirmation_phrase + ' to confirm *';
+            const phraseInput = document.getElementById('testingCleanupPhrase');
+            phraseInput.value = '';
+            phraseInput.placeholder = meta.confirmation_phrase;
+            phraseInput.pattern = meta.confirmation_phrase;
+            const submit = document.getElementById('testingCleanupSubmit');
+            submit.className = 'btn ' + (scope === 'ALL_BUSINESS_DATA' ? 'btn-danger' : 'btn-outline');
+            submit.innerHTML = '<i class="' + meta.icon + '"></i> Confirm ' + meta.label;
+            openModal('testingCleanupModal');
+            window.setTimeout(() => document.getElementById('testingCleanupPassword').focus(), 100);
+        }
+    </script>
+<?php else: ?>
+    <div class="card">
+        <div class="card-body">
+            <h4><i class="ri-shield-check-line"></i> Safe record deletion</h4>
+            <p class="text-muted">Bulk cleanup is disabled in the live system. Use the normal individual delete or reversal action so accounting history and linked records remain traceable.</p>
+        </div>
     </div>
-</div>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
