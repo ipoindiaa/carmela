@@ -108,7 +108,12 @@ class BusinessDataResetService {
                     : $this->clearCarsAndLinkedEntries($availableTables);
 
                 $this->rebuildAccountBalances($availableTables);
-                $this->clearStaleAlerts($availableTables, $result['deleted_rows']);
+                $this->clearStaleAlerts(
+                    $availableTables,
+                    $scope,
+                    $result['deleted_rows'],
+                    $result['updated_rows']
+                );
                 $this->db->commit();
             } catch (Throwable $e) {
                 if ($this->db->inTransaction()) {
@@ -755,7 +760,7 @@ class BusinessDataResetService {
         return array_values(array_unique($paths));
     }
 
-    private function clearStaleAlerts(array $availableTables, int &$deletedRows): void {
+    private function clearStaleAlerts(array $availableTables, string $scope, int &$deletedRows, int $updatedRows): void {
         if (!isset($availableTables['alerts'])) {
             return;
         }
@@ -766,9 +771,9 @@ class BusinessDataResetService {
                 'SETTING_CHANGE',
                 'testing_data_cleanup',
                 $this->businessId,
-                'Scoped testing cleanup completed after password confirmation.',
+                'Scoped testing cleanup (' . $scope . ') completed after password confirmation.',
                 null,
-                ['deleted_rows' => $deletedRows],
+                ['scope' => $scope, 'deleted_rows' => $deletedRows, 'updated_rows' => $updatedRows],
                 'settings'
             );
         }

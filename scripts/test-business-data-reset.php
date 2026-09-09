@@ -351,7 +351,14 @@ assertResetTest((bool) $db->fetch("SELECT id FROM employees WHERE id = ?", [$emp
 assertResetTest(!is_file($carAttachmentPath), 'Car attachment file is removed with the car');
 $customAfterCars = $db->fetch("SELECT current_balance, current_balance_type FROM accounts WHERE id = ?", [$customAccountId]);
 assertResetTest(floatval($customAfterCars['current_balance']) === 123.0 && $customAfterCars['current_balance_type'] === 'DR', 'Retained account balance excludes deleted car activity');
-assertResetTest((bool) $db->fetch("SELECT id FROM audit_log WHERE business_id = ? AND entity_type = 'testing_data_cleanup'", [$business['id']]), 'Scoped cleanup leaves a security audit event');
+$scopedAudit = $db->fetch(
+    "SELECT * FROM audit_log
+     WHERE business_id = ? AND entity_type = 'testing_data_cleanup'
+     ORDER BY created_at DESC LIMIT 1",
+    [$business['id']]
+);
+assertResetTest((bool) $scopedAudit, 'Scoped cleanup leaves a security audit event');
+assertResetTest(str_contains((string) ($scopedAudit['new_value'] ?? ''), BusinessDataResetService::SCOPE_CARS_AND_LINKED_ENTRIES), 'Scoped audit identifies the cleanup choice used');
 
 // Full reset remains available only as the explicit final testing scope.
 $fullAttachmentPath = insertResetFixtureAttachment($db, $business['id'], $admin['id'], 'JOURNAL_ENTRY', $unrelatedEntryId, 'full-reset');
