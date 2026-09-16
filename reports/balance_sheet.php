@@ -130,7 +130,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
             </div>
         </div>
         <div class="card">
-            <div class="card-header"><h3 class="text-purple"><i class="ri-group-line"></i> Equity / Capital</h3></div>
+            <div class="card-header"><h3 class="text-purple"><i class="ri-group-line"></i> Capital</h3></div>
             <div class="card-body card-body-flush">
                 <div class="table-container table-container-inline table-container-fit">
                     <table>
@@ -151,7 +151,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
                         </tr>
                         <?php endforeach; ?>
                         <?php if (empty($bs['EQUITY'])): ?><tr><td colspan="2" class="text-center text-muted empty-table-cell">None</td></tr><?php endif; ?>
-                        <tr class="table-summary-row"><td>Total Equity</td><td class="text-right amount"><?= formatAmount($bs['total_equity']) ?></td></tr>
+                        <tr class="table-summary-row"><td>Total Capital</td><td class="text-right amount"><?= formatAmount($bs['total_equity']) ?></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -164,7 +164,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
     <div class="card-body accounting-equation">
         <div><div class="text-muted">Total Assets</div><strong class="text-blue"><?= formatAmount($bs['total_assets']) ?></strong></div>
         <div class="accounting-equation-sign" aria-hidden="true">=</div>
-        <div><div class="text-muted">Liabilities + Equity</div><strong class="text-purple"><?= formatAmount($bs['total_liabilities'] + $bs['total_equity']) ?></strong></div>
+        <div><div class="text-muted">Liabilities + Capital</div><strong class="text-purple"><?= formatAmount($bs['total_liabilities'] + $bs['total_equity']) ?></strong></div>
     </div>
 </div>
 

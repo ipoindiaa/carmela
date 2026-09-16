@@ -445,8 +445,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'SALARY_PAYMENT':
                 $employeeId = post('employee_id');
+                if (empty($employeeId)) {
+                    throw new Exception('Please select an employee for the salary payment.');
+                }
                 $grossSalary = parseDecimalInput(post('gross_salary'));
+                if ($grossSalary <= 0) {
+                    throw new Exception('Gross salary must be greater than zero.');
+                }
                 $advanceDeduct = parseDecimalInput(post('advance_deduction', 0));
+                if ($advanceDeduct < 0) {
+                    throw new Exception('Advance deduction cannot be negative.');
+                }
+                if ($advanceDeduct > $grossSalary) {
+                    throw new Exception('Advance deduction cannot exceed gross salary.');
+                }
                 $salMonth = intval(post('salary_month'));
                 $salYear = intval(post('salary_year'));
                 $entryId = $engine->salaryPayment($employeeId, $grossSalary, $advanceDeduct, $date, $paymentAccountId, $salMonth, $salYear);
@@ -1127,14 +1139,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- SALARY SECTION -->
             <div class="txn-section" id="salary-section" hidden>
-                <div class="form-row-3">
+                <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Gross Salary (₹)</label>
-                        <input type="text" name="gross_salary" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
+                        <label class="form-label">Gross Salary (₹) *</label>
+                        <input type="text" name="gross_salary" id="salary_gross_input" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
+                        <div class="form-hint">Total monthly salary before deductions (debited to Salary Expense).</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Advance Deduction (₹)</label>
-                        <input type="text" name="advance_deduction" class="form-control currency-input" value="0" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="advance_deduction" id="salary_advance_input" class="form-control currency-input" value="0" inputmode="decimal" autocomplete="off">
+                        <div class="form-hint">Amount recovered from previous employee advance.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Net Salary Paid (₹)</label>
+                        <input type="text" id="salary_net_display" class="form-control" value="0" readonly>
+                        <div class="form-hint">Actual payout from account (Gross − Advance).</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Salary Month / Year</label>
@@ -2161,27 +2182,28 @@ function filterPrimaryPaymentAccounts(type) {
 function syncSaleAmountUi() {
     const txnType = document.getElementById('transaction_type')?.value || '';
     const amountGroup = document.getElementById('amount-group');
-    const amountInput = document.querySelector('input[name=\"amount\"]');
-    const salePriceInput = document.querySelector('input[name=\"sale_price\"]');
-    const commissionInput = document.querySelector('input[name=\"sale_commission_amount\"]');
-    const narrationInput = document.querySelector('input[name=\"narration\"]');
+    const amountInput = document.querySelector('input[name="amount"]');
+    const salePriceInput = document.querySelector('input[name="sale_price"]');
+    const commissionInput = document.querySelector('input[name="sale_commission_amount"]');
+    const narrationInput = document.querySelector('input[name="narration"]');
     const narrationLabel = document.getElementById('narration-label');
     if (!amountGroup || !amountInput) return;
 
     const isCarSale = txnType === 'CAR_SALE';
     const isOutsideCarReceipt = txnType === 'OUTSIDE_CAR_RECEIVED';
     const isCarPurchase = txnType === 'CAR_PURCHASE';
-    const hidesAmount = isCarSale || isOutsideCarReceipt || isCarPurchase;
+    const isSalaryPayment = txnType === 'SALARY_PAYMENT';
+    const hidesAmount = isCarSale || isOutsideCarReceipt || isCarPurchase || isSalaryPayment;
     amountGroup.style.display = hidesAmount ? 'none' : '';
     amountInput.required = !hidesAmount;
     amountInput.disabled = isCarPurchase || isOutsideCarReceipt;
     if (isCarPurchase || isOutsideCarReceipt) amountInput.value = '';
     if (narrationInput) {
-        narrationInput.required = false;
-        narrationInput.placeholder = 'Optional — add a note if needed';
+        narrationInput.required = !isCarSale;
+        narrationInput.placeholder = isCarSale ? 'Optional — add a note if needed' : 'Description of this entry';
     }
     if (narrationLabel) {
-        narrationLabel.textContent = 'Narration / Description (Optional)';
+        narrationLabel.textContent = isCarSale ? 'Narration / Description (Optional)' : 'Narration / Description *';
     }
     const paymentAccountGroup = document.getElementById('payment-account-group');
     const paymentAccount = document.getElementById('payment_account');
@@ -2191,6 +2213,24 @@ function syncSaleAmountUi() {
         const salePrice = parseNumericString(salePriceInput?.value || '0');
         const commission = parseNumericString(commissionInput?.value || '0');
         amountInput.value = String(salePrice + commission || '');
+    } else if (isSalaryPayment) {
+        syncSalaryAmountUi();
+    }
+}
+
+function syncSalaryAmountUi() {
+    const grossInput = document.getElementById('salary_gross_input');
+    const advInput = document.getElementById('salary_advance_input');
+    const netDisplay = document.getElementById('salary_net_display');
+    const amountInput = document.querySelector('input[name="amount"]');
+    if (!grossInput || !netDisplay) return;
+
+    const gross = parseNumericString(grossInput.value || '0');
+    const adv = parseNumericString(advInput ? advInput.value || '0' : '0');
+    const net = Math.max(0, gross - adv);
+    netDisplay.value = typeof formatINR === 'function' ? formatINR(net) : '₹' + net.toLocaleString('en-IN');
+    if (amountInput && document.getElementById('transaction_type')?.value === 'SALARY_PAYMENT') {
+        amountInput.value = String(net);
     }
 }
 
@@ -2302,7 +2342,7 @@ async function renderEntityPickerResults(query) {
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result${item.selectable === false ? ' is-unavailable' : ''}" ${item.selectable === false ? 'disabled aria-disabled="true"' : ''} data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}">
+            <button type="button" class="picker-result${item.selectable === false ? ' is-unavailable' : ''}" ${item.selectable === false ? 'disabled aria-disabled="true"' : ''} data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}" data-monthly-salary="${item.monthly_salary || 0}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>
@@ -2319,7 +2359,8 @@ async function renderEntityPickerResults(query) {
                     this.dataset.linkedPartyId || '',
                     decodeURIComponent(this.dataset.linkedPartyLabel || ''),
                     this.dataset.tokenAvailable || '0',
-                    this.dataset.purchasePending || '0'
+                    this.dataset.purchasePending || '0',
+                    parseFloat(this.dataset.monthlySalary || '0')
                 );
             });
         });
@@ -2345,7 +2386,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
     }
 }
 
-function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0', purchasePending = '0') {
+function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0', purchasePending = '0', monthlySalary = 0) {
     const triggerButton = activeEntityPicker?.button || null;
     if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
@@ -2377,6 +2418,13 @@ function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPart
     if (kind === 'car') {
         applyCarTokenContext(linkedPartyId, linkedPartyLabel, tokenAvailable);
         loadPurchaseSourcePanel();
+    }
+    if (kind === 'employee' && monthlySalary > 0) {
+        const grossInput = document.getElementById('salary_gross_input');
+        if (grossInput && (!grossInput.value || grossInput.value === '0')) {
+            grossInput.value = typeof formatINR === 'function' ? formatINR(monthlySalary).replace(/^₹\s?/, '') : String(monthlySalary);
+            syncSalaryAmountUi();
+        }
     }
     closeModal('entity-picker-modal');
 }
@@ -2538,6 +2586,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.querySelector('input[name="sale_price"]')?.addEventListener('input', syncSaleAmountUi);
     document.querySelector('input[name="sale_commission_amount"]')?.addEventListener('input', syncSaleAmountUi);
+    document.getElementById('salary_gross_input')?.addEventListener('input', syncSalaryAmountUi);
+    document.getElementById('salary_advance_input')?.addEventListener('input', syncSalaryAmountUi);
     document.querySelector('input[name="vouchers[]"]')?.addEventListener('change', (event) => {
         const status = document.querySelector('.voucher-file-status');
         const count = event.target.files ? event.target.files.length : 0;

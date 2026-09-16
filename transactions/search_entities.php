@@ -222,6 +222,7 @@ switch ($kind) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
+                'monthly_salary' => floatval($row['monthly_salary'] ?? 0),
                 'meta' => trim(($row['role'] ?: 'Employee') . (!empty($row['phone']) ? ' | ' . $row['phone'] : '') . ' | Salary ' . formatAmount($row['monthly_salary'] ?? 0)),
             ];
         }
