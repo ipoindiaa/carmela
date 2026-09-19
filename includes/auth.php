@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/../config/app.php';
+require_once __DIR__ . '/functions.php';
 
 class Auth {
     private static $bookPermissionsCache = [];
