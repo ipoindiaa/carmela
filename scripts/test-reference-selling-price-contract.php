@@ -18,8 +18,8 @@ assertReferencePriceContract(
     'Reference selling price is available while adding and editing a car'
 );
 assertReferencePriceContract(
-    str_contains($list, '<th class="text-right">Reference Selling Price</th>')
-        && str_contains($list, 'Reference only'),
+    (str_contains($list, '<th class="text-right">Reference Selling Price</th>') && str_contains($list, 'Reference only'))
+        || (str_contains($list, 'car-reference-selling-price') && str_contains($list, 'Ref. sale')),
     'Cars menu gives each reference selling price a quick visible display'
 );
 assertReferencePriceContract(

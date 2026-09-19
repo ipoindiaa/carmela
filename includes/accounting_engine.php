@@ -503,8 +503,11 @@ class AccountingEngine {
         }
     }
 
+    private const ENGINE_SCHEMA_VERSION = '2026_09_19_perf_indexes';
+
     private function ensureAdvancedSchema() {
-        if (self::$advancedSchemaEnsured) {
+        if (self::$advancedSchemaEnsured || isSchemaEnsured('engine', self::ENGINE_SCHEMA_VERSION)) {
+            self::$advancedSchemaEnsured = true;
             return;
         }
 
@@ -947,8 +950,23 @@ class AccountingEngine {
         $this->runMigrationStep('add-index-debtors_creditors', function () {
             $this->addIndexIfMissing('debtors_creditors', 'idx_parties_business_search', '`business_id`, `is_active`, `type`, `name`, `phone`');
         });
+        $this->runMigrationStep('add-index-perf-journal_entries', function () {
+            $this->addIndexIfMissing('journal_entries', 'idx_je_biz_date_created', '`business_id`, `entry_date`, `created_at`');
+            $this->addIndexIfMissing('journal_entries', 'idx_je_biz_car', '`business_id`, `car_id`');
+            $this->addIndexIfMissing('journal_entries', 'idx_je_biz_party', '`business_id`, `party_id`');
+        });
+        $this->runMigrationStep('add-index-perf-journal_lines', function () {
+            $this->addIndexIfMissing('journal_lines', 'idx_jl_entry_account', '`journal_entry_id`, `account_id`');
+        });
+        $this->runMigrationStep('add-index-perf-alerts', function () {
+            $this->addIndexIfMissing('alerts', 'idx_alerts_unread', '`business_id`, `is_read`');
+        });
+        $this->runMigrationStep('add-index-perf-audit_log', function () {
+            $this->addIndexIfMissing('audit_log', 'idx_audit_biz_created', '`business_id`, `created_at`');
+        });
 
         self::$advancedSchemaEnsured = true;
+        markSchemaEnsured('engine', self::ENGINE_SCHEMA_VERSION);
     }
 
 

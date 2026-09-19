@@ -595,8 +595,11 @@ class Auth {
         self::$bookPermissionsCache = [];
     }
 
+    private const AUTH_SCHEMA_VERSION = '2026_09_19_v1';
+
     private static function ensurePermissionSchema() {
-        if (self::$permissionSchemaEnsured) {
+        if (self::$permissionSchemaEnsured || isSchemaEnsured('permissions', self::AUTH_SCHEMA_VERSION)) {
+            self::$permissionSchemaEnsured = true;
             return;
         }
 
@@ -636,10 +639,12 @@ class Auth {
         }
 
         self::$permissionSchemaEnsured = true;
+        markSchemaEnsured('permissions', self::AUTH_SCHEMA_VERSION);
     }
 
     private static function ensureAuditLogSchema() {
-        if (self::$auditSchemaEnsured) {
+        if (self::$auditSchemaEnsured || isSchemaEnsured('audit', self::AUTH_SCHEMA_VERSION)) {
+            self::$auditSchemaEnsured = true;
             return;
         }
 
@@ -676,6 +681,7 @@ class Auth {
         }
 
         self::$auditSchemaEnsured = true;
+        markSchemaEnsured('audit', self::AUTH_SCHEMA_VERSION);
     }
 }
 

@@ -195,11 +195,10 @@ $nextUrl = $page < $pagination['total_pages']
     : '';
 
 $transactionUsers = $db->fetchAll(
-    "SELECT DISTINCT u.id, u.full_name
-     FROM journal_entries je
-     JOIN users u ON u.id = je.created_by AND u.business_id = je.business_id
-     WHERE je.business_id = ?
-     ORDER BY u.full_name",
+    "SELECT id, full_name
+     FROM users
+     WHERE business_id = ? AND is_active = 1
+     ORDER BY full_name",
     [$businessId]
 );
 

@@ -112,6 +112,9 @@ CREATE TABLE `journal_entries` (
     KEY `idx_entry_type_id` (`business_id`, `entry_type_id`, `entry_date`, `status`),
     KEY `idx_status` (`status`),
     KEY `idx_correction_from` (`corrected_from_id`),
+    KEY `idx_je_biz_date_created` (`business_id`, `entry_date`, `created_at`),
+    KEY `idx_je_biz_car` (`business_id`, `car_id`),
+    KEY `idx_je_biz_party` (`business_id`, `party_id`),
     CONSTRAINT `fk_je_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`),
     CONSTRAINT `fk_je_created_by` FOREIGN KEY (`created_by`) REFERENCES `users`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -130,6 +133,7 @@ CREATE TABLE `journal_lines` (
     PRIMARY KEY (`id`),
     KEY `idx_account` (`account_id`),
     KEY `idx_jl_source_voucher_line` (`source_voucher_line_id`),
+    KEY `idx_jl_entry_account` (`journal_entry_id`, `account_id`),
     CONSTRAINT `fk_jl_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries`(`id`),
     CONSTRAINT `fk_jl_account` FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -482,6 +486,7 @@ CREATE TABLE `audit_log` (
     KEY `idx_audit_business` (`business_id`),
     KEY `idx_audit_user` (`user_id`),
     KEY `idx_audit_date` (`created_at`),
+    KEY `idx_audit_biz_created` (`business_id`, `created_at`),
     CONSTRAINT `fk_audit_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -501,6 +506,7 @@ CREATE TABLE `alerts` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_alerts_business` (`business_id`),
+    KEY `idx_alerts_unread` (`business_id`, `is_read`),
     CONSTRAINT `fk_alerts_business` FOREIGN KEY (`business_id`) REFERENCES `businesses`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

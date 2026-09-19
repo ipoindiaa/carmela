@@ -17,18 +17,15 @@ class Database {
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
                 $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+                $initCommand = "SET time_zone = '" . APP_TIMEZONE_OFFSET . "', SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'";
                 $this->pdo = new PDO($dsn, DB_USER, DB_PASS, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
                     PDO::ATTR_PERSISTENT => false,
                     PDO::ATTR_TIMEOUT => 5,
-                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '" . APP_TIMEZONE_OFFSET . "'",
+                    PDO::MYSQL_ATTR_INIT_COMMAND => $initCommand,
                 ]);
-                // Ensure timezone after connect (quote-safe already validated constant)
-                $this->pdo->exec('SET time_zone = ' . $this->pdo->quote(APP_TIMEZONE_OFFSET));
-                // Strict mode and sane defaults
-                $this->pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
                 return;
             } catch (PDOException $e) {
                 $lastError = $e;
@@ -48,13 +45,9 @@ class Database {
         throw new RuntimeException("Database connection failed after $maxAttempts attempts: " . $lastError->getMessage(), 0, $lastError);
     }
 
-    /** Reconnect if connection was lost */
-    private function ensureConnection(): void {
-        try {
-            // Lightweight ping
-            $this->pdo->query('SELECT 1');
-        } catch (PDOException $e) {
-            // Reconnect once
+    /** Connect if not already connected */
+    public function ensureConnection(): void {
+        if ($this->pdo === null) {
             $this->connect();
         }
     }
@@ -77,7 +70,6 @@ class Database {
     }
 
     public function query($sql, $params = []) {
-        $this->ensureConnection();
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);

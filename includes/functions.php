@@ -302,6 +302,9 @@ function hasFlash($type) {
  * Redirect helper
  */
 function redirect($url) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
     if (headers_sent()) {
         echo '<script>window.location.href="' . $url . '";</script>';
         echo '<noscript><meta http-equiv="refresh" content="0;url=' . $url . '"></noscript>';
@@ -510,4 +513,28 @@ function formatAllRegistrationNosInString($str) {
         },
         $str
     );
+}
+
+/**
+ * Fast file-backed check to avoid running DDL / INFORMATION_SCHEMA migrations
+ * on every HTTP request. Returns true if the given schema component was already
+ * verified for the current database and version identifier.
+ */
+function isSchemaEnsured(string $component, string $version): bool {
+    $dbName = defined('DB_NAME') ? preg_replace('/[^a-zA-Z0-9_]/', '', (string) DB_NAME) : 'default';
+    $lockFile = dirname(__DIR__) . '/tmp/schema_' . $component . '_' . $dbName . '_' . $version . '.lock';
+    return @file_exists($lockFile);
+}
+
+/**
+ * Mark a schema component as verified on disk.
+ */
+function markSchemaEnsured(string $component, string $version): void {
+    $tmpDir = dirname(__DIR__) . '/tmp';
+    if (!is_dir($tmpDir)) {
+        @mkdir($tmpDir, 0755, true);
+    }
+    $dbName = defined('DB_NAME') ? preg_replace('/[^a-zA-Z0-9_]/', '', (string) DB_NAME) : 'default';
+    $lockFile = $tmpDir . '/schema_' . $component . '_' . $dbName . '_' . $version . '.lock';
+    @touch($lockFile);
 }

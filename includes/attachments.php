@@ -4,7 +4,9 @@ require_once __DIR__ . '/functions.php';
 
 function ensureAttachmentSchema() {
     static $ensured = false;
-    if ($ensured) {
+    $version = '2026_09_19_v1';
+    if ($ensured || isSchemaEnsured('attachments', $version)) {
+        $ensured = true;
         return;
     }
 
@@ -37,6 +39,7 @@ function ensureAttachmentSchema() {
     }
 
     $ensured = true;
+    markSchemaEnsured('attachments', $version);
 }
 
 function attachmentUploadRoot() {
