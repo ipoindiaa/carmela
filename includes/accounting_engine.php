@@ -5624,11 +5624,8 @@ class AccountingEngine {
         $oldFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $oldContributions)), 2);
         $normalized = $this->normalizePartnerFunding(max(0.01, floatval($car['purchase_price'])), $partnerFunding);
         $newFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $normalized)), 2);
-        if (abs($oldFundingTotal - $newFundingTotal) > 0.01) {
-            throw new Exception(
-                'The total partner funding must remain ' . formatAmount($oldFundingTotal)
-                . '. Reallocate it between partners; use Partner Added Money or Partner Took Money for separate capital movements.'
-            );
+        if ($newFundingTotal <= 0) {
+            throw new Exception('At least one partner must have a funding amount.');
         }
 
         $oldComparable = array_map(static function ($row) {

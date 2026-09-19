@@ -580,9 +580,9 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
             <div class="card-body partner-funding-editor">
                 <div class="correction-notice compact-correction-notice">
                     <i class="ri-shield-check-line"></i>
-                    <div><strong>Fixed funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Reallocate exactly this amount between any active partners. Separate capital changes belong in Partner Added Money or Partner Took Money.</span></div>
+                    <div><strong>Current funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Add or remove partners and adjust amounts freely. Financial changes will reverse the old entries and preserve them in History.</span></div>
                 </div>
-                <form method="POST" id="partner-funding-correction-form" data-fixed-total="<?= clean(number_format($totalPartnerFunding, 2, '.', '')) ?>" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
+                <form method="POST" id="partner-funding-correction-form" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
                     <?= csrfField() ?><input type="hidden" name="action" value="correct_partner_funding">
                     <div id="partner-funding-editor-rows">
                         <?php foreach ($fundingRows as $fundingRow): ?>
@@ -694,28 +694,31 @@ function updateFundingEditTotal() {
     const form = document.getElementById('partner-funding-correction-form');
     const status = document.getElementById('partner-funding-total-status');
     if (!form || !status) return true;
-    const fixedTotal = Number(form.dataset.fixedTotal || 0);
     const allocated = Array.from(form.querySelectorAll('input[name="partner_amounts[]"]'))
         .reduce((sum, input) => sum + parseFundingEditAmount(input.value), 0);
-    const difference = Math.round((fixedTotal - allocated) * 100) / 100;
-    if (Math.abs(difference) < 0.01) {
+    if (allocated > 0) {
         status.className = 'form-hint text-green';
-        status.textContent = `Allocated ${formatFundingEditAmount(allocated)} of ${formatFundingEditAmount(fixedTotal)}. Ready to save.`;
-        return true;
+        status.textContent = `Total funding: ${formatFundingEditAmount(allocated)}`;
+    } else {
+        status.className = 'form-hint text-muted';
+        status.textContent = 'Enter funding amounts for partners.';
     }
-    status.className = 'form-hint text-red';
-    status.textContent = difference > 0
-        ? `${formatFundingEditAmount(difference)} remains to allocate. Total must stay ${formatFundingEditAmount(fixedTotal)}.`
-        : `${formatFundingEditAmount(Math.abs(difference))} is over the fixed total. Total must stay ${formatFundingEditAmount(fixedTotal)}.`;
-    return false;
+    return true;
 }
 document.getElementById('partner-funding-editor-rows')?.addEventListener('input', function(event) {
     if (event.target.matches('input[name="partner_amounts[]"]')) updateFundingEditTotal();
 });
 document.getElementById('partner-funding-correction-form')?.addEventListener('submit', function(event) {
-    if (!updateFundingEditTotal()) {
+    const allocated = Array.from(this.querySelectorAll('input[name="partner_amounts[]"]'))
+        .reduce((sum, input) => sum + parseFundingEditAmount(input.value), 0);
+    if (allocated <= 0) {
         event.preventDefault();
-        document.getElementById('partner-funding-total-status')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const status = document.getElementById('partner-funding-total-status');
+        if (status) {
+            status.className = 'form-hint text-red';
+            status.textContent = 'Enter at least one partner with a funding amount.';
+            status.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
     }
 });
 updateFundingEditTotal();
