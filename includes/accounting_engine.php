@@ -5081,6 +5081,20 @@ class AccountingEngine {
 
         $availableBalance = $this->storedBalanceValue($account['current_balance'], $account['current_balance_type'], false);
 
+        // Legacy opening balances (set directly on the account, without a journal
+        // entry) are NOT reflected in current_balance. Include them here, just as
+        // the trial balance and balance sheet do.
+        if (empty($account['opening_entry_id']) && floatval($account['opening_balance'] ?? 0) > 0.009) {
+            $obAmount = floatval($account['opening_balance']);
+            $obType = strtoupper((string) ($account['opening_balance_type'] ?? 'DR'));
+            $naturalDr = in_array($account['group_name'], ['ASSET', 'EXPENSE', 'CONTRA']);
+            if ($naturalDr) {
+                $availableBalance += ($obType === 'DR' ? $obAmount : -$obAmount);
+            } else {
+                $availableBalance += ($obType === 'CR' ? $obAmount : -$obAmount);
+            }
+        }
+
         if ($account['entity_type'] === 'CASH') {
             $business = $this->db->fetch("SELECT min_cash_balance FROM businesses WHERE id = ?", [$this->businessId]);
             $minBalance = floatval($business['min_cash_balance'] ?? 0);
