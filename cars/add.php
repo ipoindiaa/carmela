@@ -131,9 +131,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $partnerFunding
         )), 2);
         $purchasePrice = round(floatval($purchasePaidNow ?? 0) + $initialPartnerFunding, 2);
-        if ($purchasePaidNow > 0.009 && $sellerLabel === '') {
-            throw new Exception('Select or add the vehicle owner before recording the first purchase payment.');
-        }
+        // NOTE: Seller is only required when there is an outstanding balance
+        // (partial payment). The accounting engine handles full-payment or
+        // no-seller cases directly. See validateCarPurchaseInput().
         $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerLabel, $purchasePaidNow);
         $partnerFunding = $validation['partner_funding'];
         $purchasePaidNow = $validation['paid_now'];
