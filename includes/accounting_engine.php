@@ -3167,12 +3167,17 @@ class AccountingEngine {
 
         // RULE 5: Cannot withdraw more than available partner funds after commitments
         [$capitalAmount, $capitalType] = $this->getAccountBalanceRow($partner['capital_account_id']);
-        [$currentAmount, $currentType] = $this->getAccountBalanceRow($partner['current_account_id']);
         $capitalBalance = max(0, $this->storedBalanceValue($capitalAmount, $capitalType, true));
-        $currentBalance = max(0, $this->storedBalanceValue($currentAmount, $currentType, true));
         $committedFunding = $this->getCommittedPartnerFunding($partnerId);
         $pendingReceivable = $this->getPendingSettlementAmount($partnerId, 'RECEIVABLE');
-        $availableBalance = max(0, $capitalBalance + $currentBalance - $committedFunding - $pendingReceivable);
+        $pendingPayable = $this->getPendingSettlementAmount($partnerId, 'PAYABLE');
+        if ($pendingPayable > 0.009) {
+            throw new Exception('This partner has a pending profit settlement of ' . formatAmount($pendingPayable) . '. Use Settle Partner Profit / Loss so the payment clears Current A/c, not capital.');
+        }
+        // A capital withdrawal must not consume the partner's Current A/c. Current
+        // A/c is reserved for recorded profit/loss settlements and is cleared only
+        // through partnerSettlement(), which also updates the settlement register.
+        $availableBalance = max(0, $capitalBalance - $committedFunding - $pendingReceivable);
         $linkedCreditor = $this->getPartnerCreditorPayable($partner);
         $linkedCreditorPayable = round(floatval($linkedCreditor['outstanding_amount'] ?? 0), 2);
 
@@ -3232,7 +3237,6 @@ class AccountingEngine {
     public function partnerSettlement($partnerId, $amount, $date, $accountId, $direction, $narration) {
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
         if (!$partner) throw new Exception("Partner not found");
-        if (($partner['partner_type'] ?? 'MAIN') !== 'MAIN') throw new Exception("Only main partners can use manual partner settlement entries.");
         if ($amount <= 0) throw new Exception("Settlement amount must be greater than zero.");
 
         $direction = strtoupper($direction);

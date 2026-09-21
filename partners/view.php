@@ -20,13 +20,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
         if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) throw new Exception('Invalid partner type.');
         $phone = validatePhoneNumber(post('phone'), 'Phone number');
         $email = validateEmailAddress(post('email'), 'Email');
-        $share = round(parseDecimalInput(post('profit_share_pct', 0)), 2);
-        if ($share < 0 || $share > 100) throw new Exception('Profit share must be between 0 and 100.');
         $isActive = post('is_active', '0') === '1' ? 1 : 0;
 
         $db->query(
-            "UPDATE partners SET name = ?, partner_type = ?, phone = ?, email = ?, pan = ?, profit_share_pct = ?, joined_date = ?, is_active = ? WHERE id = ? AND business_id = ?",
-            [$name, $partnerType, $phone, $email, strtoupper(trim((string) post('pan'))), $share, post('joined_date'), $isActive, $id, $businessId]
+            "UPDATE partners SET name = ?, partner_type = ?, phone = ?, email = ?, pan = ?, joined_date = ?, is_active = ? WHERE id = ? AND business_id = ?",
+            [$name, $partnerType, $phone, $email, strtoupper(trim((string) post('pan'))), post('joined_date'), $isActive, $id, $businessId]
         );
         if (!empty($partner['capital_account_id'])) {
             $oldCapitalAccount = $db->fetch("SELECT * FROM accounts WHERE id = ? AND business_id = ?", [$partner['capital_account_id'], $businessId]);
@@ -114,6 +112,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
         <a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $partner['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (!empty($partner['is_active']) && Auth::hasEntityAccess('partner', 'delete')): ?><a href="../delete_record.php?entity_type=partner&amp;id=<?= clean($partner['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if (!empty($partner['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $partner['capital_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Capital</a><?php endif; ?>
+        <?php if (!empty($partner['is_active']) && (floatval($position['pending_payable'] ?? 0) > 0.009 || floatval($position['pending_receivable'] ?? 0) > 0.009)): ?><a href="../transactions/new.php?type=PARTNER_SETTLEMENT&amp;partner_id=<?= urlencode($partner['id']) ?>" class="btn btn-primary btn-sm"><i class="ri-scales-3-line"></i> Settle Profit / Loss</a><?php endif; ?>
         <a href="list.php?<?= http_build_query(array_filter(['type' => $backType, 'show' => empty($partner['is_active']) ? 'deleted' : ''])) ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
@@ -135,7 +134,7 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                 <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" value="<?= clean($partner['pan']) ?>" maxlength="10"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Default Car Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="<?= clean($partner['profit_share_pct']) ?>" step="0.01" min="0" max="100"><div class="form-hint">Used only when a car-specific share is left blank.</div></div>
+                <div class="form-group"><label class="form-label">Car Profit Share</label><div class="form-control form-control-readonly">Set manually for each car</div><div class="form-hint">A partner profile never sets or changes the agreed share for a car.</div></div>
                 <div class="form-group"><label class="form-label">Joined Date *</label><input type="date" name="joined_date" class="form-control" value="<?= clean($partner['joined_date']) ?>" required></div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Partner</button>

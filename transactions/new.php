@@ -81,7 +81,7 @@ $preselectedPartyId = $isPostRequest
     ? trim((string) post($preselectedType === 'LOAN_REPAID' ? 'creditor_id' : ($preselectedType === 'LOAN_RECEIVED' ? 'debtor_id' : 'counterparty_id')))
     : get('party_id', '');
 $preselectedParty = null;
-$preselectedPartnerId = $isPostRequest ? trim((string) post('partner_id')) : '';
+$preselectedPartnerId = $isPostRequest ? trim((string) post('partner_id')) : get('partner_id', '');
 $preselectedPartner = null;
 $preselectedEmployeeId = get('employee_id', '');
 $preselectedEmployee = null;
@@ -441,7 +441,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'PARTNER_SETTLEMENT':
-                throw new Exception('Partner settlement entry is no longer available.');
+                $partnerId = post('partner_id');
+                $settlementDirection = post('partner_settlement_direction', 'PAY');
+                $entryId = $engine->partnerSettlement($partnerId, $amount, $date, $paymentAccountId, $settlementDirection, $narration);
+                break;
 
             case 'SALARY_PAYMENT':
                 $employeeId = post('employee_id');
@@ -691,6 +694,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <optgroup label="Partners">
                             <option value="PARTNER_INVEST" data-flow="in" data-icon="ri-briefcase-4-line" data-title="Partner Added Money" data-desc="Business received money from partner.">Partner Added Money</option>
                             <option value="PARTNER_WITHDRAW" data-flow="out" data-icon="ri-hand-coin-line" data-title="Partner Took Money" data-desc="Business paid money to partner.">Partner Took Money</option>
+                            <option value="PARTNER_SETTLEMENT" data-flow="both" data-icon="ri-scales-3-line" data-title="Settle Partner Profit / Loss" data-desc="Pay a partner's approved profit or receive their agreed loss share.">Settle Partner Profit / Loss</option>
                         </optgroup>
                         <optgroup label="Employees">
                             <option value="SALARY_PAYMENT" data-flow="out" data-icon="ri-wallet-3-line" data-title="Paid Salary" data-desc="Business paid salary to employee.">Paid Salary</option>
@@ -1107,6 +1111,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <small>A matching creditor payable for this partner is settled automatically first. Use this only for any remaining amount that is approved to make the partner account negative.</small>
                     </span>
                 </label>
+            </div>
+
+            <div class="txn-section" id="partner-settlement-section" hidden>
+                <div class="alert alert-info"><i class="ri-scales-3-line"></i><div><strong>Settle only a recorded partner profit or loss.</strong><span>This clears the selected partner's Current A/c and the exact outstanding settlement; it does not change capital or car funding.</span></div></div>
+                <div class="form-group">
+                    <label class="form-label" for="partner_settlement_direction">Settlement Type *</label>
+                    <select name="partner_settlement_direction" id="partner_settlement_direction" class="form-control">
+                        <option value="PAY" <?= post('partner_settlement_direction') === 'RECEIVE' ? '' : 'selected' ?>>Pay partner's approved profit</option>
+                        <option value="RECEIVE" <?= post('partner_settlement_direction') === 'RECEIVE' ? 'selected' : '' ?>>Receive partner's agreed loss share</option>
+                    </select>
+                    <div class="form-hint">The amount cannot exceed the selected partner's recorded pending settlement.</div>
+                </div>
             </div>
 
 
@@ -1825,6 +1841,15 @@ function syncRtoRecoveryUi() {
             : 'Select car for RTO';
     }
 }
+
+function syncPartnerSettlementUi() {
+    const type = document.getElementById('transaction_type')?.value || '';
+    const direction = document.getElementById('partner_settlement_direction')?.value || 'PAY';
+    if (type !== 'PARTNER_SETTLEMENT') return;
+    const paymentLabel = document.getElementById('payment-account-label');
+    if (paymentLabel) paymentLabel.textContent = direction === 'RECEIVE' ? 'Receiving Account' : 'Payment Account';
+}
+document.getElementById('partner_settlement_direction')?.addEventListener('change', syncPartnerSettlementUi);
 
 // Show/hide debtor vs creditor select
 document.getElementById('transaction_type')?.addEventListener('change', function() {

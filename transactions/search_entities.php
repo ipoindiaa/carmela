@@ -182,7 +182,7 @@ switch ($kind) {
     case 'partner':
     case 'main_partner':
         $rows = $db->fetchAll(
-            "SELECT id, name, phone, profit_share_pct, partner_type
+            "SELECT id, name, phone, partner_type
              FROM partners
              WHERE business_id = ?
                AND is_active = 1
@@ -198,7 +198,7 @@ switch ($kind) {
             $results[] = [
                 'id' => $row['id'],
                 'label' => $row['name'],
-                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Default car share ' . formatPlainNumber($row['profit_share_pct'] ?? 0) . '%' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
+                'meta' => (($row['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise' : 'Main') . ' | Profit share set per car' . (!empty($row['phone']) ? ' | ' . $row['phone'] : ''),
             ];
         }
         break;

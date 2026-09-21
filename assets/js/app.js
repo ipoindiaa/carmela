@@ -107,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'JOURNAL_VOUCHER': ['split-bill-section'],
                 'PARTNER_INVEST': ['partner-section'],
                 'PARTNER_WITHDRAW': ['partner-section', 'partner-withdraw-override-section'],
+                'PARTNER_SETTLEMENT': ['partner-section', 'partner-settlement-section'],
                 'SALARY_PAYMENT': ['employee-section', 'salary-section'],
                 'EMPLOYEE_COMMISSION': ['employee-section', 'employee-commission-section'],
                 'EMPLOYEE_ADVANCE': ['employee-section'],
@@ -154,6 +155,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (typeof syncRtoRecoveryUi === 'function') {
                 syncRtoRecoveryUi();
+            }
+            if (typeof syncPartnerSettlementUi === 'function') {
+                syncPartnerSettlementUi();
             }
         });
 

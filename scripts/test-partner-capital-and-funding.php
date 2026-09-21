@@ -37,8 +37,8 @@ $phoneSuffix = str_pad((string) (abs(crc32($suffix)) % 1000000), 6, '0', STR_PAD
 
 $db->beginTransaction();
 try {
-    $mainPartnerId = $engine->createPartner('Main Capital ' . $suffix, 'MAIN', '9911' . $phoneSuffix, '', '', 50, date('Y-m-d'));
-    $carWisePartnerId = $engine->createPartner('Car-wise Capital ' . $suffix, 'CARWISE', '9922' . $phoneSuffix, '', '', 50, date('Y-m-d'));
+    $mainPartnerId = $engine->createPartner('Main Capital ' . $suffix, 'MAIN', '9911' . $phoneSuffix, '', '', 0, date('Y-m-d'));
+    $carWisePartnerId = $engine->createPartner('Car-wise Capital ' . $suffix, 'CARWISE', '9922' . $phoneSuffix, '', '', 0, date('Y-m-d'));
 
     $activePartners = $db->fetchAll(
         "SELECT id FROM partners WHERE business_id = ? AND is_active = 1 AND id IN (?, ?) ORDER BY name",
@@ -130,8 +130,8 @@ try {
     assertPartnerCapital(count($funding) === 2 && abs($fundingTotal - 50000) < 0.01, '₹50,000 car funding can be split across partners later');
 
     $engine->correctCarPartnerFunding($carId, [
-        ['partner_id' => $mainPartnerId, 'amount' => 35000, 'profit_share_pct' => 50],
-        ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 50],
+        ['partner_id' => $mainPartnerId, 'amount' => 35000, 'profit_share_pct' => 25],
+        ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 75],
     ], date('Y-m-d'), 'Additional funding received after initial partner setup');
     $funding = $db->fetchAll("SELECT partner_id, funding_amount FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'", [$business['id'], $carId]);
     $fundingTotal = array_sum(array_map(static fn($row) => floatval($row['funding_amount']), $funding));
@@ -145,6 +145,39 @@ try {
         floatval($carAccountBalance['current_balance'] ?? 0) === 55000.0
             && ($carAccountBalance['current_balance_type'] ?? '') === 'DR',
         'The car inventory account reflects the revised total partner funding'
+    );
+
+    $engine->carSale($carId, 100000, date('Y-m-d'), $cash['id'], 'Partner profit distribution regression sale', 'Partner Test Buyer ' . $suffix, 100000);
+    $profitSettlements = $db->fetchAll(
+        "SELECT partner_id, profit_share_pct, direction, outstanding_amount
+         FROM partner_profit_settlements WHERE business_id = ? AND car_id = ? ORDER BY partner_id",
+        [$business['id'], $carId]
+    );
+    $settlementByPartner = [];
+    foreach ($profitSettlements as $settlement) $settlementByPartner[$settlement['partner_id']] = $settlement;
+    assertPartnerCapital(
+        count($profitSettlements) === 2
+            && abs(floatval($settlementByPartner[$mainPartnerId]['outstanding_amount'] ?? 0) - 11250) < 0.01
+            && abs(floatval($settlementByPartner[$carWisePartnerId]['outstanding_amount'] ?? 0) - 33750) < 0.01,
+        'Manual car profit shares, not funding percentages, create the correct partner profit payables'
+    );
+
+    $withdrawalBlockedForProfit = false;
+    try {
+        $engine->partnerWithdraw($mainPartnerId, 1000, date('Y-m-d'), $cash['id'], 'Incorrect profit payout as capital withdrawal');
+    } catch (Throwable $e) {
+        $withdrawalBlockedForProfit = str_contains($e->getMessage(), 'Settle Partner Profit / Loss');
+    }
+    assertPartnerCapital($withdrawalBlockedForProfit, 'Partner profit cannot be paid through a capital withdrawal');
+
+    $engine->partnerSettlement($mainPartnerId, 11250, date('Y-m-d'), $cash['id'], 'PAY', 'Settle main partner profit');
+    $engine->partnerSettlement($carWisePartnerId, 33750, date('Y-m-d'), $cash['id'], 'PAY', 'Settle car-wise partner profit');
+    $mainPosition = $engine->getPartnerPosition($mainPartnerId);
+    $carWisePosition = $engine->getPartnerPosition($carWisePartnerId);
+    assertPartnerCapital(
+        abs(floatval($mainPosition['pending_payable'] ?? 0)) < 0.01
+            && abs(floatval($carWisePosition['pending_payable'] ?? 0)) < 0.01,
+        'Both Main and Car-wise partner profit payables settle through Current A/c without changing capital'
     );
 
     $trialBalance = $engine->getTrialBalance();

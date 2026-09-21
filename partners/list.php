@@ -20,7 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'add') {
     try {
         $name = trim((string) post('name'));
         $partnerType = strtoupper((string) post('partner_type', 'MAIN'));
-        $engine->createPartner($name, $partnerType, post('phone'), post('email'), post('pan'), parseDecimalInput(post('profit_share_pct', 0)), post('joined_date'), 'partners');
+        // Profit share is agreed per car; a partner profile must never prefill or
+        // calculate a car deal's profit terms.
+        $engine->createPartner($name, $partnerType, post('phone'), post('email'), post('pan'), 0, post('joined_date'), 'partners');
         setFlash('success', "Partner $name added successfully!");
         redirect('list.php' . ($partnerType ? '?type=' . urlencode($partnerType) : ''));
     } catch (Exception $e) { setFlash('error', $e->getMessage()); }
@@ -57,7 +59,7 @@ $mainPartners = array_values(array_filter($partners, static fn($partner) => ($pa
 $carWisePartners = array_values(array_filter($partners, static fn($partner) => ($partner['partner_type'] ?? 'MAIN') === 'CARWISE'));
 $pageHeading = $requestedType === 'CARWISE' ? 'Car-wise Partners' : ($requestedType === 'MAIN' ? 'Main Partners' : 'Partners');
 $pageDescription = $requestedType === 'CARWISE'
-    ? 'Deal-specific partners for individual cars and changing profit percentages.'
+    ? 'Deal-specific partners for individual cars. Profit share is entered manually on each car.'
     : ($requestedType === 'MAIN'
         ? 'Core business partners for capital, withdrawals, and overall business funding.'
         : 'Manage both main business partners and car-wise deal partners.');
@@ -98,17 +100,16 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill">
     <div class="table-section-title">Main Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($mainPartners)): ?>
-                <tr><td colspan="8" class="text-center text-muted empty-table-cell">No main partners yet</td></tr>
+                <tr><td colspan="7" class="text-center text-muted empty-table-cell">No main partners yet</td></tr>
             <?php else: ?>
                 <?php foreach ($mainPartners as $p): ?>
                 <tr>
                     <td class="text-bold"><?= clean($p['name']) ?></td>
                     <td><?= clean($p['phone'] ?: '-') ?></td>
                     <td><?= clean($p['pan'] ?: '-') ?></td>
-                    <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
@@ -125,17 +126,16 @@ $pageDescription = $requestedType === 'CARWISE'
 <div class="table-container table-container-fill">
     <div class="table-section-title">Car-wise Partners</div>
     <table>
-        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th>Default Car Share</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>PAN</th><th class="text-right">Capital Balance</th><th>Joined / Time</th><th class="text-center">Status</th><th class="text-center">Actions</th></tr></thead>
         <tbody>
             <?php if (empty($carWisePartners)): ?>
-                <tr><td colspan="8" class="text-center text-muted empty-table-cell">No car-wise partners yet</td></tr>
+                <tr><td colspan="7" class="text-center text-muted empty-table-cell">No car-wise partners yet</td></tr>
             <?php else: ?>
                 <?php foreach ($carWisePartners as $p): ?>
                 <tr>
                     <td class="text-bold"><?= clean($p['name']) ?></td>
                     <td><?= clean($p['phone'] ?: '-') ?></td>
                     <td><?= clean($p['pan'] ?: '-') ?></td>
-                    <td><span class="badge badge-purple"><?= $p['profit_share_pct'] ?>%</span></td>
                     <td class="text-right amount <?= signedAmountColorClass($p['capital_balance'] ?? 0, 'in') ?>"><?= formatAmount($p['capital_balance'] ?? 0) ?></td>
                     <td><?= renderDateTimeStack($p['joined_date'], $p['created_at']) ?></td>
                     <td class="text-center"><span class="badge <?= $p['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $p['is_active'] ? 'Active' : 'Inactive' ?></span></td>
@@ -168,10 +168,8 @@ $pageDescription = $requestedType === 'CARWISE'
                     <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digit phone"></div>
                     <div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-control" placeholder="name@example.com"></div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" maxlength="10"></div>
-                    <div class="form-group"><label class="form-label">Default Car Profit Share %</label><input type="number" name="profit_share_pct" class="form-control" value="0" step="0.01" min="0" max="100"><div class="form-hint">Used only when a car-specific share is left blank.</div></div>
-                </div>
+                <div class="form-group"><label class="form-label">PAN</label><input type="text" name="pan" class="form-control" maxlength="10"></div>
+                <div class="form-hint">Profit share is set manually for each car; it is never inherited from this partner profile.</div>
                 <div class="form-group"><label class="form-label">Joined Date *</label><input type="date" name="joined_date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
                 <button type="submit" class="btn btn-primary btn-block"><i class="ri-save-line"></i> Add Partner</button>
             </form>
