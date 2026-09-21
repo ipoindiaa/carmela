@@ -2146,7 +2146,13 @@ class AccountingEngine {
         if ($received < 0) throw new Exception('Amount received now cannot be negative.');
         if ($received - $remainingAfterToken > 0.01) throw new Exception('Amount received now cannot exceed the amount remaining after token adjustment.');
         $outstanding = round($remainingAfterToken - $received, 2);
+        // The car's accounting result includes every tagged cost and income.
+        // Partner terms, however, follow the trading-margin convention used by
+        // the operator's deal sheet: sale price less the purchase amount. Sale
+        // commission and operating expenses remain business-owned amounts and
+        // are not silently shared with car partners.
         $profit = ($netSalePrice + $commissionAmount) - $totalCost - $this->getCarRtoPnlExpense($carId);
+        $partnerProfitPool = $netSalePrice - round(floatval($car['purchase_price'] ?? 0), 2);
 
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
@@ -2202,7 +2208,7 @@ class AccountingEngine {
             );
             $soldCar = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
             Auth::auditUpdate('car', $carId, $car, $soldCar ?: [], 'Car sale, buyer, token adjustment, and payment status updated', 'transactions');
-            $this->recordPartnerProfitDistribution($carId, $profit, $date);
+            $this->recordPartnerProfitDistribution($carId, $partnerProfitPool, $date);
 
             if ($ownsTransaction) $this->db->commit();
 
@@ -5381,6 +5387,12 @@ class AccountingEngine {
         $dealerCommission = $this->getCarDealerCommissionTotal($carId);
         $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome + $tokenForfeitureNet;
         $profit = $netBusinessRevenue - $totalCost - $rtoExpense;
+        // Partner profit is the agreed trading margin only. Expenses, RTO,
+        // loan/token income, and sale commission are reported separately and
+        // stay with the business unless explicitly included in deal terms.
+        $partnerProfitPool = $salePrice > 0
+            ? round($salePrice - floatval($car['purchase_price'] ?? 0), 2)
+            : 0.0;
         $partnerships = $this->getCarPartnerships($carId);
         $settlements = $this->db->fetchAll(
             "SELECT pps.*, p.name as partner_name
@@ -5409,6 +5421,7 @@ class AccountingEngine {
             'dealer_commission' => $dealerCommission,
             'net_business_revenue' => $netBusinessRevenue,
             'profit' => $profit,
+            'partner_profit_pool' => $partnerProfitPool,
             'status' => $car['status'],
             'holding_days' => $car['sold_date'] ? max(0, (int) floor((strtotime($car['sold_date']) - strtotime($car['purchase_date'])) / 86400)) : max(0, (int) floor((time() - strtotime($car['purchase_date'])) / 86400)),
             'partnerships' => $partnerships,

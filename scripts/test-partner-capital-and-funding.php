@@ -147,7 +147,10 @@ try {
         'The car inventory account reflects the revised total partner funding'
     );
 
-    $engine->carSale($carId, 100000, date('Y-m-d'), $cash['id'], 'Partner profit distribution regression sale', 'Partner Test Buyer ' . $suffix, 100000);
+    // Expenses and sale commission must remain outside the partner trading
+    // margin, matching the operator's deal-sheet convention.
+    $engine->carExpense($carId, 7620, date('Y-m-d'), $cash['id'], 'Deal-sheet expense regression');
+    $engine->carSale($carId, 100000, date('Y-m-d'), $cash['id'], 'Partner profit distribution regression sale', 'Partner Test Buyer ' . $suffix, 100000, 10000);
     $profitSettlements = $db->fetchAll(
         "SELECT partner_id, profit_share_pct, direction, outstanding_amount
          FROM partner_profit_settlements WHERE business_id = ? AND car_id = ? ORDER BY partner_id",
@@ -155,11 +158,17 @@ try {
     );
     $settlementByPartner = [];
     foreach ($profitSettlements as $settlement) $settlementByPartner[$settlement['partner_id']] = $settlement;
+    $carProfitability = $engine->getCarProfitability($carId);
     assertPartnerCapital(
         count($profitSettlements) === 2
             && abs(floatval($settlementByPartner[$mainPartnerId]['outstanding_amount'] ?? 0) - 11250) < 0.01
             && abs(floatval($settlementByPartner[$carWisePartnerId]['outstanding_amount'] ?? 0) - 33750) < 0.01,
         'Manual car profit shares, not funding percentages, create the correct partner profit payables'
+    );
+    assertPartnerCapital(
+        abs(floatval($carProfitability['partner_profit_pool'] ?? 0) - 45000) < 0.01
+            && abs(floatval($carProfitability['profit'] ?? 0) - 47380) < 0.01,
+        'Partner pool excludes deal expenses and sale commission while net business profit includes them'
     );
 
     $withdrawalBlockedForProfit = false;

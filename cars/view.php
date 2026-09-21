@@ -439,6 +439,12 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
         <div class="stat-label">Total Cost</div>
     </div>
     <div class="stat-card">
+        <div class="stat-header"><div class="stat-icon stat-icon-amber"><i class="ri-group-line"></i></div></div>
+        <div class="stat-value amount <?= ($profitability['partner_profit_pool'] ?? 0) >= 0 ? 'positive' : 'negative' ?>"><?= $car['status'] === 'SOLD' ? formatAmount($profitability['partner_profit_pool'] ?? 0, true) : '—' ?></div>
+        <div class="stat-label">Partner Profit Pool</div>
+        <div class="table-secondary">Sale price − purchase amount</div>
+    </div>
+    <div class="stat-card">
         <div class="stat-header"><div class="stat-icon stat-icon-blue"><i class="ri-price-tag-3-line"></i></div></div>
         <div class="stat-value"><?= !empty($car['expected_sale_price']) ? formatAmount($car['expected_sale_price']) : 'Not set' ?></div>
         <div class="stat-label">Reference Selling Price</div>
@@ -542,6 +548,8 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 <tr><td class="text-muted">Reference Selling Price</td><td class="amount"><?php if (!empty($car['expected_sale_price'])): ?><?= formatAmount($car['expected_sale_price']) ?><div class="table-secondary">Reference only — not part of calculations</div><?php else: ?><span class="text-muted">Not set</span><?php endif; ?></td></tr>
                 <?php if (!empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Commission Income</td><td class="amount flow-in"><?= formatAmount($car['sale_commission_amount']) ?></td></tr><?php endif; ?>
                 <?php if (!empty($car['sale_price']) || !empty($car['sale_commission_amount'])): ?><tr><td class="text-muted">Total Buyer Amount</td><td class="amount text-bold flow-in"><?= formatAmount((float) ($car['sale_price'] ?? 0) + (float) ($car['sale_commission_amount'] ?? 0)) ?></td></tr><?php endif; ?>
+                <?php if ($car['status'] === 'SOLD'): ?><tr><td class="text-muted">Partner Profit Pool</td><td class="amount text-bold <?= ($profitability['partner_profit_pool'] ?? 0) >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($profitability['partner_profit_pool'] ?? 0, true) ?><div class="table-secondary">Sale price − purchase amount; expenses and commission stay separate.</div></td></tr><?php endif; ?>
+                <?php if ($car['status'] === 'SOLD'): ?><tr><td class="text-muted">Net Business Profit / Loss</td><td class="amount text-bold <?= ($profitability['profit'] ?? 0) >= 0 ? 'positive' : 'negative' ?>"><?= formatAmount($profitability['profit'] ?? 0, true) ?><div class="table-secondary">Includes total cost, commission, RTO, loan and token effects.</div></td></tr><?php endif; ?>
                 <?php if ($car['buyer_name']): ?><tr><td class="text-muted">Buyer</td><td><?= clean($car['buyer_name']) ?></td></tr><?php endif; ?>
                 <?php if ($buyerParty): ?><tr><td class="text-muted">Buyer Outstanding</td><td class="amount flow-in"><?= formatAmount($buyerOutstanding) ?></td></tr><?php endif; ?>
                 <tr><td class="text-muted">Second Key</td><td><span class="badge <?= !empty($car['has_second_key']) ? 'badge-green' : 'badge-gray' ?>"><?= !empty($car['has_second_key']) ? 'Yes' : 'No' ?></span></td></tr>
