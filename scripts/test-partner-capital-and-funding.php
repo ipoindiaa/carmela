@@ -112,21 +112,28 @@ try {
     $engine->correctCarPartnerFunding($carId, [
         ['partner_id' => $mainPartnerId, 'amount' => 30000, 'profit_share_pct' => 50],
         ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 50],
-    ], date('Y-m-d'), 'Reallocate the fixed partner funding total');
+    ], date('Y-m-d'), 'Add a second partner later and split the funding');
     $funding = $db->fetchAll("SELECT partner_id, funding_amount FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'", [$business['id'], $carId]);
     $fundingTotal = array_sum(array_map(static fn($row) => floatval($row['funding_amount']), $funding));
-    assertPartnerCapital(count($funding) === 2 && abs($fundingTotal - 50000) < 0.01, '₹50,000 car funding reallocates across partners without changing the total');
+    assertPartnerCapital(count($funding) === 2 && abs($fundingTotal - 50000) < 0.01, '₹50,000 car funding can be split across partners later');
 
-    $blocked = false;
-    try {
-        $engine->correctCarPartnerFunding($carId, [
-            ['partner_id' => $mainPartnerId, 'amount' => 35000, 'profit_share_pct' => 50],
-            ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 50],
-        ], date('Y-m-d'), 'Attempt to change the fixed funding total');
-    } catch (Throwable $e) {
-        $blocked = str_contains($e->getMessage(), 'total partner funding must remain');
-    }
-    assertPartnerCapital($blocked, 'A car funding total other than ₹50,000 remains blocked');
+    $engine->correctCarPartnerFunding($carId, [
+        ['partner_id' => $mainPartnerId, 'amount' => 35000, 'profit_share_pct' => 50],
+        ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 50],
+    ], date('Y-m-d'), 'Additional funding received after initial partner setup');
+    $funding = $db->fetchAll("SELECT partner_id, funding_amount FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'", [$business['id'], $carId]);
+    $fundingTotal = array_sum(array_map(static fn($row) => floatval($row['funding_amount']), $funding));
+    assertPartnerCapital(count($funding) === 2 && abs($fundingTotal - 55000) < 0.01, 'Later partner funding can increase from ₹50,000 to ₹55,000 without a fixed-total block');
+
+    $carAccountBalance = $db->fetch(
+        "SELECT current_balance, current_balance_type FROM accounts WHERE id = ? AND business_id = ?",
+        [$carAccountId, $business['id']]
+    );
+    assertPartnerCapital(
+        floatval($carAccountBalance['current_balance'] ?? 0) === 55000.0
+            && ($carAccountBalance['current_balance_type'] ?? '') === 'DR',
+        'The car inventory account reflects the revised total partner funding'
+    );
 
     $trialBalance = $engine->getTrialBalance();
     $dr = 0; $cr = 0;
