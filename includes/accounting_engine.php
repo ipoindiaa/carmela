@@ -2784,8 +2784,8 @@ class AccountingEngine {
                    AND transaction_type IN ('LOAN_RECEIVED','BAD_DEBT')
                    AND status = 'POSTED'
                    AND is_reversal = 0
-                   AND created_at > ?",
-                [$this->businessId, $car['buyer_party_id'], $saleEntry['created_at']]
+                   AND (entry_date > ? OR (entry_date = ? AND created_at > ?))",
+                [$this->businessId, $car['buyer_party_id'], $saleEntry['entry_date'], $saleEntry['entry_date'], $saleEntry['created_at']]
             );
             if (($laterReceipts['cnt'] ?? 0) > 0) {
                 throw new Exception("Reverse later buyer payment/write-off entries before returning this car.");
@@ -4495,8 +4495,8 @@ class AccountingEngine {
                  WHERE business_id = ? AND car_id = ?
                    AND transaction_type = 'LOAN_REPAID'
                    AND status = 'POSTED' AND is_reversal = 0
-                   AND created_at >= ?",
-                [$this->businessId, $entry['car_id'], $entry['created_at']]
+                   AND (entry_date > ? OR (entry_date = ? AND created_at >= ?))",
+                [$this->businessId, $entry['car_id'], $entry['entry_date'], $entry['entry_date'], $entry['created_at']]
             );
             if (intval($laterPayments['cnt'] ?? 0) > 0) {
                 throw new Exception('This purchase repair already has seller payments. Reverse those payments first, then reverse the repair.');
@@ -6821,9 +6821,9 @@ class AccountingEngine {
                AND transaction_type = 'PARTNER_SETTLEMENT'
                AND status = 'POSTED'
                AND is_reversal = 0
-               AND created_at > ?
+               AND (entry_date > ? OR (entry_date = ? AND created_at > ?))
                AND id <> ?",
-            [$this->businessId, $entry['partner_id'], $entry['created_at'], $entry['id']]
+            [$this->businessId, $entry['partner_id'], $entry['entry_date'], $entry['entry_date'], $entry['created_at'], $entry['id']]
         );
         if (($newerSettlements['cnt'] ?? 0) > 0) {
             return false;

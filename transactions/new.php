@@ -728,8 +728,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="hidden" id="dynamic_category_requires_car" value="0">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Date *</label>
+                    <label class="form-label">Accounting Date *</label>
                     <input type="date" name="entry_date" class="form-control" value="<?= clean($preselectedEntryDate) ?>" required>
+                    <div class="form-hint">This date controls the month, balances, ageing, and reports. The system separately records the actual time you save the entry.</div>
                 </div>
                 <div class="form-group" id="payment-account-group">
                     <label class="form-label" id="payment-account-label">Payment Account *</label>
