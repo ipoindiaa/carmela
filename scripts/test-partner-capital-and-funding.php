@@ -109,6 +109,18 @@ try {
         'profit_share_pct' => 50,
     ]], 0, null, 0);
 
+    $manualShareRequired = false;
+    try {
+        $engine->correctCarPartnerFunding($carId, [[
+            'partner_id' => $mainPartnerId,
+            'amount' => 50000,
+            'profit_share_pct' => '',
+        ]], date('Y-m-d'), 'Verify manual profit share requirement');
+    } catch (Throwable $e) {
+        $manualShareRequired = str_contains($e->getMessage(), 'manual profit share');
+    }
+    assertPartnerCapital($manualShareRequired, 'Partner profit share must be entered manually and is not derived from funding');
+
     $engine->correctCarPartnerFunding($carId, [
         ['partner_id' => $mainPartnerId, 'amount' => 30000, 'profit_share_pct' => 50],
         ['partner_id' => $carWisePartnerId, 'amount' => 20000, 'profit_share_pct' => 50],

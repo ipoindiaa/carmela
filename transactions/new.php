@@ -932,8 +932,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <input type="text" name="pf_amount[]" class="form-control currency-input" placeholder="Optional" inputmode="decimal" autocomplete="off">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Profit Share %</label>
-                                <input type="number" name="pf_profit_share_pct[]" class="form-control" placeholder="Auto if blank" step="0.01" min="0" max="100">
+                                <label class="form-label">Manual Profit Share %</label>
+                                <input type="number" name="pf_profit_share_pct[]" class="form-control" placeholder="Enter agreed share" step="0.01" min="0" max="100">
                             </div>
                             <div class="form-group partner-row-action is-placeholder">
                                 <button type="button" class="btn btn-outline btn-icon" title="Remove partner" onclick="removePartnerFundingRow(this)"><i class="ri-delete-bin-line"></i></button>
@@ -941,7 +941,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="partner-funding-actions inline-note-list">
                             <button type="button" class="btn btn-outline btn-sm" onclick="addPartnerFundingRow()"><i class="ri-add-line"></i> Add Partner</button>
-                            <span class="form-hint">Partner shares may total up to 100%. The business keeps the remainder.</span>
+                            <span class="form-hint">Enter each selected partner's agreed profit share manually. It is not calculated from contribution; shares may total up to 100% and the business keeps the remainder.</span>
                         </div>
                     </div>
                     <?php if (Auth::hasEntityAccess('partner', 'write')): ?>

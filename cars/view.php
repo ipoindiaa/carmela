@@ -599,15 +599,15 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                                     <div class="input-group"><span class="input-prefix">₹</span><input type="text" name="partner_amounts[]" class="form-control currency-input" value="<?= clean($fundingRow['amount'] ?? '') ?>" inputmode="decimal" autocomplete="off"></div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Profit Share %</label>
-                                    <input type="number" name="partner_profit_share_pcts[]" class="form-control" value="<?= clean($fundingRow['profit_share_pct'] ?? '') ?>" min="0" max="100" step="0.01">
+                                    <label class="form-label">Manual Profit Share %</label>
+                                    <input type="number" name="partner_profit_share_pcts[]" class="form-control" value="<?= clean($fundingRow['profit_share_pct'] ?? '') ?>" placeholder="Enter agreed share" min="0" max="100" step="0.01">
                                 </div>
                                 <div class="form-group partner-row-action"><button type="button" class="btn btn-outline btn-icon" title="Remove partner" aria-label="Remove partner" onclick="removeFundingEditRow(this)"><i class="ri-delete-bin-line"></i></button></div>
                             </div>
                         <?php endforeach; ?>
                     </div>
                     <button type="button" class="btn btn-outline btn-sm partner-add-row" onclick="addFundingEditRow()"><i class="ri-add-line"></i> Add Partner</button>
-                    <div class="form-hint field-status" id="partner-funding-total-status" aria-live="polite"></div>
+                    <div class="form-hint field-status" id="partner-funding-total-status" aria-live="polite">Profit share is manual and is not calculated from funding.</div>
                     <div class="form-row partner-correction-meta">
                         <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean($partnerFundingDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
                         <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" value="<?= clean($partnerFundingDraft['correction_reason'] ?? '') ?>" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
@@ -709,6 +709,21 @@ document.getElementById('partner-funding-editor-rows')?.addEventListener('input'
     if (event.target.matches('input[name="partner_amounts[]"]')) updateFundingEditTotal();
 });
 document.getElementById('partner-funding-correction-form')?.addEventListener('submit', function(event) {
+    const incompleteShare = Array.from(this.querySelectorAll('.partner-funding-edit-row')).some((row) => {
+        const partnerId = row.querySelector('select[name="partner_ids[]"]')?.value || '';
+        const profitShare = row.querySelector('input[name="partner_profit_share_pcts[]"]')?.value.trim() || '';
+        return partnerId !== '' && profitShare === '';
+    });
+    if (incompleteShare) {
+        event.preventDefault();
+        const status = document.getElementById('partner-funding-total-status');
+        if (status) {
+            status.className = 'form-hint text-red';
+            status.textContent = 'Enter a manual profit share for every selected partner. It is not calculated from funding.';
+            status.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+    }
     const allocated = Array.from(this.querySelectorAll('input[name="partner_amounts[]"]'))
         .reduce((sum, input) => sum + parseFundingEditAmount(input.value), 0);
     if (allocated <= 0) {

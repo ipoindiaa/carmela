@@ -6436,37 +6436,33 @@ class AccountingEngine {
             }
 
             if (!isset($grouped[$partnerId])) {
-                $partner = $this->db->fetch("SELECT id, profit_share_pct FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
+                $partner = $this->db->fetch("SELECT id FROM partners WHERE id = ? AND business_id = ? AND is_active = 1", [$partnerId, $this->businessId]);
                 if (!$partner) {
                     throw new Exception('Select a valid active partner for purchase funding.');
                 }
                 $grouped[$partnerId] = [
                     'partner_id' => $partnerId,
                     'amount' => 0,
-                    'partner_default_pct' => floatval($partner['profit_share_pct'] ?? 0),
                     'profit_share_pct' => null,
                 ];
             }
 
             $grouped[$partnerId]['amount'] += $amount;
-            if (isset($row['profit_share_pct']) && $row['profit_share_pct'] !== '') {
-                $share = floatval($row['profit_share_pct']);
-                if ($share < 0 || $share > 100) {
-                    throw new Exception('Each partner profit share must be between 0 and 100%.');
-                }
-                $grouped[$partnerId]['profit_share_pct'] = $share;
+            if (!isset($row['profit_share_pct']) || trim((string) $row['profit_share_pct']) === '') {
+                throw new Exception('Enter a manual profit share for each selected partner. It is separate from the funding amount and is never calculated automatically.');
             }
+            $share = floatval($row['profit_share_pct']);
+            if ($share < 0 || $share > 100) {
+                throw new Exception('Each partner profit share must be between 0 and 100%.');
+            }
+            $grouped[$partnerId]['profit_share_pct'] = $share;
         }
 
         $normalized = [];
         $profitShareTotal = 0.0;
         foreach ($grouped as $partnerId => $row) {
             $fundingPct = $purchaseAmount > 0 ? round(($row['amount'] / $purchaseAmount) * 100, 4) : 0.0;
-            $profitPct = $row['profit_share_pct'];
-            if ($profitPct === null) {
-                $profitPct = $row['partner_default_pct'] > 0 ? $row['partner_default_pct'] : $fundingPct;
-            }
-            $profitPct = max(0, round($profitPct, 4));
+            $profitPct = max(0, round(floatval($row['profit_share_pct']), 4));
             $profitShareTotal += $profitPct;
             $normalized[] = [
                 'partner_id' => $partnerId,
