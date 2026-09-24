@@ -1,4 +1,5 @@
 <?php
+ob_start();
 $pageTitle = 'Car Inventory';
 $pageIcon = '<i class="ri-parking-box-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
@@ -61,6 +62,45 @@ if ($status === 'INVENTORY') {
 $carCount = count($cars);
 $averageCost = $carCount > 0 ? $inventoryTotal / $carCount : 0;
 $clearUrl = 'car_inventory.php';
+
+if (get('export') === 'excel') {
+    if (ob_get_level() > 0) ob_end_clean();
+    $filename = 'car-inventory-' . $asOnDate . '.csv';
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    $output = fopen('php://output', 'w');
+    // Excel uses this BOM to detect UTF-8 correctly, including Indian names.
+    fwrite($output, "\xEF\xBB\xBF");
+    $writeCsvRow = static function ($stream, array $values): void {
+        $safeValues = array_map(static function ($value) {
+            $value = (string) ($value ?? '');
+            // Prevent text fields from being interpreted as formulas by Excel.
+            if (is_numeric($value)) return $value;
+            return preg_match('/^[\\s]*[=+@\\-]/u', $value) ? "'" . $value : $value;
+        }, $values);
+        fputcsv($stream, $safeValues, ',', '"', '');
+    };
+    $writeCsvRow($output, ['Car Registration', 'Make', 'Model', 'Year', 'Color', 'Purchase Date', 'Status', 'Inventory Account', 'Account Code', 'Purchase Amount (INR)', 'Ledger Balance (INR)', 'Balance As Of']);
+    foreach ($cars as $car) {
+        $writeCsvRow($output, [
+            formatRegistrationNo($car['registration_no']),
+            $car['make'] ?? '',
+            $car['model'] ?? '',
+            $car['year'] ?? '',
+            $car['color'] ?? '',
+            $car['purchase_date'] ?? '',
+            CAR_STATUS[$car['status']] ?? str_replace('_', ' ', $car['status']),
+            $car['account_name'] ?? '',
+            $car['account_code'] ?? '',
+            round(floatval($car['purchase_price'] ?? 0), 2),
+            round(floatval($car['inventory_balance'] ?? 0), 2),
+            $asOnDate,
+        ]);
+    }
+    fclose($output);
+    exit;
+}
 ?>
 
 <div class="page-header">
@@ -68,7 +108,10 @@ $clearUrl = 'car_inventory.php';
         <h1><i class="ri-parking-box-line"></i> Car Inventory</h1>
         <p class="page-subtitle">Car-wise inventory ledger balances, separated from the Balance Sheet detail.</p>
     </div>
-    <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    <div class="page-header-actions">
+        <a href="<?= clean('car_inventory.php?' . http_build_query(['as_on' => $asOnDate, 'q' => $search, 'status' => $status, 'export' => 'excel'])) ?>" class="btn btn-outline btn-sm"><i class="ri-file-excel-2-line"></i> Download Excel (CSV)</a>
+        <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
+    </div>
 </div>
 
 <div class="filter-bar">
