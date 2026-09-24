@@ -1,4 +1,5 @@
 <?php
+ob_start();
 $pageTitle = 'Balance Sheet';
 $pageIcon = '<i class="ri-file-list-3-line"></i>';
 require_once __DIR__ . '/../includes/header.php';
@@ -49,6 +50,55 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
         'to' => $asOnDate,
     ]);
 };
+
+if (get('export') === 'excel') {
+    if (ob_get_level() > 0) ob_end_clean();
+    $filenameDate = preg_replace('/[^0-9-]/', '', (string) $asOnDate);
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="balance-sheet-' . $filenameDate . '.csv"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    $output = fopen('php://output', 'w');
+    // Excel uses the BOM to detect UTF-8, including Indian account names.
+    fwrite($output, "\xEF\xBB\xBF");
+    $writeCsvRow = static function ($stream, array $values): void {
+        $safeValues = array_map(static function ($value) {
+            $value = (string) ($value ?? '');
+            if (is_numeric($value)) return $value;
+            return preg_match('/^[\\s]*[=+@\\-]/u', $value) ? "'" . $value : $value;
+        }, $values);
+        fputcsv($stream, $safeValues, ',', '"', '');
+    };
+
+    $writeCsvRow($output, ['Balance Sheet', 'As on', $asOnDate]);
+    $writeCsvRow($output, []);
+    $writeCsvRow($output, ['Section', 'Group', 'Account', 'Account Code', 'Debit Balance (INR)', 'Credit Balance (INR)']);
+    foreach (['ASSET' => 'Assets', 'LIABILITY' => 'Liabilities', 'EQUITY' => 'Capital'] as $sectionCode => $sectionLabel) {
+        $lastGroup = null;
+        foreach ($bs[$sectionCode] as $item) {
+            $group = (string) ($item['sub_group'] ?? '');
+            $writeCsvRow($output, [
+                $sectionLabel,
+                $group !== $lastGroup ? $group : '',
+                $item['name'] ?? '',
+                $item['code'] ?? '',
+                strtoupper((string) ($item['balance_type'] ?? 'DR')) === 'DR' ? round(floatval($item['amount'] ?? 0), 2) : 0,
+                strtoupper((string) ($item['balance_type'] ?? 'DR')) === 'CR' ? round(floatval($item['amount'] ?? 0), 2) : 0,
+            ]);
+            $lastGroup = $group;
+        }
+        $totalKey = $sectionCode === 'ASSET' ? 'total_assets' : ($sectionCode === 'LIABILITY' ? 'total_liabilities' : 'total_equity');
+        $totalLabel = $sectionCode === 'ASSET' ? 'Total Assets' : ($sectionCode === 'LIABILITY' ? 'Total Liabilities' : 'Total Capital');
+        $total = round(floatval($bs[$totalKey] ?? 0), 2);
+        $writeCsvRow($output, [$sectionLabel, '', $totalLabel, '', $sectionCode === 'ASSET' ? $total : 0, $sectionCode === 'ASSET' ? 0 : $total]);
+    }
+    $liabilitiesAndCapital = round(floatval($bs['total_liabilities']) + floatval($bs['total_equity']), 2);
+    $writeCsvRow($output, []);
+    $writeCsvRow($output, ['Balance Check', '', 'Total Assets', '', round(floatval($bs['total_assets']), 2), 0]);
+    $writeCsvRow($output, ['Balance Check', '', 'Liabilities + Capital', '', 0, $liabilitiesAndCapital]);
+    $writeCsvRow($output, ['Balance Check', '', 'Difference (Assets − Liabilities and Capital)', '', round(floatval($bs['total_assets']) - $liabilitiesAndCapital, 2), 0]);
+    fclose($output);
+    exit;
+}
 ?>
 
 <div class="page-header balance-sheet-page-header">
@@ -60,6 +110,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
             <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
         </form>
         <span class="meta-text">As on <?= formatDate($asOnDate) ?></span>
+        <a href="<?= clean('balance_sheet.php?' . http_build_query(['as_on' => $asOnDate, 'export' => 'excel'])) ?>" class="btn btn-outline btn-sm"><i class="ri-file-excel-2-line"></i> Download Excel (CSV)</a>
         <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>
 </div>
