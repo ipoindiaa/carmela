@@ -671,6 +671,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div class="entry-core-panel">
             <div class="form-row-3">
+                <div class="form-group" id="payment-account-group">
+                    <label class="form-label" id="payment-account-label">Payment Account *</label>
+                    <select name="payment_account" class="form-control searchable-select" id="payment_account">
+                        <?php $renderPrimaryAccountOptions($writablePrimaryAccounts, $preselectedAccountId); ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Accounting Date *</label>
+                    <input type="date" name="entry_date" class="form-control" value="<?= clean($preselectedEntryDate) ?>" required>
+                    <div class="form-hint">This date controls the month, balances, ageing, and reports. The system separately records the actual time you save the entry.</div>
+                </div>
                 <div class="form-group">
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>">
@@ -726,17 +737,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="hidden" name="dynamic_category_account_id" id="dynamic_category_account_id">
                     <input type="hidden" name="dynamic_category_direction" id="dynamic_category_direction">
                     <input type="hidden" id="dynamic_category_requires_car" value="0">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Accounting Date *</label>
-                    <input type="date" name="entry_date" class="form-control" value="<?= clean($preselectedEntryDate) ?>" required>
-                    <div class="form-hint">This date controls the month, balances, ageing, and reports. The system separately records the actual time you save the entry.</div>
-                </div>
-                <div class="form-group" id="payment-account-group">
-                    <label class="form-label" id="payment-account-label">Payment Account *</label>
-                    <select name="payment_account" class="form-control searchable-select" id="payment_account">
-                        <?php $renderPrimaryAccountOptions($writablePrimaryAccounts, $preselectedAccountId); ?>
-                    </select>
                 </div>
             </div>
 
