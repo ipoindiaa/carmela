@@ -51,7 +51,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
 };
 ?>
 
-<div class="page-header">
+<div class="page-header balance-sheet-page-header">
     <h1><i class="ri-file-list-3-line"></i> Balance Sheet</h1>
     <div class="page-actions">
         <form method="GET" class="inline-form">
@@ -64,6 +64,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
     </div>
 </div>
 
+<div class="balance-sheet-report">
 <div class="alert alert-info">
     <i class="ri-information-line"></i>
     <div><strong>Car-wise inventory has moved to the Car Inventory report.</strong><span>The Balance Sheet keeps one consolidated Vehicle Inventory asset so Total Assets remain complete and balanced.</span></div>
@@ -166,6 +167,7 @@ $ledgerUrl = static function (array $item) use ($canViewLedger, $ledgerFromDate,
         <div class="accounting-equation-sign" aria-hidden="true">=</div>
         <div><div class="text-muted">Liabilities + Capital</div><strong class="text-purple"><?= formatAmount($bs['total_liabilities'] + $bs['total_equity']) ?></strong></div>
     </div>
+</div>
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -1204,6 +1204,72 @@ tbody tr:last-child td { border-bottom: 0; }
     }
 }
 
+/* Balance Sheet printing: large account cards and their overflow wrappers must
+   fragment naturally across pages. Keeping a tall card/grid item together was
+   producing nearly empty sheets before the asset rows appeared. */
+@media print {
+    .balance-sheet-page-header form,
+    .balance-sheet-report > .alert {
+        display: none !important;
+    }
+
+    .balance-sheet-page-header {
+        display: flex !important;
+        justify-content: space-between !important;
+        margin: 0 0 8pt !important;
+        padding: 0 0 5pt !important;
+        border-bottom: 1pt solid #000000 !important;
+    }
+
+    .balance-sheet-page-header .meta-text {
+        color: #000000 !important;
+        font-size: 8pt !important;
+    }
+
+    .balance-sheet-report > .grid-2,
+    .balance-sheet-report .stack {
+        display: block !important;
+    }
+
+    .balance-sheet-report .card,
+    .balance-sheet-report .table-container,
+    .balance-sheet-report .table-container-inline,
+    .balance-sheet-report .table-container-fit {
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+        box-shadow: none !important;
+    }
+
+    .balance-sheet-report .card {
+        margin: 0 0 10pt !important;
+    }
+
+    .balance-sheet-report .table-container {
+        border-radius: 0 !important;
+    }
+
+    .balance-sheet-report table {
+        width: 100% !important;
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+    }
+
+    .balance-sheet-report tr {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+
+    .balance-sheet-report .card-header,
+    .balance-sheet-report .table-group-row,
+    .balance-sheet-report .table-summary-row {
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+    }
+}
+
 .dr-cr-pill {
     min-height: 22px;
     padding: 3px 8px;
