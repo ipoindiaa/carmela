@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 Auth::check();
+$db = Database::getInstance();
 
 $id = get('id');
 $businessId = Auth::user('business_id');
