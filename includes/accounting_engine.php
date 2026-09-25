@@ -4351,7 +4351,10 @@ class AccountingEngine {
 
         // RULE 7: Check period lock
         $this->validateDateNotLocked($entry['entry_date']);
-        $reversalDate = $reversalDate ?: date('Y-m-d');
+        // A reversal cancels the original transaction in the same accounting
+        // period. Keep its creation timestamp as audit metadata, but default
+        // the accounting date to the original entry date (not today's date).
+        $reversalDate = $reversalDate ?: $entry['entry_date'];
         $this->validateDateNotLocked($reversalDate);
 
         $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$entryId]);
@@ -4367,7 +4370,7 @@ class AccountingEngine {
                 $dependentLines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$dependentEntry['id']]);
                 $this->assertEntryCanBeReversed($dependentEntry, $dependentLines, false);
                 $linkedReason = "Linked reversal for {$entry['reference_no']}: {$reason}";
-                $linkedReversalId = $this->createReversalEntry($dependentEntry, $dependentLines, $linkedReason);
+                $linkedReversalId = $this->createReversalEntry($dependentEntry, $dependentLines, $linkedReason, $reversalDate);
                 $this->applyReversalBusinessEffects($dependentEntry, $dependentLines, $linkedReversalId);
             }
 
