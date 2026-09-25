@@ -21,19 +21,33 @@ if ($entry['status'] !== 'POSTED' || !empty($entry['is_reversal'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrf();
-    $reason = post('reason');
-    if (mb_strlen(trim((string) $reason)) < 5) { setFlash('error', 'Enter a clear deletion reason of at least 5 characters.'); redirect("reverse.php?id=$id"); }
-
     try {
+        verifyCsrf();
+        $reason = trim((string) post('reason'));
+        $reasonLength = function_exists('mb_strlen') ? mb_strlen($reason, 'UTF-8') : strlen($reason);
+        if ($reasonLength < 5) {
+            setFlash('error', 'Enter a clear deletion reason of at least 5 characters.');
+            redirect("reverse.php?id=$id");
+        }
+
         $entryBeforeDelete = $db->fetch("SELECT * FROM journal_entries WHERE id = ? AND business_id = ?", [$id, $businessId]);
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
         $reversalId = $engine->reverseEntry($id, $reason);
         Auth::auditLog('DELETE', 'journal_entry', $id, 'Entry deleted through reversal: ' . $reason, $entryBeforeDelete, ['reversal_entry_id' => $reversalId], 'transactions');
         setFlash('success', 'Entry deleted from active books. Reversal Ref: ' . $reversalId);
         redirect("view.php?id=$reversalId");
-    } catch (Exception $e) {
-        setFlash('error', $e->getMessage());
+    } catch (Throwable $e) {
+        error_log(sprintf(
+            'Journal reversal failed for business %s, entry %s: %s in %s:%d',
+            (string) $businessId,
+            (string) $id,
+            $e->getMessage(),
+            $e->getFile(),
+            $e->getLine()
+        ));
+        setFlash('error', $e instanceof Exception
+            ? $e->getMessage()
+            : 'The entry could not be reversed because of an unexpected server error. No changes were saved; please try again or contact support.');
         redirect("reverse.php?id=$id");
     }
 }
