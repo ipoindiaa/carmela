@@ -24,11 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         verifyCsrf();
         $reason = trim((string) post('reason'));
-        $reasonLength = function_exists('mb_strlen') ? mb_strlen($reason, 'UTF-8') : strlen($reason);
-        if ($reasonLength < 5) {
-            setFlash('error', 'Enter a clear deletion reason of at least 5 characters.');
-            redirect("reverse.php?id=$id");
-        }
+        if ($reason === '') $reason = 'No reason provided';
 
         $entryBeforeDelete = $db->fetch("SELECT * FROM journal_entries WHERE id = ? AND business_id = ?", [$id, $businessId]);
         $engine = new AccountingEngine($businessId, Auth::user('user_id'));
@@ -64,7 +60,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 <div class="card content-narrow">
     <div class="card-body">
-        <div class="alert alert-warning"><i class="ri-alert-line"></i> The entry will disappear from active books by creating a mirror-image reversal. Its original values and deletion reason remain permanently available in History.</div>
+        <div class="alert alert-warning"><i class="ri-alert-line"></i> The entry will be removed from active books by creating a mirror-image reversal. Its original values remain in History. A reason is optional; if left blank, History will record “No reason provided.”</div>
 
         <div class="table-container block-end">
             <table class="detail-table">
@@ -78,8 +74,8 @@ require_once __DIR__ . '/../includes/header.php';
         <form method="POST" data-confirm-submit="Create the reversal entry now? The original record will remain in history and cannot be restored silently.">
             <?= csrfField() ?>
             <div class="form-group">
-                <label class="form-label">Deletion Reason *</label>
-                <textarea name="reason" class="form-control" placeholder="Why was this entry added by mistake?" required minlength="5" rows="3"></textarea>
+                <label class="form-label">Deletion Reason <span class="text-muted">(Optional)</span></label>
+                <textarea name="reason" class="form-control" placeholder="Optional — add a note for the audit history" rows="3"></textarea>
             </div>
             <div class="form-actions form-actions-start">
                 <button type="submit" class="btn btn-danger"><i class="ri-delete-bin-line"></i> Confirm Delete</button>
