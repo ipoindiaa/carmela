@@ -1181,6 +1181,12 @@ tbody tr:last-child td { border-bottom: 0; }
         white-space: nowrap;
     }
 
+    .cashbook-report-table .date-time-stack.date-time-backdated {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        white-space: normal;
+    }
+
     .cashbook-report-table .date-time-primary,
     .cashbook-report-table .date-time-secondary,
     .cashbook-report-table .table-note,

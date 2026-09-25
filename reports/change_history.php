@@ -92,7 +92,7 @@ function renderAuditLines($lines) {
                 <div class="card-header history-card-header">
                     <div>
                         <h3><span class="badge badge-blue"><?= clean($log['action']) ?></span> <?= clean($log['description'] ?: $entityLabel . ' changed') ?></h3>
-                        <div class="history-card-meta text-muted"><?= clean($log['full_name'] ?? 'System') ?> · <?= clean($log['module'] ?: 'system') ?> · <?= formatDate($log['created_at'], 'd M Y, h:i:s A') ?></div>
+                        <div class="history-card-meta text-muted"><?= clean($log['full_name'] ?? 'System') ?> · <?= clean($log['module'] ?: 'system') ?> · <?= formatTimestamp($log['created_at'], 'd M Y, h:i:s A') ?></div>
                     </div>
                     <?php if (!empty($log['request_uri'])): ?><span class="history-request-uri"><?= clean($log['request_uri']) ?></span><?php endif; ?>
                 </div>

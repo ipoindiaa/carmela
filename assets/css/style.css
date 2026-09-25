@@ -136,6 +136,10 @@
     white-space: nowrap;
 }
 
+.date-time-stack.date-time-backdated {
+    white-space: normal;
+}
+
 .date-time-primary {
     font-size: var(--font-size-base);
     font-weight: 600;
@@ -145,6 +149,11 @@
 .date-time-secondary {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
+}
+
+.date-time-recorded {
+    max-width: 190px;
+    line-height: 1.3;
 }
 
 td.text-right .date-time-stack,

@@ -249,7 +249,7 @@ foreach ($lines as $l) { if ($l['entry_type'] === 'DR') $totalDr += $l['amount']
                         </a>
                         <div class="attachment-meta">
                             <strong><?= clean($attachment['original_name']) ?></strong>
-                            <span><?= formatDate($attachment['created_at'], 'd M Y, h:i A') ?></span>
+                            <span><?= formatTimestamp($attachment['created_at'], 'd M Y, h:i A') ?></span>
                         </div>
                         <div class="attachment-actions">
                             <a href="<?= clean($url) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline"><i class="ri-eye-line"></i> Open</a>

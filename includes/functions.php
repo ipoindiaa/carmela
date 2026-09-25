@@ -240,7 +240,15 @@ function formatTime($dateTime, $format = 'h:i A') {
     if (!$dateTime) return '-';
     $timestamp = strtotime($dateTime);
     if ($timestamp === false) return '-';
-    return date($format, $timestamp);
+    return date($format, $timestamp) . ' ' . APP_TIMEZONE_LABEL;
+}
+
+/** Format an audit/recorded timestamp in the fixed business timezone. */
+function formatTimestamp($dateTime, $format = 'd M Y, h:i A') {
+    if (!$dateTime) return '-';
+    $timestamp = strtotime($dateTime);
+    if ($timestamp === false) return '-';
+    return date($format, $timestamp) . ' ' . APP_TIMEZONE_LABEL;
 }
 
 /**
@@ -254,11 +262,18 @@ function renderDateTimeStack($date, $timeSource = null, $dateFormat = 'd M Y', $
     $dateLabel = formatDate($date ?: $timeSource, $dateFormat);
     $resolvedTimeSource = $timeSource ?: $date;
     $hasTime = is_string($resolvedTimeSource) && preg_match('/\d{1,2}:\d{2}/', $resolvedTimeSource);
+    $resolvedTimestamp = $hasTime ? strtotime($resolvedTimeSource) : false;
+    $accountingTimestamp = $date ? strtotime($date) : false;
+    $recordedOnDifferentDate = $hasTime && $resolvedTimestamp !== false && $accountingTimestamp !== false
+        && date('Y-m-d', $resolvedTimestamp) !== date('Y-m-d', $accountingTimestamp);
     $timeLabel = $hasTime ? formatTime($resolvedTimeSource, $timeFormat) : '-';
+    if ($recordedOnDifferentDate) {
+        $timeLabel = 'Recorded ' . formatTimestamp($resolvedTimeSource, $dateFormat . ', ' . $timeFormat);
+    }
 
-    return '<span class="date-time-stack">'
+    return '<span class="date-time-stack' . ($recordedOnDifferentDate ? ' date-time-backdated' : '') . '">'
         . '<span class="date-time-primary">' . clean($dateLabel) . '</span>'
-        . '<span class="date-time-secondary">' . clean($timeLabel) . '</span>'
+        . '<span class="date-time-secondary' . ($recordedOnDifferentDate ? ' date-time-recorded' : '') . '">' . clean($timeLabel) . '</span>'
         . '</span>';
 }
 

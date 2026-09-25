@@ -31,6 +31,12 @@ $databaseNow = substr((string) $clock['local_now'], 0, 16);
 assertTimezoneTest($databaseNow === $phpNow, 'PHP and MySQL return the same local date and time');
 assertTimezoneTest(formatDate($clock['local_now'], 'Y-m-d H:i') === $phpNow, 'Shared date formatting preserves Indian local time');
 
+$sameDayStack = renderDateTimeStack('2026-09-25', '2026-09-25 11:23:03');
+$backdatedStack = renderDateTimeStack('2026-09-15', '2026-09-25 11:23:03');
+assertTimezoneTest(str_contains($sameDayStack, '11:23 AM IST'), 'Same-day journal timestamps are explicitly labeled IST');
+assertTimezoneTest(str_contains($backdatedStack, '15 Sep 2026'), 'Backdated rows keep the accounting date prominent');
+assertTimezoneTest(str_contains($backdatedStack, 'Recorded 25 Sep 2026, 11:23 AM IST'), 'Backdated rows also show the actual local creation date and time');
+
 $db->query('CREATE TEMPORARY TABLE timezone_regression (created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)');
 $db->query('INSERT INTO timezone_regression VALUES ()');
 $stored = $db->fetch('SELECT created_at FROM timezone_regression LIMIT 1');

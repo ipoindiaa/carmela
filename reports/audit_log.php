@@ -75,7 +75,7 @@ $auditUsers = $db->fetchAll("SELECT id,full_name FROM users WHERE business_id=? 
             $actionBadge = ['CREATE' => 'badge-green', 'UPDATE' => 'badge-blue', 'DELETE' => 'badge-red', 'LOGIN' => 'badge-purple', 'LOGOUT' => 'badge-gray', 'REVERSE' => 'badge-yellow'];
         ?>
         <tr>
-            <td class="nowrap"><?= formatDate($log['created_at'], 'd M Y, H:i:s') ?></td>
+            <td class="nowrap"><?= formatTimestamp($log['created_at'], 'd M Y, H:i:s') ?></td>
             <td><?= clean($log['full_name'] ?? 'System') ?></td>
             <td><span class="badge <?= $actionBadge[$log['action']] ?? 'badge-gray' ?>"><?= $log['action'] ?></span></td>
             <td><?= clean($log['entity_type'] ?? '-') ?><?php if (!empty($log['entity_id'])): ?><div class="table-secondary"><?= clean($log['entity_id']) ?></div><?php endif; ?></td>

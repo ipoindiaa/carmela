@@ -236,7 +236,7 @@ foreach ($users as $user) {
                 <td><span class="badge <?= $u['role'] === ROLE_ADMIN ? 'badge-purple' : 'badge-blue' ?>"><?= $u['role'] ?></span></td>
                 <td><?= clean($permissionSummary) ?></td>
                 <td class="text-center"><span class="badge <?= $u['is_active'] ? 'badge-green' : 'badge-red' ?>"><?= $u['is_active'] ? 'Active' : 'Disabled' ?></span></td>
-                <td><?= $u['last_login'] ? formatDate($u['last_login'], 'd M, H:i') : 'Never' ?></td>
+                <td><?= $u['last_login'] ? formatTimestamp($u['last_login'], 'd M, H:i') : 'Never' ?></td>
                 <td class="text-center table-actions">
                     <?php $editableUser = ['id' => $u['id'], 'full_name' => $u['full_name'], 'email' => $u['email'], 'role' => $u['role']]; ?>
                     <button type="button" class="btn btn-sm btn-outline" title="Edit user" onclick='openUserEditModal(<?= json_encode($editableUser, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'><i class="ri-edit-line"></i></button>

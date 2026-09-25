@@ -6,8 +6,11 @@ define('APP_NAME', 'Tiranga Car World');
 define('APP_VERSION', '1.0');
 define('APP_CURRENCY', '₹');
 define('APP_CURRENCY_CODE', 'INR');
+// Business-wide clock: all users see and record timestamps in India Standard
+// Time regardless of their browser, device, or current location.
 define('APP_TIMEZONE', 'Asia/Kolkata');
 define('APP_TIMEZONE_OFFSET', '+05:30');
+define('APP_TIMEZONE_LABEL', 'IST');
 define('APP_FY_START_MONTH', 4); // April
 
 date_default_timezone_set(APP_TIMEZONE);
