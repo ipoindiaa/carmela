@@ -1195,9 +1195,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div><strong id="counterparty-heading">Person / Company *</strong><span id="counterparty-help">The correct ledger account will be used automatically.</span></div>
                         <button type="button" class="btn btn-outline btn-sm" id="counterparty-new-toggle" onclick="toggleNewParty('counterparty')"><i class="ri-user-add-line"></i> Add New</button>
                     </div>
-                    <input type="hidden" name="counterparty_id" id="counterparty_id">
+                    <input type="hidden" name="counterparty_id" id="counterparty_id" value="<?= in_array($preselectedType, ['LOAN_GIVEN', 'LOAN_TAKEN'], true) ? clean($preselectedPartyId) : '' ?>">
                     <button type="button" class="picker-trigger picker-trigger-wide" id="counterparty-picker-trigger" onclick="openCounterpartyPicker(this)">
-                        <span>Select existing person / company</span>
+                        <span><?= in_array($preselectedType, ['LOAN_GIVEN', 'LOAN_TAKEN'], true) && $preselectedParty ? clean($preselectedParty['name']) : 'Select existing person / company' ?></span>
                         <i class="ri-search-line"></i>
                     </button>
                     <div class="form-row conditional-row" id="counterparty-new-fields" hidden>

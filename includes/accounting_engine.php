@@ -3590,7 +3590,10 @@ class AccountingEngine {
         if ($amount <= 0) {
             throw new Exception("Borrowed amount must be greater than zero.");
         }
-        $party = $this->resolveParty($partyId, $partyName, $partyPhone, 'CREDITOR', ['CREDITOR', 'SELLER']);
+        // The existing lender picker includes DEALER records as valid
+        // payable-side companies. Keep the posting validation aligned with
+        // that picker so a dealer who lends money is not rejected at save.
+        $party = $this->resolveParty($partyId, $partyName, $partyPhone, 'CREDITOR', ['CREDITOR', 'SELLER', 'DEALER']);
         $partyId = $party['id'];
         $partyName = $party['name'];
 
