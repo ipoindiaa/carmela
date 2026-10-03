@@ -68,6 +68,7 @@ $ownerPaid = round(max(0, floatval($paidAtPurchase['total'] ?? 0)) + max(0, floa
 
 echo json_encode([
     'found' => true,
+    'ownership_type' => strtoupper((string) ($car['ownership_type'] ?? 'OWNED')),
     'registration_no' => formatRegistrationNo($car['registration_no']),
     'owner_name' => $car['seller_name'] ?: '',
     'owner_url' => $car['seller_id'] ? APP_URL . 'parties/view.php?id=' . urlencode($car['seller_id']) : '',

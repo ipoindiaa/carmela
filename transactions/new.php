@@ -399,7 +399,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $amountReceivedInput = trim((string) post('amount_received', ''));
                 $amountReceived = $amountReceivedInput === '' ? null : parseDecimalInput($amountReceivedInput);
                 $buyerName = post('buyer_name');
-                $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $commissionAmount, post('buyer_party_id'), post('buyer_phone'));
+                $saleCar = $db->fetch(
+                    "SELECT id, ownership_type FROM cars WHERE id = ? AND business_id = ?",
+                    [$carId, $businessId]
+                );
+                if (!$saleCar) {
+                    throw new Exception('Select a valid car to sell.');
+                }
+                if (in_array($saleCar['ownership_type'] ?? 'OWNED', ['COMMISSION', 'OUTSIDE'], true)) {
+                    // Commission cars use the same New Entry sale flow, while
+                    // keeping gross proceeds payable to the source entity and
+                    // recognizing only the agreed commission as business income.
+                    $entryId = $engine->commissionCarSale(
+                        $carId,
+                        $salePrice,
+                        $commissionAmount,
+                        $date,
+                        $paymentAccountId,
+                        'FULL_AMOUNT',
+                        $narration,
+                        post('buyer_party_id'),
+                        $buyerName,
+                        post('buyer_phone'),
+                        $amountReceived
+                    );
+                } else {
+                    $entryId = $engine->carSale($carId, $salePrice, $date, $paymentAccountId, $narration, $buyerName, $amountReceived, $commissionAmount, post('buyer_party_id'), post('buyer_phone'));
+                }
                 $attachmentCarId = $carId;
                 break;
 
@@ -1050,9 +1076,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div><strong>Acquisition balances are still open on this car.</strong><span>You can still record the sale. Clear the owner and dealer balances from the car page so the purchase side finishes correctly.</span></div>
                     </div>
                 </div>
+                <div class="alert alert-info" id="commission-sale-note" hidden>
+                    <i class="ri-information-line"></i>
+                    <div><strong>Source-entity car</strong><span>The business records the buyer's payment, tracks any unpaid buyer balance, recognizes the commission as income, and records the remaining sale proceeds as payable to the source entity.</span></div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Sell Car Amount (₹) *</label>
+                        <label class="form-label" id="sale-price-label">Sell Car Amount (₹) *</label>
                         <div class="input-group">
                             <span class="input-prefix">₹</span>
                             <input type="text" name="sale_price" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
@@ -1065,7 +1095,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span class="input-prefix">₹</span>
                             <input type="text" name="sale_commission_amount" class="form-control currency-input" placeholder="0" inputmode="decimal" autocomplete="off">
                         </div>
-                        <div class="form-hint">Business earning on this sold car.</div>
+                        <div class="form-hint" id="sale-commission-hint">Business earning on this sold car.</div>
                     </div>
                 </div>
                 <div class="form-row">
@@ -2368,7 +2398,7 @@ async function renderEntityPickerResults(query) {
         }
 
         results.innerHTML = matches.map((item) => `
-            <button type="button" class="picker-result${item.selectable === false ? ' is-unavailable' : ''}" ${item.selectable === false ? 'disabled aria-disabled="true"' : ''} data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}" data-monthly-salary="${item.monthly_salary || 0}">
+            <button type="button" class="picker-result${item.selectable === false ? ' is-unavailable' : ''}" ${item.selectable === false ? 'disabled aria-disabled="true"' : ''} data-entity-id="${item.id}" data-entity-label="${encodeURIComponent(item.label || '')}" data-linked-party-id="${item.linked_party_id || ''}" data-linked-party-label="${encodeURIComponent(item.linked_party_label || '')}" data-token-available="${item.token_available || 0}" data-purchase-pending="${item.purchase_pending || 0}" data-monthly-salary="${item.monthly_salary || 0}" data-ownership-type="${item.ownership_type || ''}">
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
                     <small>${escapeHtml(item.meta || '')}</small>
@@ -2386,7 +2416,8 @@ async function renderEntityPickerResults(query) {
                     decodeURIComponent(this.dataset.linkedPartyLabel || ''),
                     this.dataset.tokenAvailable || '0',
                     this.dataset.purchasePending || '0',
-                    parseFloat(this.dataset.monthlySalary || '0')
+                    parseFloat(this.dataset.monthlySalary || '0'),
+                    this.dataset.ownershipType || ''
                 );
             });
         });
@@ -2412,7 +2443,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
     }
 }
 
-function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0', purchasePending = '0', monthlySalary = 0) {
+function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPartyLabel = '', tokenAvailable = '0', purchasePending = '0', monthlySalary = 0, ownershipType = '') {
     const triggerButton = activeEntityPicker?.button || null;
     if (kind === 'partner' && triggerButton?.classList.contains('pf-partner-trigger')) {
         const row = triggerButton.closest('.partner-funding-row');
@@ -2443,7 +2474,7 @@ function selectEntityPickerValue(kind, id, label, linkedPartyId = '', linkedPart
     }
     if (kind === 'car') {
         applyCarTokenContext(linkedPartyId, linkedPartyLabel, tokenAvailable);
-        loadPurchaseSourcePanel();
+        loadPurchaseSourcePanel(ownershipType);
     }
     if (kind === 'employee' && monthlySalary > 0) {
         const grossInput = document.getElementById('salary_gross_input');
@@ -2482,15 +2513,32 @@ function applyCarTokenContext(partyId, partyLabel, available) {
 }
 
 // Sell Car shows acquisition facts, it never re-collects them.
-async function loadPurchaseSourcePanel() {
+async function loadPurchaseSourcePanel(selectedOwnershipType = '') {
     const panel = document.getElementById('purchase-source-panel');
+    const commissionNote = document.getElementById('commission-sale-note');
+    const commissionInput = document.querySelector('input[name="sale_commission_amount"]');
+    const commissionHint = document.getElementById('sale-commission-hint');
+    const salePriceLabel = document.getElementById('sale-price-label');
     if (!panel) return;
     const txnType = document.getElementById('transaction_type')?.value || '';
     const carId = document.getElementById('sale_car_id')?.value || '';
     if (txnType !== 'CAR_SALE' || !carId) {
         panel.hidden = true;
+        if (commissionNote) commissionNote.hidden = true;
+        if (commissionInput) commissionInput.required = false;
+        if (commissionHint) commissionHint.textContent = 'Business earning on this sold car.';
+        if (salePriceLabel) salePriceLabel.textContent = 'Sell Car Amount (₹) *';
         return;
     }
+
+    const isCommissionCar = ['OUTSIDE', 'COMMISSION'].includes(String(selectedOwnershipType).toUpperCase());
+    panel.hidden = isCommissionCar;
+    if (commissionNote) commissionNote.hidden = !isCommissionCar;
+    if (commissionInput) commissionInput.required = isCommissionCar;
+    if (commissionHint) commissionHint.textContent = isCommissionCar
+        ? 'Required. This is the business income retained from the buyer’s gross sale payment.'
+        : 'Business earning on this sold car.';
+    if (salePriceLabel) salePriceLabel.textContent = isCommissionCar ? 'Gross Sale Amount (₹) *' : 'Sell Car Amount (₹) *';
 
     try {
         const response = await fetch(`car_purchase_source.php?car_id=${encodeURIComponent(carId)}`, {
@@ -2502,6 +2550,15 @@ async function loadPurchaseSourcePanel() {
             panel.hidden = true;
             return;
         }
+
+        const isCommissionCar = ['OUTSIDE', 'COMMISSION'].includes(String(data.ownership_type || selectedOwnershipType).toUpperCase());
+        panel.hidden = isCommissionCar;
+        if (commissionNote) commissionNote.hidden = !isCommissionCar;
+        if (commissionInput) commissionInput.required = isCommissionCar;
+        if (commissionHint) commissionHint.textContent = isCommissionCar
+            ? 'Required. This is the business income retained from the buyer’s gross sale payment.'
+            : 'Business earning on this sold car.';
+        if (salePriceLabel) salePriceLabel.textContent = isCommissionCar ? 'Gross Sale Amount (₹) *' : 'Sell Car Amount (₹) *';
 
         const setText = (id, value) => {
             const node = document.getElementById(id);

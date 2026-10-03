@@ -146,7 +146,7 @@ switch ($kind) {
             $isSelectable = true;
             $selectionNote = '';
             $status = strtoupper((string) ($row['status'] ?? ''));
-            if ($context === 'CAR_SALE' && ($status !== 'IN_STOCK' || $ownershipType !== 'OWNED')) {
+            if ($context === 'CAR_SALE' && $status !== 'IN_STOCK') {
                 $isSelectable = false;
                 $selectionNote = 'Unavailable for a new sale';
             } elseif ($context === 'CAR_TOKEN_RECEIVED' && $status !== 'IN_STOCK') {
@@ -168,6 +168,7 @@ switch ($kind) {
             if ($selectionNote !== '') $metaParts[] = $selectionNote;
             $results[] = [
                 'id' => $row['id'],
+                'ownership_type' => $ownershipType,
                 'label' => trim(formatRegistrationNo($row['registration_no']) . ' — ' . trim(($row['make'] ?? '') . ' ' . ($row['model'] ?? '')) . ($ownershipType === 'OWNED' ? '' : ' · ' . $ownershipLabel)),
                 'meta' => trim(implode(' · ', array_filter($metaParts))),
                 'linked_party_id' => $linkedPartyId,
