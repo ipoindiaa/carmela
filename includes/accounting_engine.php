@@ -3643,9 +3643,6 @@ class AccountingEngine {
         // the acquisition amount and the payment, while the car inventory cost
         // grows only from money actually paid.
         if ($carId && $this->usesPaymentBasedPurchaseAmount($car)) {
-            if (!in_array($party['type'], ['CREDITOR', 'SELLER'], true)) {
-                throw new Exception('Select the vehicle owner / seller for a car purchase payment. Dealer commission uses its separate payment flow.');
-            }
             $this->validateCashAvailable($paymentAccount, $amount);
             $ownsTransaction = !$this->db->inTransaction();
             if ($ownsTransaction) $this->db->beginTransaction();

@@ -190,6 +190,39 @@ try {
         assertUll(str_contains($expected->getMessage(), 'calculated from recorded owner payments'), 'Payment-based cars direct operators to Add Purchase Payment instead of a fixed-price correction');
     }
 
+    // Dealer-type ledgers are valid owner/seller relationships for a purchased
+    // car too; only dealer commission payable itself belongs to its dedicated
+    // settlement workflow.
+    $dealerOwnerId = $engine->getOrCreateParty('ULL Dealer-Type Seller ' . $suffix, 'DEALER');
+    $dealerOwner = $engine->getVehicleOwnerParty($dealerOwnerId);
+    assertUll($dealerOwner['type'] === 'DEALER', 'Dealer-type party can be selected as a vehicle owner / seller');
+    $dealerOwnedCarId = Database::uuid();
+    $dealerOwnedRegistration = 'GJ99DO' . random_int(1000, 9999);
+    $dealerOwnedAccountId = $engine->createAccount('ULL-DO-' . $suffix, "ULL Dealer-Owned Car - $dealerOwnedRegistration", 'ASSET', 'Inventory', 'CAR', $dealerOwnedCarId);
+    $db->insert('cars', [
+        'id' => $dealerOwnedCarId,
+        'business_id' => $business['id'],
+        'registration_no' => $dealerOwnedRegistration,
+        'make' => 'ULL',
+        'model' => 'Dealer-type seller',
+        'purchase_date' => $date,
+        'purchase_price' => 20000,
+        'purchase_paid_amount' => 20000,
+        'purchase_amount_mode' => 'PAYMENTS',
+        'seller_party_id' => $dealerOwnerId,
+        'status' => 'IN_STOCK',
+        'account_id' => $dealerOwnedAccountId,
+    ]);
+    $dealerOwnerPaymentId = $engine->loanRepaid($dealerOwnerId, 5000, $date, $cash['id'], 'ULL dealer-type car owner installment', $dealerOwnedCarId);
+    $dealerOwnerCar = $db->fetch("SELECT purchase_price, purchase_paid_amount FROM cars WHERE id = ?", [$dealerOwnedCarId]);
+    $dealerOwnerPaymentLines = $db->fetchAll("SELECT entry_type, amount FROM journal_lines WHERE journal_entry_id = ?", [$dealerOwnerPaymentId]);
+    assertUll(
+        abs(floatval($dealerOwnerCar['purchase_price']) - 25000.0) < 0.01
+        && abs(floatval($dealerOwnerCar['purchase_paid_amount']) - 25000.0) < 0.01
+        && count($dealerOwnerPaymentLines) === 4,
+        'Payment Clearing Paid accepts a Dealer-type party linked as the purchased car seller and adds the installment to cost'
+    );
+
     $ownerOptionalCarId = Database::uuid();
     $ownerOptionalRegistration = 'GJ99OP' . random_int(1000, 9999);
     $ownerOptionalCarAccountId = $engine->createAccount('ULL-OP-' . $suffix, "ULL Owner Optional Car - $ownerOptionalRegistration", 'ASSET', 'Inventory', 'CAR', $ownerOptionalCarId);
