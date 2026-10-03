@@ -2583,7 +2583,9 @@ async function loadPurchaseSourcePanel(selectedOwnershipType = '') {
 
         const warning = document.getElementById('ps-open-balance-warning');
         if (warning) warning.hidden = !((data.owner_pending_value > 0.009) || (data.dealer_pending_value > 0.009));
-        panel.hidden = false;
+        // Commission/outside cars have no business-owned purchase-source panel.
+        // Keep it hidden after populating the response data as well.
+        panel.hidden = isCommissionCar;
     } catch (error) {
         panel.hidden = true;
     }
