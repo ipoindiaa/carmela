@@ -45,14 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // The final amount is not required at intake. This car's purchase
         // amount starts with actual payments and grows with each later owner
         // payment, rather than asking the operator to guess a fixed price.
-        $purchasePrice = 0.0;
+        $agreedPriceInput = trim((string) post('agreed_purchase_price', ''));
+        $hasAgreedPrice = $agreedPriceInput !== '';
+        $agreedPrice = $hasAgreedPrice ? parseDecimalInput($agreedPriceInput) : null;
+        if ($hasAgreedPrice && $agreedPrice <= 0) {
+            throw new Exception('Enter a purchase price greater than zero, or leave it blank.');
+        }
         $purchaseDate = trim((string) post('purchase_date'));
         if ($purchaseDate === '') {
             throw new Exception('Purchase date is required.');
         }
         $paymentAccount = post('payment_account');
         $purchasePaidInput = trim((string) post('purchase_paid_now', ''));
-        $purchasePaidNow = $purchasePaidInput === '' ? null : parseDecimalInput($purchasePaidInput);
+        $purchasePaidNow = $purchasePaidInput === '' ? 0.0 : parseDecimalInput($purchasePaidInput);
         $sellerPartyId = trim((string) post('seller_party_id'));
         $sellerName = trim((string) post('seller_name'));
         if ($sellerPartyId !== '' && $sellerName !== '') {
@@ -130,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             static fn($funding) => floatval($funding['amount'] ?? 0),
             $partnerFunding
         )), 2);
-        $purchasePrice = round(floatval($purchasePaidNow ?? 0) + $initialPartnerFunding, 2);
+        $purchasePrice = $agreedPrice ?? round($purchasePaidNow + $initialPartnerFunding, 2);
         // NOTE: Seller is only required when there is an outstanding balance
         // (partial payment). The accounting engine handles full-payment or
         // no-seller cases directly. See validateCarPurchaseInput().
@@ -154,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'purchase_date' => $purchaseDate,
             'purchase_price' => $purchasePrice,
             'purchase_paid_amount' => $purchasePaidNow,
-            'purchase_amount_mode' => 'PAYMENTS',
+            'purchase_amount_mode' => $hasAgreedPrice ? 'FIXED' : 'PAYMENTS',
             'ownership_type' => 'OWNED',
             'expected_sale_price' => $expectedSalePrice,
             'has_second_key' => post('has_second_key') === '1' ? 1 : 0,
@@ -234,6 +239,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">Color</label>
                     <input type="text" name="color" class="form-control" placeholder="e.g., White">
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="agreed_purchase_price">Purchase Price (₹) <span class="section-optional">(Optional)</span></label>
+                    <input type="text" name="agreed_purchase_price" id="agreed_purchase_price" class="form-control currency-input" inputmode="decimal" value="<?= clean(post('agreed_purchase_price')) ?>">
+                    <div class="form-hint">Enter the agreed total, including any token paid to the seller. Leave blank to build the cost from recorded payments.</div>
+                </div>
             </div>
             <hr class="form-divider">
             <h3 class="form-section-title form-section-title-standalone section-accent-green"><i class="ri-bank-card-line"></i> Payment Details</h3>
@@ -260,9 +270,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">First Payment to Owner (₹)</label>
                     <div class="input-group">
                         <span class="input-prefix">₹</span>
-                        <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank when nothing is paid now" inputmode="decimal" autocomplete="off">
+                        <input type="text" name="purchase_paid_now" class="form-control currency-input" placeholder="Leave blank when nothing is paid now" inputmode="decimal" autocomplete="off" value="<?= clean(post('purchase_paid_now')) ?>">
                     </div>
-                    <div class="form-hint">This starts the purchase amount. Each later Car Purchase Payment is added to the same car's purchase amount.</div>
+                    <div class="form-hint">Enter only what you paid now, including any seller token paid now. If you entered an agreed price, later payments reduce the pending balance. Otherwise, they build the purchase amount.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Reference Selling Price (₹)</label>

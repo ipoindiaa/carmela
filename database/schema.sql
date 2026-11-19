@@ -732,4 +732,25 @@ CREATE TABLE `cash_reconciliations` (
     KEY `idx_cash_recon_entry` (`journal_entry_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Shared person identity. Accounting roles retain their original record IDs
+-- and ledgers; old names remain searchable after an audited identity merge.
+CREATE TABLE `person_identities` (
+    `id` CHAR(36) NOT NULL PRIMARY KEY,
+    `business_id` CHAR(36) NOT NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY `person_business` (`business_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `person_identity_members` (
+    `business_id` CHAR(36) NOT NULL,
+    `kind` VARCHAR(12) NOT NULL,
+    `record_id` CHAR(36) NOT NULL,
+    `person_id` CHAR(36) NOT NULL,
+    `aliases` TEXT NOT NULL,
+    PRIMARY KEY (`business_id`, `kind`, `record_id`),
+    KEY `person_members` (`business_id`, `person_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 COMMIT;

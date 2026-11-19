@@ -15,6 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
     verifyCsrf();
     try {
         $name = trim((string) post('name'));
+        $linkedPerson = (new PersonIdentity($businessId))->identityFor('partner', $id);
+        if ($linkedPerson && $name !== $linkedPerson['name']) throw new Exception('This is a merged person. Keep the shared name; use Merge Persons to consolidate another record.');
         if ($name === '') throw new Exception('Partner name is required.');
         $partnerType = strtoupper((string) post('partner_type', 'MAIN'));
         if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) throw new Exception('Invalid partner type.');
@@ -92,7 +94,7 @@ $totalWithdrawn = $db->fetch(
      JOIN journal_entries je ON je.id = jl.journal_entry_id
      WHERE jl.account_id = ? AND jl.entry_type = 'DR'
        AND je.business_id = ? AND je.status = 'POSTED' AND je.is_reversal = 0
-       AND je.transaction_type = 'PARTNER_WITHDRAW'",
+       AND je.transaction_type IN ('PARTNER_WITHDRAW', 'PARTNER_SETTLEMENT')",
     [$partner['capital_account_id'], $businessId]
 );
 $capitalBalance = floatval($position['capital_balance'] ?? 0);
@@ -103,16 +105,25 @@ $netPosition = round($capitalBalance + $currentBalance, 2);
 $netPositionLabel = abs($netPosition) < 0.01 ? 'Overall Balance Settled' : ($netPosition > 0 ? 'Total Business Owes' : 'Total Partner Owes');
 $partnerTypeLabel = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'Car-wise Partner' : 'Main Partner';
 $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MAIN';
+$showPortfolioTotal = $backType === 'CARWISE';
+$portfolioInvested = 0.0;
+$portfolioPendingProfit = 0.0;
 ?>
 
 <div class="page-header">
     <h1><i class="ri-group-line"></i> <?= clean($partner['name']) ?> <span class="badge badge-purple"><?= clean($partnerTypeLabel) ?></span></h1>
     <div class="page-actions">
+        <a href="../persons/view.php?kind=partner&amp;id=<?= clean($id) ?>" class="btn btn-outline btn-sm">Combined Person Statement</a>
+        <?php if (Auth::isAdmin() && !empty($partner['is_active'])): ?><a href="../persons/merge.php?kind=partner&amp;id=<?= clean($id) ?>" class="btn btn-outline btn-sm">Merge Persons</a><?php endif; ?>
         <?php if (Auth::hasEntityAccess('partner', 'write')): ?><a href="view.php?id=<?= $partner['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($partner['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($partner['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=partner&amp;entity_id=<?= $partner['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if (!empty($partner['is_active']) && Auth::hasEntityAccess('partner', 'delete')): ?><a href="../delete_record.php?entity_type=partner&amp;id=<?= clean($partner['id']) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>
         <?php if (!empty($partner['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $partner['capital_account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Capital</a><?php endif; ?>
-        <?php if (!empty($partner['is_active']) && (floatval($position['pending_payable'] ?? 0) > 0.009 || floatval($position['pending_receivable'] ?? 0) > 0.009)): ?><a href="../transactions/new.php?type=PARTNER_SETTLEMENT&amp;partner_id=<?= urlencode($partner['id']) ?>" class="btn btn-primary btn-sm"><i class="ri-scales-3-line"></i> Settle Profit / Loss</a><?php endif; ?>
+        <?php if (!empty($partner['is_active']) && (
+            floatval($position['pending_payable'] ?? 0) > 0.009
+            || floatval($position['pending_receivable'] ?? 0) > 0.009
+            || floatval($position['capital_balance'] ?? 0) - floatval($position['committed_funding'] ?? 0) > 0.009
+        )): ?><a href="../transactions/new.php?type=PARTNER_SETTLEMENT&amp;partner_id=<?= urlencode($partner['id']) ?>" class="btn btn-primary btn-sm"><i class="ri-scales-3-line"></i> Settle Investment / Profit</a><?php endif; ?>
         <a href="list.php?<?= http_build_query(array_filter(['type' => $backType, 'show' => empty($partner['is_active']) ? 'deleted' : ''])) ?>" class="btn btn-outline btn-sm" data-smart-back="1"><i class="ri-arrow-left-line"></i> Back</a>
     </div>
 </div>
@@ -155,13 +166,19 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
 
 <div class="card partner-portfolio-card">
     <div class="card-header">
-        <div><h3><i class="ri-car-line"></i> Car Portfolio</h3><div class="card-header-note">Live funding, ownership, and unsettled profit or loss for every assigned car.</div></div>
+        <div><h3><i class="ri-car-line"></i> Car Portfolio</h3><div class="card-header-note"><?= $showPortfolioTotal ? 'Total = original invested amount plus unsettled profit, minus unsettled loss. Capital repayments reduce the Capital Account above; original car funding remains in this history.' : 'Live funding, ownership, and unsettled profit or loss for every assigned car.' ?></div></div>
     </div>
     <div class="card-body card-body-flush">
         <div class="table-container table-container-inline partner-portfolio-table">
-            <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th class="text-right">Invested</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th>Live Settlement</th><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
+            <table><thead><tr><th>Car</th><th>Vehicle</th><th>Status</th><th class="text-right">Invested</th><th class="text-right">Funding %</th><th class="text-right">Profit Share %</th><th><?= $showPortfolioTotal ? 'Partner Profit' : 'Live Settlement' ?></th><?php if ($showPortfolioTotal): ?><th class="text-right">Total</th><?php endif; ?><th>Purchase Date</th><th class="text-center">Action</th></tr></thead><tbody>
             <?php foreach ($portfolioCars as $portfolioCar): ?>
-                <?php $statusBadges = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
+                <?php
+                $statusBadges = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray'];
+                $invested = (float) $portfolioCar['funding_amount'];
+                $pendingProfit = round((float) $portfolioCar['payable_outstanding'] - (float) $portfolioCar['receivable_outstanding'], 2);
+                $portfolioInvested += $invested;
+                $portfolioPendingProfit += $pendingProfit;
+                ?>
                 <tr>
                     <td><a href="../cars/view.php?id=<?= clean($portfolioCar['car_id']) ?>" class="text-bold"><?= clean(formatRegistrationNo($portfolioCar['registration_no'])) ?></a></td>
                     <td><?= clean(trim(($portfolioCar['make'] ?? '') . ' ' . ($portfolioCar['model'] ?? '')) ?: '-') ?></td>
@@ -170,16 +187,32 @@ $backType = ($partner['partner_type'] ?? 'MAIN') === 'CARWISE' ? 'CARWISE' : 'MA
                     <td class="text-right"><?= formatPlainNumber($portfolioCar['funding_pct']) ?>%</td>
                     <td class="text-right"><?= formatPlainNumber($portfolioCar['profit_share_pct']) ?>%</td>
                     <td>
-                        <?php if (floatval($portfolioCar['payable_outstanding']) > 0): ?><span class="mini-pill mini-pill-in">Business owes <?= formatAmount($portfolioCar['payable_outstanding']) ?></span>
+                        <?php if ($showPortfolioTotal): ?>
+                            <?php if ($pendingProfit > 0): ?><span class="mini-pill mini-pill-in">Business owes <?= formatAmount($pendingProfit) ?></span>
+                            <?php elseif ($pendingProfit < 0): ?><span class="mini-pill mini-pill-out">Partner owes <?= formatAmount(abs($pendingProfit)) ?></span>
+                            <?php else: ?><span class="text-muted">No pending settlement</span><?php endif; ?>
+                        <?php elseif (floatval($portfolioCar['payable_outstanding']) > 0): ?><span class="mini-pill mini-pill-in">Business owes <?= formatAmount($portfolioCar['payable_outstanding']) ?></span>
                         <?php elseif (floatval($portfolioCar['receivable_outstanding']) > 0): ?><span class="mini-pill mini-pill-out">Partner owes <?= formatAmount($portfolioCar['receivable_outstanding']) ?></span>
                         <?php else: ?><span class="text-muted">No pending settlement</span><?php endif; ?>
                     </td>
+                    <?php if ($showPortfolioTotal): ?><td class="text-right amount text-bold"><?= formatAmount(round($invested + $pendingProfit, 2)) ?></td><?php endif; ?>
                     <td><?= formatDate($portfolioCar['purchase_date']) ?></td>
                     <td class="text-center"><a href="../cars/view.php?id=<?= clean($portfolioCar['car_id']) ?>" class="btn btn-outline btn-sm" title="View car"><i class="ri-eye-line"></i></a></td>
                 </tr>
             <?php endforeach; ?>
-            <?php if (empty($portfolioCars)): ?><tr><td colspan="9" class="text-center text-muted empty-table-cell">No cars are assigned to this partner.</td></tr><?php endif; ?>
-            </tbody></table>
+            <?php if (empty($portfolioCars)): ?><tr><td colspan="<?= $showPortfolioTotal ? 10 : 9 ?>" class="text-center text-muted empty-table-cell">No cars are assigned to this partner.</td></tr><?php endif; ?>
+            </tbody>
+            <?php if ($showPortfolioTotal && $portfolioCars): ?>
+            <tfoot><tr class="table-summary-row">
+                <th scope="row" colspan="3">All Assigned Cars</th>
+                <td class="text-right amount"><?= formatAmount($portfolioInvested) ?></td>
+                <td colspan="2"></td>
+                <td class="amount"><?= formatAmount($portfolioPendingProfit, true) ?></td>
+                <td class="text-right amount"><?= formatAmount(round($portfolioInvested + $portfolioPendingProfit, 2)) ?></td>
+                <td colspan="2"></td>
+            </tr></tfoot>
+            <?php endif; ?>
+            </table>
         </div>
     </div>
 </div>

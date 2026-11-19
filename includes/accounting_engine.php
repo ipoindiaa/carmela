@@ -3,6 +3,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/car_loan_commission_accounting.php';
 require_once __DIR__ . '/car_dealer_accounting.php';
+require_once __DIR__ . '/person_identity.php';
 
 /**
  * AccountingEngine - The heart of AutoBooks Pro
@@ -107,6 +108,8 @@ class AccountingEngine {
         if (!in_array($partnerType, ['MAIN', 'CARWISE'], true)) {
             throw new Exception('Invalid partner type.');
         }
+        $mergedPartner = (new PersonIdentity($this->businessId))->existingRoleByAlias('partner', $name, $partnerType);
+        if ($mergedPartner) throw new Exception("This partner was merged into {$mergedPartner['name']}. Select that existing partner instead.");
 
         $phone = validatePhoneNumber($phone, 'Partner phone number');
         $email = validateEmailAddress($email, 'Partner email');
@@ -503,7 +506,7 @@ class AccountingEngine {
         }
     }
 
-    private const ENGINE_SCHEMA_VERSION = '2026_09_19_perf_indexes';
+    private const ENGINE_SCHEMA_VERSION = '2026_11_17_person_identity';
 
     private function ensureAdvancedSchema() {
         if (self::$advancedSchemaEnsured || isSchemaEnsured('engine', self::ENGINE_SCHEMA_VERSION)) {
@@ -518,6 +521,7 @@ class AccountingEngine {
         // later requests fail with 'unknown column' / 'data truncated' errors.
 
         $this->runMigrationStep('journal-entry-type-enum', fn() => $this->ensureJournalEntryTypeEnum());
+        $this->runMigrationStep('person-identity-schema', fn() => PersonIdentity::ensureSchema($this->db));
         $this->runMigrationStep('car-status-enum', fn() => $this->ensureCarStatusEnum());
         $this->runMigrationStep('car-operations-schema', fn() => $this->ensureCarOperationsSchema());
         $this->runMigrationStep('car-loan-commission-schema', fn() => $this->ensureCarLoanCommissionSchema());
@@ -3241,6 +3245,9 @@ class AccountingEngine {
     }
 
     public function partnerSettlement($partnerId, $amount, $date, $accountId, $direction, $narration) {
+        if (strtoupper((string) $direction) === 'PAY_TOTAL') {
+            return $this->partnerCapitalAndProfitSettlement($partnerId, $amount, $date, $accountId, $narration);
+        }
         $partner = $this->db->fetch("SELECT * FROM partners WHERE id = ? AND business_id = ?", [$partnerId, $this->businessId]);
         if (!$partner) throw new Exception("Partner not found");
         if ($amount <= 0) throw new Exception("Settlement amount must be greater than zero.");
@@ -3285,6 +3292,86 @@ class AccountingEngine {
         ];
         $entryId = $this->postJournalEntry('PARTNER_SETTLEMENT', $date, $narration, $lines, ['partner_id' => $partnerId]);
         $this->applyPartnerSettlement($partnerId, $amount, 'RECEIVABLE', $entryId, $date);
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * One cash payment, two independent balances. Settle recorded profit first,
+     * then repay available capital. Never treat capital repayment as an expense.
+     */
+    public function partnerCapitalAndProfitSettlement($partnerId, $amount, $date, $accountId, $narration) {
+        $amount = round((float) $amount, 2);
+        if (!is_finite($amount) || $amount <= 0) throw new Exception('Settlement amount must be greater than zero.');
+        $this->validateDateNotLocked($date);
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $partner = $this->db->fetch(
+                "SELECT * FROM partners WHERE id = ? AND business_id = ? AND is_active = 1 FOR UPDATE",
+                [$partnerId, $this->businessId]
+            );
+            if (!$partner || !$partner['capital_account_id'] || !$partner['current_account_id']) {
+                throw new Exception('Select an active partner with capital and current accounts.');
+            }
+            $this->db->fetchAll("SELECT id FROM accounts WHERE business_id = ? AND id IN (?, ?) ORDER BY id FOR UPDATE",
+                [$this->businessId, $partner['capital_account_id'], $partner['current_account_id']]);
+            $this->db->fetchAll("SELECT id FROM partner_profit_settlements WHERE business_id = ? AND partner_id = ? FOR UPDATE",
+                [$this->businessId, $partnerId]);
+            $position = $this->getPartnerPosition($partnerId);
+            // A backdated payout cannot consume investment or profit that had
+            // not been recorded by that accounting date.
+            $dated = [];
+            foreach ($this->getTrialBalance($date) as $account) $dated[$account['id']] = $account;
+            $creditBalance = static function ($account) {
+                return ($account['balance_type'] ?? 'DR') === 'CR' ? (float) $account['balance_amount'] : -(float) ($account['balance_amount'] ?? 0);
+            };
+            $capital = max(0, min((float) $position['capital_balance'], $creditBalance($dated[$partner['capital_account_id']] ?? [])));
+            $profitBalance = max(0, min((float) $position['current_balance'], $creditBalance($dated[$partner['current_account_id']] ?? [])));
+            $datedCommitment = $this->db->fetch(
+                "SELECT COALESCE(SUM(cp.funding_amount), 0) AS amount FROM car_partnerships cp
+                 JOIN cars c ON c.id = cp.car_id AND c.business_id = cp.business_id
+                 WHERE cp.business_id = ? AND cp.partner_id = ? AND cp.status = 'ACTIVE'
+                   AND c.status <> 'CANCELLED' AND c.purchase_date <= ?
+                   AND (c.sold_date IS NULL OR c.sold_date > ?)",
+                [$this->businessId, $partnerId, $date, $date]
+            );
+            $committed = max((float) $position['committed_funding'], (float) $datedCommitment['amount']);
+            $availableCapital = round(max(0, $capital - $committed - (float) $position['pending_receivable']), 2);
+            $eligible = $this->db->fetch(
+                "SELECT COALESCE(SUM(s.outstanding_amount), 0) AS amount
+                 FROM partner_profit_settlements s
+                 LEFT JOIN journal_entries j ON j.id = s.journal_entry_id AND j.business_id = s.business_id
+                 WHERE s.business_id = ? AND s.partner_id = ? AND s.direction = 'PAYABLE'
+                   AND s.status IN ('PENDING','PARTIAL') AND s.settlement_date <= ?
+                   AND COALESCE(j.entry_date, s.settlement_date) <= ?",
+                [$this->businessId, $partnerId, $date, $date]
+            );
+            $payable = round(min((float) $eligible['amount'], $profitBalance), 2);
+            $totalAvailable = round($availableCapital + $payable, 2);
+            if ($amount - $totalAvailable > 0.009) {
+                throw new Exception('Total settlement cannot exceed available investment ' . formatAmount($availableCapital)
+                    . ' plus pending profit ' . formatAmount($payable) . ' = ' . formatAmount($totalAvailable)
+                    . '. Funding committed to stock or buyer-pending cars and pending losses remain protected.');
+            }
+            $profitPaid = round(min($amount, $payable), 2);
+            $capitalPaid = round($amount - $profitPaid, 2);
+            $lines = [];
+            if ($profitPaid > 0) $lines[] = ['account_id' => $partner['current_account_id'], 'amount' => $profitPaid, 'type' => 'DR', 'narration' => 'Partner profit paid'];
+            if ($capitalPaid > 0) $lines[] = ['account_id' => $partner['capital_account_id'], 'amount' => $capitalPaid, 'type' => 'DR', 'narration' => 'Partner investment repaid'];
+            $lines[] = ['account_id' => $accountId, 'amount' => $amount, 'type' => 'CR', 'narration' => 'Investment and profit paid to ' . $partner['name']];
+            $this->validateCashAvailable($accountId, $amount);
+            // Capital-only payments use the existing withdrawal reversal path.
+            $entryId = $this->postJournalEntry($profitPaid > 0 ? 'PARTNER_SETTLEMENT' : 'PARTNER_WITHDRAW',
+                $date, $narration ?: 'Investment and profit settlement - ' . $partner['name'], $lines,
+                ['partner_id' => $partnerId, 'audit_metadata' => [
+                    'capital_repaid' => $capitalPaid, 'profit_settled' => $profitPaid, 'total_paid' => $amount,
+                ]]);
+            if ($profitPaid > 0) $this->applyPartnerSettlement($partnerId, $profitPaid, 'PAYABLE', $entryId, $date);
             if ($ownsTransaction) $this->db->commit();
             return $entryId;
         } catch (Throwable $e) {
@@ -3869,7 +3956,7 @@ class AccountingEngine {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception('Car not found.');
         if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Purchase amount correction is available only for bought business cars.');
-        if ($this->usesPaymentBasedPurchaseAmount($car)) throw new Exception('This car’s purchase amount is calculated from recorded owner payments. Use Add Purchase Payment instead of correcting a fixed amount.');
+        $settingAgreedPrice = $this->usesPaymentBasedPurchaseAmount($car);
         if (($car['status'] ?? '') !== 'IN_STOCK') throw new Exception('Purchase amount can be corrected only while the car is in stock. Reverse the sale first if this car has already been sold.');
         if (empty($car['seller_party_id'])) throw new Exception('This car has no linked vehicle owner / seller. First use Fix Historical Purchase Record so the correction can keep the seller ledger matched.');
 
@@ -3877,19 +3964,20 @@ class AccountingEngine {
             "SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ? AND is_active = 1",
             [$car['seller_party_id'], $this->businessId]
         );
-        if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR'], true) || empty($seller['account_id'])) {
+        if (!$seller || !in_array($seller['type'], ['SELLER', 'CREDITOR', 'DEALER'], true) || empty($seller['account_id'])) {
             throw new Exception('The linked vehicle owner / seller ledger is unavailable. Reactivate or correct the seller before changing this purchase amount.');
         }
 
         $correctedAmount = round(floatval($correctedAmount), 2);
         if ($correctedAmount <= 0) throw new Exception('Corrected purchase amount must be greater than zero.');
         $currentAmount = round(floatval($car['purchase_price']), 2);
-        if (abs($correctedAmount - $currentAmount) < 0.01) throw new Exception('Enter a purchase amount different from the current amount.');
+        if (!$settingAgreedPrice && abs($correctedAmount - $currentAmount) < 0.01) throw new Exception('Enter a purchase amount different from the current amount.');
 
         $reason = trim((string) $reason);
         if (mb_strlen($reason) < 5) throw new Exception('Enter a clear correction reason of at least 5 characters.');
         if (mb_strlen($reason) > 500) throw new Exception('Correction reason must be 500 characters or less.');
         $this->validateDateNotLocked($date);
+        if ($date < $car['purchase_date']) throw new Exception('The correction date cannot be before the purchase date.');
 
         $partnerFunding = $this->db->fetch(
             "SELECT COALESCE(SUM(funding_amount), 0) AS total FROM car_partnerships WHERE business_id = ? AND car_id = ? AND status = 'ACTIVE'",
@@ -3914,7 +4002,7 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
-            $entryId = $this->postJournalEntry(
+            $entryId = $adjustmentAmount > 0 ? $this->postJournalEntry(
                 'PURCHASE_AMOUNT_CORRECTION',
                 $date,
                 'Purchase amount correction - ' . $car['registration_no'] . ': ' . $reason,
@@ -3925,14 +4013,14 @@ class AccountingEngine {
                     'entry_type_id' => systemEntryTypeId('PURCHASE_AMOUNT_CORRECTION'),
                     'entry_amount' => $adjustmentAmount,
                 ]
-            );
-            $this->db->query("UPDATE cars SET purchase_price = ? WHERE id = ? AND business_id = ?", [$correctedAmount, $carId, $this->businessId]);
+            ) : null;
+            $this->db->query("UPDATE cars SET purchase_price = ?, purchase_amount_mode = 'FIXED' WHERE id = ? AND business_id = ?", [$correctedAmount, $carId, $this->businessId]);
             Auth::auditUpdate(
                 'car',
                 $carId,
-                ['purchase_price' => $currentAmount],
-                ['purchase_price' => $correctedAmount, 'purchase_amount_correction_entry_id' => $entryId, 'correction_reason' => $reason],
-                'Purchase amount corrected through journal entry: ' . $reason,
+                ['purchase_price' => $currentAmount, 'purchase_amount_mode' => $car['purchase_amount_mode']],
+                ['purchase_price' => $correctedAmount, 'purchase_amount_mode' => 'FIXED', 'purchase_amount_correction_entry_id' => $entryId, 'correction_reason' => $reason],
+                'Agreed purchase price saved: ' . $reason,
                 'cars'
             );
             if ($ownsTransaction) $this->db->commit();
@@ -4477,6 +4565,18 @@ class AccountingEngine {
 
         $this->assertCarLoanCommissionEntryCanBeReversed($entry);
         $this->assertPurchaseDealerEntryCanBeReversed($entry);
+
+        if ($entry['transaction_type'] === 'PURCHASE_AMOUNT_CORRECTION') {
+            throw new Exception('Use Edit Purchase Price on the car to correct this adjustment. This keeps the agreed price and ledgers in sync.');
+        }
+        if ($entry['transaction_type'] === 'LOAN_REPAID'
+            && ($entry['entry_type_id'] ?? '') === systemEntryTypeId('CAR_PURCHASE_PAYMENT')
+            && !empty($entry['car_id'])) {
+            $car = $this->db->fetch("SELECT purchase_amount_mode FROM cars WHERE id = ? AND business_id = ?", [$entry['car_id'], $this->businessId]);
+            if ($car && !$this->usesPaymentBasedPurchaseAmount($car)) {
+                throw new Exception('This payment originally built the car cost before an agreed price was set. It requires an accounting correction to preserve the agreed price.');
+            }
+        }
 
         if ($entry['transaction_type'] === 'CAR_TOKEN_RECEIVED') {
             $token = $this->db->fetch(
@@ -5181,6 +5281,8 @@ class AccountingEngine {
     public function getOrCreateParty($name, $type, $phone = null) {
         $name = trim((string) $name);
         if ($name === '') throw new Exception('Person or company name is required.');
+        $mergedParty = (new PersonIdentity($this->businessId))->existingRoleByAlias('party', $name, $type);
+        if ($mergedParty) return $mergedParty['id'];
         $phone = validatePhoneNumber($phone, 'Person/company phone number');
         $existing = $this->db->fetch(
             "SELECT id FROM debtors_creditors
@@ -5624,8 +5726,9 @@ class AccountingEngine {
             [$carId, $this->businessId]
         );
         if (!$car) throw new Exception('Car not found.');
-        if ($car['status'] !== 'IN_STOCK') {
-            throw new Exception('Partner funding can only be corrected while the car is in stock.');
+        $salePosted = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true);
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED' || (!$salePosted && $car['status'] !== 'IN_STOCK')) {
+            throw new Exception('Partner funding can only be corrected for an active bought business car.');
         }
 
         $reason = trim((string) $reason);
@@ -5634,6 +5737,9 @@ class AccountingEngine {
         }
         $date = trim((string) $date);
         $this->validateDateNotLocked($date);
+        if ($salePosted && (empty($car['sold_date']) || $date !== $car['sold_date'])) {
+            throw new Exception('For a sold car, use its sale accounting date (' . $car['sold_date'] . ') for the funding correction. The actual save time is recorded separately.');
+        }
 
         $oldTerms = $this->db->fetchAll(
             "SELECT cp.*, p.name AS partner_name
@@ -5658,7 +5764,10 @@ class AccountingEngine {
         $oldFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $oldContributions)), 2);
         $normalized = $this->normalizePartnerFunding(max(0.01, floatval($car['purchase_price'])), $partnerFunding);
         $newFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $normalized)), 2);
-        if ($newFundingTotal <= 0) {
+        if ($salePosted && abs($newFundingTotal - $oldFundingTotal) > 0.001) {
+            throw new Exception('A sold car’s total funding must stay at ' . formatAmount($oldFundingTotal) . '. You can reallocate it between partners without changing the recorded car cost.');
+        }
+        if (!$salePosted && $newFundingTotal <= 0) {
             throw new Exception('At least one partner must have a funding amount.');
         }
 
@@ -5723,11 +5832,31 @@ class AccountingEngine {
         if (json_encode($oldFingerprint) === json_encode($newFingerprint)) {
             throw new Exception('Change a partner, funding amount, or profit share before saving.');
         }
-        $fundingChanged = json_encode($oldFundingFingerprint) !== json_encode($newFundingFingerprint);
+        $positiveFunding = static fn($amount) => $amount > 0.009;
+        $fundingChanged = array_filter($oldFundingFingerprint, $positiveFunding) !== array_filter($newFundingFingerprint, $positiveFunding);
+        $shares = static fn($terms) => array_filter(array_map(static fn($term) => $term[1], $terms), $positiveFunding);
+        $replaceAllocation = $salePosted && $shares($oldFingerprint) !== $shares($newFingerprint);
 
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
+            if ($replaceAllocation) {
+                $allocations = $this->db->fetchAll(
+                    "SELECT * FROM journal_entries WHERE business_id = ? AND car_id = ?
+                       AND transaction_type = 'PROFIT_DISTRIBUTION' AND status = 'POSTED' AND is_reversal = 0
+                     FOR UPDATE",
+                    [$this->businessId, $carId]
+                );
+                foreach ($allocations as $entry) {
+                    if ($date < $entry['entry_date']) {
+                        throw new Exception('The correction date cannot precede the existing partner allocation.');
+                    }
+                    $lines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id", [$entry['id']]);
+                    $this->assertEntryCanBeReversed($entry, $lines);
+                    $reversalId = $this->createReversalEntry($entry, $lines, 'Partner funding correction: ' . $reason, $date);
+                    $this->applyReversalBusinessEffects($entry, $lines, $reversalId);
+                }
+            }
             foreach ($fundingChanged ? $oldContributions : [] as $contribution) {
                 $entry = $this->db->fetch(
                     "SELECT * FROM journal_entries WHERE id = ? AND business_id = ?",
@@ -5831,6 +5960,11 @@ class AccountingEngine {
                     'created_by' => $this->userId,
                     'notes' => 'Corrected: ' . $reason,
                 ]);
+            }
+
+            if ($replaceAllocation) {
+                $margin = round((float) $car['sale_price'] - (float) $car['purchase_price'], 2);
+                $this->recordPartnerProfitDistribution($carId, $margin, $date);
             }
 
             $newAuditTerms = array_map(static function ($row) {
@@ -5944,8 +6078,8 @@ class AccountingEngine {
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
-             WHERE a.business_id = ? AND a.group_name = 'INCOME' AND je.entry_date BETWEEN ? AND ?
-             GROUP BY a.id, a.code, a.name HAVING amount > 0 ORDER BY amount DESC",
+             WHERE a.business_id = ? AND a.group_name = 'INCOME' AND a.code <> 'PNL' AND je.entry_date BETWEEN ? AND ?
+             GROUP BY a.id, a.code, a.name HAVING amount <> 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
 
@@ -5955,7 +6089,7 @@ class AccountingEngine {
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
              WHERE a.business_id = ? AND a.group_name = 'EXPENSE' AND je.entry_date BETWEEN ? AND ?
-             GROUP BY a.id, a.code, a.name HAVING amount > 0 ORDER BY amount DESC",
+             GROUP BY a.id, a.code, a.name HAVING amount <> 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
 
@@ -5964,21 +6098,21 @@ class AccountingEngine {
         // sheet can carry current earnings, but its debit-side "Close car account"
         // lines are Cost of Goods Sold and must appear in the period P&L.
         $cogs = $this->db->fetch(
-            "SELECT a.id, COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE 0 END), 0) AS amount
+            "SELECT a.id, SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE -jl.amount END) AS amount
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id
+             LEFT JOIN journal_entries original ON original.id = je.original_entry_id AND original.business_id = je.business_id
              WHERE a.business_id = ?
                AND a.code = 'PNL'
-               AND je.status = 'POSTED'
-               AND je.is_reversal = 0
-               AND je.transaction_type = 'CAR_SALE'
-               AND je.narration LIKE 'Close car account %'
+               AND je.status IN ('POSTED', 'REVERSED')
+               AND ((je.transaction_type = 'CAR_SALE' AND je.is_reversal = 0 AND je.narration LIKE 'Close car account %')
+                 OR (je.is_reversal = 1 AND original.transaction_type = 'CAR_SALE' AND original.narration LIKE 'Close car account %'))
                AND je.entry_date BETWEEN ? AND ?
              GROUP BY a.id",
             [$this->businessId, $fromDate, $toDate]
         );
-        if (floatval($cogs['amount'] ?? 0) > 0.009) {
+        if (abs(floatval($cogs['amount'] ?? 0)) > 0.009) {
             $expenses[] = [
                 'id' => $cogs['id'],
                 'code' => 'COGS',
@@ -5989,13 +6123,36 @@ class AccountingEngine {
 
         $totalIncome = array_sum(array_column($income, 'amount'));
         $totalExpenses = array_sum(array_column($expenses, 'amount'));
+        // Allocations are recognized on the original journal date, and undone
+        // on the reversal date. Payouts and mutable settlement statuses do not
+        // determine what each partner earned.
+        $partnerShares = $this->db->fetchAll(
+            "SELECT p.id, p.name, SUM(
+                (CASE WHEN s.direction = 'PAYABLE' THEN s.profit_amount ELSE -s.profit_amount END)
+                * ((CASE WHEN j.entry_date BETWEEN ? AND ? THEN 1 ELSE 0 END)
+                   - (CASE WHEN r.entry_date BETWEEN ? AND ? THEN 1 ELSE 0 END))
+             ) AS amount
+             FROM partner_profit_settlements s
+             JOIN partners p ON p.id = s.partner_id AND p.business_id = s.business_id
+             JOIN journal_entries j ON j.id = s.journal_entry_id AND j.business_id = s.business_id
+             LEFT JOIN journal_entries r ON r.id = j.reversed_by AND r.business_id = j.business_id AND r.status = 'POSTED'
+             WHERE s.business_id = ? AND j.transaction_type = 'PROFIT_DISTRIBUTION'
+               AND j.status IN ('POSTED', 'REVERSED')
+             GROUP BY p.id, p.name HAVING amount <> 0 ORDER BY p.name, p.id",
+            [$fromDate, $toDate, $fromDate, $toDate, $this->businessId]
+        );
+        $partnerProfit = round(array_sum(array_column($partnerShares, 'amount')), 2);
+        $combinedProfit = round($totalIncome - $totalExpenses, 2);
 
         return [
             'income' => $income,
             'expenses' => $expenses,
             'total_income' => $totalIncome,
             'total_expenses' => $totalExpenses,
-            'net_profit' => $totalIncome - $totalExpenses,
+            'net_profit' => $combinedProfit,
+            'partner_profit' => $partnerProfit,
+            'tiranga_profit' => round($combinedProfit - $partnerProfit, 2),
+            'partner_shares' => $partnerShares,
         ];
     }
 
@@ -6699,14 +6856,17 @@ class AccountingEngine {
 
     private function applyPartnerSettlementAllocation($partnerId, $amount, $direction, $entryId, $date, $recordApplications = true) {
         $rows = $this->db->fetchAll(
-            "SELECT *
-             FROM partner_profit_settlements
-             WHERE business_id = ?
-               AND partner_id = ?
-               AND direction = ?
-               AND status IN ('PENDING', 'PARTIAL')
-             ORDER BY settlement_date, created_at",
-            [$this->businessId, $partnerId, $direction]
+            "SELECT s.*
+             FROM partner_profit_settlements s
+             LEFT JOIN journal_entries j ON j.id = s.journal_entry_id AND j.business_id = s.business_id
+             WHERE s.business_id = ?
+               AND s.partner_id = ?
+               AND s.direction = ?
+               AND s.status IN ('PENDING', 'PARTIAL')
+               AND s.settlement_date <= ?
+               AND COALESCE(j.entry_date, s.settlement_date) <= ?
+             ORDER BY s.settlement_date, s.created_at, s.id",
+            [$this->businessId, $partnerId, $direction, $date, $date]
         );
 
         $remaining = round($amount, 2);

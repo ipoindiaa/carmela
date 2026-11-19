@@ -57,7 +57,10 @@ try {
         'account_id' => $carAccountId,
     ]);
 
-    $purchaseId = $engine->carPurchase($carId, 450000, $date, $cash['id'], 'ULL purchase with paid and payable seller amounts', [], 'ULL Seller ' . $suffix, 300000, [
+    $profitPartnerId = $engine->createPartner('ULL Profit Partner ' . $suffix, 'CARWISE', '', '', '', 0, $date);
+    $purchaseId = $engine->carPurchase($carId, 450000, $date, $cash['id'], 'ULL purchase with paid and payable seller amounts', [
+        ['partner_id' => $profitPartnerId, 'amount' => 0, 'profit_share_pct' => 40],
+    ], 'ULL Seller ' . $suffix, 300000, [
         'name' => 'ULL Purchase Dealer ' . $suffix,
         'commission' => 15000,
         'paid_now' => 5000,
@@ -183,12 +186,15 @@ try {
         && abs(floatval($paymentBasedCarAfterReversal['purchase_paid_amount']) - 30000.0) < 0.01,
         'Reversing a payment-based purchase payment removes it from the car purchase amount'
     );
-    try {
-        $engine->correctCarPurchaseAmount($paymentBasedCarId, 50000, $date, 'This must use another payment instead.');
-        throw new RuntimeException('Expected payment-based purchase amount correction to be blocked.');
-    } catch (Exception $expected) {
-        assertUll(str_contains($expected->getMessage(), 'calculated from recorded owner payments'), 'Payment-based cars direct operators to Add Purchase Payment instead of a fixed-price correction');
-    }
+    $engine->correctCarPurchaseAmount($paymentBasedCarId, 50000, $date, 'Final agreed price confirmed by the seller.');
+    assertUll(abs($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending'] - 20000.0) < 0.01, 'Setting an agreed price credits the previously recorded owner payment');
+    $fixedInstallment = $engine->loanRepaid($paymentBasedSellerId, 12000, $date, $cash['id'], 'ULL installment against agreed price', $paymentBasedCarId);
+    $fixedCar = $db->fetch("SELECT purchase_price, purchase_amount_mode FROM cars WHERE id = ?", [$paymentBasedCarId]);
+    assertUll($fixedCar['purchase_amount_mode'] === 'FIXED' && abs(floatval($fixedCar['purchase_price']) - 50000.0) < 0.01
+        && abs($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending'] - 8000.0) < 0.01,
+        'After setting an agreed price, installments reduce the payable without increasing car cost');
+    $engine->reverseEntry($fixedInstallment, 'ULL reverse installment against agreed price', $date);
+    assertUll(abs($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending'] - 20000.0) < 0.01, 'Reversing an installment restores the payable on an agreed-price car');
 
     // Dealer-type ledgers are valid owner/seller relationships for a purchased
     // car too; only dealer commission payable itself belongs to its dedicated
@@ -293,11 +299,35 @@ try {
     $cogs = array_values(array_filter($pnl['expenses'], static fn($row) => ($row['code'] ?? '') === 'COGS'));
     assertUll(count($cogs) === 1 && floatval($cogs[0]['amount']) === 465000.0, 'Profit and Loss includes the purchase price plus dealer commission as Cost of Cars Sold');
     assertUll(abs(floatval($pnl['net_profit']) - 110000.0) < 0.01, 'Profit and Loss reports sale revenue less the complete car cost');
+    assertUll($pnl['partner_profit'] === 50000.0 && $pnl['tiranga_profit'] === 60000.0
+        && count($pnl['partner_shares']) === 1 && $pnl['partner_shares'][0]['id'] === $profitPartnerId,
+        'Profit views reconcile the posted partner share to combined profit and Tiranga retained profit');
+    try {
+        $engine->correctCarPartnerFunding($carId, [
+            ['partner_id' => $profitPartnerId, 'amount' => 0, 'profit_share_pct' => 25],
+        ], date('Y-m-d', strtotime($date . ' +1 day')), 'Later save must not move the original sale profit month');
+        throw new RuntimeException('A sold-car correction changed the accounting period');
+    } catch (Exception $e) {
+        assertUll(str_contains($e->getMessage(), 'sale accounting date'), 'Sold-car funding corrections stay in the sale accounting period');
+    }
+    $engine->correctCarPartnerFunding($carId, [
+        ['partner_id' => $profitPartnerId, 'amount' => 0, 'profit_share_pct' => 25],
+    ], $date, 'ULL correct profit share after sale posting');
+    $correctedPnl = $engine->getProfitAndLoss($date, $date);
+    assertUll($correctedPnl['net_profit'] === 110000.0 && $correctedPnl['partner_profit'] === 31250.0
+        && $correctedPnl['tiranga_profit'] === 78750.0, 'Correcting sold-car partner terms replaces the allocation without changing the sale or car cost');
 
     $engine->reverseEntry($saleId, 'ULL regression reversal', $date);
     $reversedPnl = $engine->getProfitAndLoss($date, $date);
     $reversedCogs = array_values(array_filter($reversedPnl['expenses'], static fn($row) => ($row['code'] ?? '') === 'COGS'));
     assertUll(empty($reversedCogs) && abs(floatval($reversedPnl['net_profit'])) < 0.01, 'Reversing the sale also removes its Cost of Cars Sold from Profit and Loss');
+    assertUll($reversedPnl['partner_profit'] === 0.0 && $reversedPnl['tiranga_profit'] === 0.0
+        && empty($reversedPnl['partner_shares']), 'Reversing the sale also reverses the recorded partner allocation in all views');
+
+    $engine->carSale($carId, 400000, $date, $cash['id'], 'ULL sale at a shared loss', 'ULL Loss Buyer ' . $suffix, 400000);
+    $lossPnl = $engine->getProfitAndLoss($date, $date);
+    assertUll($lossPnl['net_profit'] === -65000.0 && $lossPnl['partner_profit'] === -12500.0
+        && $lossPnl['tiranga_profit'] === -52500.0, 'A partner loss reduces Tiranga’s share of the combined loss');
 
     $db->rollBack();
     echo "Universal ledger linking regression checks completed and test data rolled back.\n";

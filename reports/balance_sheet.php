@@ -110,6 +110,7 @@ if (get('export') === 'excel') {
             <button type="submit" class="btn btn-outline btn-sm"><i class="ri-filter-line"></i> Apply</button>
         </form>
         <span class="meta-text">As on <?= formatDate($asOnDate) ?></span>
+        <a href="<?= clean('person_balance_sheet.php?' . http_build_query(['as_on' => $asOnDate])) ?>" class="btn btn-outline btn-sm">Person-wise Balance Sheet</a>
         <a href="<?= clean('balance_sheet.php?' . http_build_query(['as_on' => $asOnDate, 'export' => 'excel'])) ?>" class="btn btn-outline btn-sm"><i class="ri-file-excel-2-line"></i> Download Excel (CSV)</a>
         <button type="button" onclick="printPage()" class="btn btn-outline btn-sm"><i class="ri-printer-line"></i> Print</button>
     </div>

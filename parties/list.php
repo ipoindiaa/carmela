@@ -77,9 +77,10 @@ function renderPartyRows($parties, $snapshots) {
 $partyWhere = "dc.business_id = ? AND dc.is_active = ?";
 $partyParams = [$businessId, $showDeleted ? 0 : 1];
 if ($search !== '') {
-    $partyWhere .= " AND (dc.name LIKE ? OR dc.phone LIKE ? OR dc.type LIKE ? OR dc.pan_gstin LIKE ?)";
+    $partyWhere .= " AND (dc.name LIKE ? OR dc.phone LIKE ? OR dc.type LIKE ? OR dc.pan_gstin LIKE ?
+        OR EXISTS (SELECT 1 FROM person_identity_members m WHERE m.business_id = dc.business_id AND m.kind = 'party' AND m.record_id = dc.id AND m.aliases LIKE ?))";
     $needle = '%' . $search . '%';
-    array_push($partyParams, $needle, $needle, $needle, $needle);
+    array_push($partyParams, $needle, $needle, $needle, $needle, $needle);
 }
 
 $total = $db->fetch("SELECT COUNT(*) as cnt FROM debtors_creditors dc WHERE {$partyWhere}", $partyParams);

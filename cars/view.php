@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 post('correction_reason')
             );
             unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
-            setFlash('success', 'Purchase amount corrected. Original entry remains in History; correction entry: ' . $entryId);
+            setFlash('success', 'Agreed purchase price saved. ' . ($entryId ? 'The adjustment is recorded in History.' : 'No ledger adjustment was needed.'));
         } elseif ($action === 'correct_partner_funding') {
             $partnerIds = array_values((array) ($_POST['partner_ids'] ?? []));
             $amounts = array_values((array) ($_POST['partner_amounts'] ?? []));
@@ -334,6 +334,8 @@ $contributions = $db->fetchAll(
      WHERE cp.business_id = ? AND cp.car_id = ? AND cp.status = 'ACTIVE'
      ORDER BY cp.created_at", [$businessId, $id]);
 $totalPartnerFunding = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $contributions)), 2);
+$fundingSalePosted = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true);
+$canEditFunding = ($fundingSalePosted || $car['status'] === 'IN_STOCK') && Auth::hasEntityAccess('car', 'write');
 $partnerFundingDraft = $_SESSION['car_partner_funding_draft'][$id] ?? null;
 unset($_SESSION['car_partner_funding_draft'][$id]);
 $purchaseAmountCorrectionDraft = $_SESSION['car_purchase_amount_correction_draft'][$id] ?? null;
@@ -391,12 +393,9 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
 
 <?php if (get('edit') === '1' && $car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
 <div class="card car-edit-card" id="purchase-amount-correction">
-    <div class="card-header"><div><h3><i class="ri-edit-2-line"></i> Correct Purchase Amount</h3><div class="card-header-note">Use this only when the original buying amount was entered wrongly.</div></div></div>
+    <div class="card-header"><div><h3><i class="ri-edit-2-line"></i> Edit Purchase Price</h3><div class="card-header-note">Set the agreed total or update it when the deal changes.</div></div></div>
     <div class="card-body">
-        <?php if ($isPaymentBasedPurchase): ?>
-            <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Purchase amount is calculated from payments.</strong><span>There is no fixed purchase price to edit. Add a payment whenever money is paid to the owner; the car cost and owner ledger update together.</span></div></div>
-            <div class="form-actions form-actions-start"><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-primary"><i class="ri-hand-coin-line"></i> Add Purchase Payment</a></div>
-        <?php elseif (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
+        <?php if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This is not a bought business car.</strong><span>Commission and outside cars do not have a business purchase amount to correct.</span></div></div>
         <?php elseif ($car['status'] !== 'IN_STOCK'): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This car is no longer in stock.</strong><span>Reverse the sale first, then correct its purchase amount so profit and sale history remain traceable.</span></div></div>
@@ -408,7 +407,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
             <form method="POST" data-confirm-submit="Save this purchase amount correction? The original purchase entry will remain in History and the seller balance will be adjusted.">
                 <?= csrfField() ?><input type="hidden" name="action" value="correct_purchase_amount">
                 <div class="form-row-3">
-                    <div class="form-group"><label class="form-label" for="purchase_amount">Correct Purchase Amount (₹) *</label><input id="purchase_amount" type="text" name="purchase_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($purchaseAmountCorrectionDraft['purchase_amount'] ?? $car['purchase_price']) ?>" required><div class="form-hint">Enter the agreed purchase value, not only the unpaid amount.</div></div>
+                    <div class="form-group"><label class="form-label" for="purchase_amount">Agreed Purchase Price (₹) *</label><input id="purchase_amount" type="text" name="purchase_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($purchaseAmountCorrectionDraft['purchase_amount'] ?? ($isPaymentBasedPurchase ? '' : $car['purchase_price'])) ?>" required><div class="form-hint">Include amounts already paid. Once saved, later installments reduce the balance without increasing the price.</div><output id="purchase-price-preview" class="form-hint" aria-live="polite"></output></div>
                     <div class="form-group"><label class="form-label" for="correction_date">Correction Date *</label><input id="correction_date" type="date" name="correction_date" class="form-control" value="<?= clean($purchaseAmountCorrectionDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
                     <div class="form-group"><label class="form-label">Vehicle Owner / Seller</label><div class="form-control form-control-readonly"><?= clean($sellerParty['name']) ?></div><div class="form-hint">The seller ledger is linked automatically.</div></div>
                 </div>
@@ -416,6 +415,23 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                 <label class="check-row"><input type="checkbox" name="confirm_purchase_amount_correction" value="1" required> <span>I confirm this is a correction to the agreed purchase value. I understand the original voucher is preserved and the owner payable or owner refund receivable will be adjusted automatically.</span></label>
                 <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Save Purchase Amount Correction</button><a href="view.php?id=<?= clean($car['id']) ?>" class="btn btn-outline">Cancel</a></div>
             </form>
+            <script>
+            (() => {
+                const field = document.getElementById('purchase_amount');
+                const preview = document.getElementById('purchase-price-preview');
+                const covered = <?= json_encode(round($purchaseTotalPaid + $activePartnerFunding, 2)) ?>;
+                const currency = new Intl.NumberFormat('en-IN', {style: 'currency', currency: 'INR'});
+                const update = () => {
+                    const price = Number(field.value.replace(/[,\s]/g, ''));
+                    const balance = Math.round((price - covered) * 100) / 100;
+                    preview.textContent = price > 0 && Number.isFinite(price)
+                        ? (balance < 0 ? 'Seller refund / advance: ' : 'Pending to seller: ') + currency.format(Math.abs(balance))
+                        : '';
+                };
+                field.addEventListener('input', update);
+                update();
+            })();
+            </script>
         <?php endif; ?>
     </div>
 </div>
@@ -564,12 +580,12 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
             <div><h3><i class="ri-group-line"></i> Partner Funding</h3><div class="card-header-note">Partners, invested amount, and profit ownership for this car.</div></div>
             <div class="card-header-actions">
                 <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($car['id']) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
-                <?php if ($car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write') && get('edit_funding') !== '1'): ?>
+                <?php if ($canEditFunding && get('edit_funding') !== '1'): ?>
                     <a href="view.php?id=<?= clean($car['id']) ?>&amp;edit_funding=1#car-partner-terms" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit Funding</a>
                 <?php endif; ?>
             </div>
         </div>
-        <?php if (get('edit_funding') === '1' && $car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
+        <?php if (get('edit_funding') === '1' && $canEditFunding): ?>
             <?php
                 $fundingRows = $contributions ?: [['partner_id' => '', 'amount' => '', 'profit_share_pct' => '']];
                 if (is_array($partnerFundingDraft)) {
@@ -588,7 +604,9 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
             <div class="card-body partner-funding-editor">
                 <div class="correction-notice compact-correction-notice">
                     <i class="ri-shield-check-line"></i>
-                    <div><strong>Current funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span>Add or remove partners and adjust amounts freely. Financial changes will reverse the old entries and preserve them in History.</span></div>
+                    <div><strong>Current funding total: <?= formatAmount($totalPartnerFunding) ?></strong><span><?= $fundingSalePosted
+                        ? 'You can reallocate the existing funding and correct profit shares without changing the car cost. If a profit or loss share has been paid or collected, reverse the settlement before changing the split.'
+                        : 'Add or remove partners and adjust amounts. Financial changes will reverse the old entries and preserve them in History.' ?></span></div>
                 </div>
                 <form method="POST" id="partner-funding-correction-form" data-confirm-submit="Save these partner funding changes? Financial reallocations will reverse the old entries and preserve them in History.">
                     <?= csrfField() ?><input type="hidden" name="action" value="correct_partner_funding">
@@ -617,7 +635,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
                     <button type="button" class="btn btn-outline btn-sm partner-add-row" onclick="addFundingEditRow()"><i class="ri-add-line"></i> Add Partner</button>
                     <div class="form-hint field-status" id="partner-funding-total-status" aria-live="polite">Profit share is manual and is not calculated from funding.</div>
                     <div class="form-row partner-correction-meta">
-                        <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean($partnerFundingDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
+                        <div class="form-group"><label class="form-label">Correction Date *</label><input type="date" name="correction_date" class="form-control" value="<?= clean($fundingSalePosted ? $car['sold_date'] : ($partnerFundingDraft['correction_date'] ?? date('Y-m-d'))) ?>" <?= $fundingSalePosted ? 'readonly' : '' ?> required><?php if ($fundingSalePosted): ?><div class="form-hint">The correction affects the sale date. The actual save time remains in History.</div><?php endif; ?></div>
                         <div class="form-group"><label class="form-label">Reason for Change *</label><input type="text" name="correction_reason" class="form-control" value="<?= clean($partnerFundingDraft['correction_reason'] ?? '') ?>" minlength="5" maxlength="500" placeholder="Why are these terms changing?" required></div>
                     </div>
                     <div class="form-actions form-actions-start"><button type="submit" class="btn btn-primary"><i class="ri-save-line"></i> Update Partner Funding</button><a href="view.php?id=<?= clean($car['id']) ?>#car-partner-terms" class="btn btn-outline">Cancel</a></div>
@@ -647,7 +665,7 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
     </div>
 </div>
 
-<?php if (get('edit_funding') === '1' && $car['status'] === 'IN_STOCK' && Auth::hasEntityAccess('car', 'write')): ?>
+<?php if (get('edit_funding') === '1' && $canEditFunding): ?>
 <script>
 function resetFundingSelect(row) {
     row.querySelectorAll('.custom-select').forEach((wrapper) => {

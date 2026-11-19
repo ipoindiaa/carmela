@@ -44,9 +44,10 @@ if ($search !== '') {
         OR p.profit_share_pct LIKE ?
         OR p.joined_date LIKE ?
         OR CASE WHEN p.is_active = 1 THEN 'Active' ELSE 'Inactive' END LIKE ?
+        OR EXISTS (SELECT 1 FROM person_identity_members m WHERE m.business_id = p.business_id AND m.kind = 'partner' AND m.record_id = p.id AND m.aliases LIKE ?)
     )";
     $needle = '%' . $search . '%';
-    array_push($partnerParams, $needle, $needle, $needle, $needle, $needle, $needle, $needle, $needle);
+    array_push($partnerParams, $needle, $needle, $needle, $needle, $needle, $needle, $needle, $needle, $needle);
 }
 $partners = $db->fetchAll(
     "SELECT p.*, a.current_balance as capital_balance, a.current_balance_type

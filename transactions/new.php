@@ -731,7 +731,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <optgroup label="Partners">
                             <option value="PARTNER_INVEST" data-flow="in" data-icon="ri-briefcase-4-line" data-title="Partner Added Money" data-desc="Business received money from partner.">Partner Added Money</option>
                             <option value="PARTNER_WITHDRAW" data-flow="out" data-icon="ri-hand-coin-line" data-title="Partner Took Money" data-desc="Business paid money to partner.">Partner Took Money</option>
-                            <option value="PARTNER_SETTLEMENT" data-flow="both" data-icon="ri-scales-3-line" data-title="Settle Partner Profit / Loss" data-desc="Pay a partner's approved profit or receive their agreed loss share.">Settle Partner Profit / Loss</option>
+                            <option value="PARTNER_SETTLEMENT" data-flow="both" data-icon="ri-scales-3-line" data-title="Settle Partner Investment / Profit" data-desc="Repay available investment and recorded profit, or settle a profit / loss share.">Settle Partner Investment / Profit</option>
                         </optgroup>
                         <optgroup label="Employees">
                             <option value="SALARY_PAYMENT" data-flow="out" data-icon="ri-wallet-3-line" data-title="Paid Salary" data-desc="Business paid salary to employee.">Paid Salary</option>
@@ -1145,14 +1145,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="txn-section" id="partner-settlement-section" hidden>
-                <div class="alert alert-info"><i class="ri-scales-3-line"></i><div><strong>Settle only a recorded partner profit or loss.</strong><span>This clears the selected partner's Current A/c and the exact outstanding settlement; it does not change capital or car funding.</span></div></div>
+                <div class="alert alert-info"><i class="ri-scales-3-line"></i><div><strong>Repay investment and profit in one payment.</strong><span>For a total payment, recorded profit is settled first and the remainder repays available capital. For example: ₹17,00,000 investment + ₹50,000 profit = ₹17,50,000. Partial payments are allowed. Original car funding and profit history remain recorded.</span></div></div>
                 <div class="form-group">
                     <label class="form-label" for="partner_settlement_direction">Settlement Type *</label>
                     <select name="partner_settlement_direction" id="partner_settlement_direction" class="form-control">
-                        <option value="PAY" <?= post('partner_settlement_direction') === 'RECEIVE' ? '' : 'selected' ?>>Pay partner's approved profit</option>
+                        <option value="PAY_TOTAL" <?= post('partner_settlement_direction', 'PAY_TOTAL') === 'PAY_TOTAL' ? 'selected' : '' ?>>Pay investment + profit (total settlement)</option>
+                        <option value="PAY" <?= post('partner_settlement_direction') === 'PAY' ? 'selected' : '' ?>>Pay profit only</option>
                         <option value="RECEIVE" <?= post('partner_settlement_direction') === 'RECEIVE' ? 'selected' : '' ?>>Receive partner's agreed loss share</option>
                     </select>
-                    <div class="form-hint">The amount cannot exceed the selected partner's recorded pending settlement.</div>
+                    <div class="form-hint">Total settlement is limited to available capital plus pending profit. Capital committed to unsold or buyer-pending cars and pending losses stays protected. Profit-only and loss-recovery options remain available.</div>
                 </div>
             </div>
 

@@ -184,16 +184,17 @@ switch ($kind) {
     case 'main_partner':
         $rows = $db->fetchAll(
             "SELECT id, name, phone, partner_type
-             FROM partners
+             FROM partners p
              WHERE business_id = ?
                AND is_active = 1
                AND (
                    name LIKE ?
                    OR phone LIKE ?
+                   OR EXISTS (SELECT 1 FROM person_identity_members m WHERE m.business_id = p.business_id AND m.kind = 'partner' AND m.record_id = p.id AND m.aliases LIKE ?)
                )
              ORDER BY name
              LIMIT $limit",
-            [$businessId, $needle, $needle]
+            [$businessId, $needle, $needle, $needle]
         );
         foreach ($rows as $row) {
             $results[] = [
@@ -246,10 +247,11 @@ switch ($kind) {
                AND (
                    dc.name LIKE ?
                    OR dc.phone LIKE ?
+                   OR EXISTS (SELECT 1 FROM person_identity_members m WHERE m.business_id = dc.business_id AND m.kind = 'party' AND m.record_id = dc.id AND m.aliases LIKE ?)
                )
              ORDER BY CASE WHEN dc.type = ? THEN 0 ELSE 1 END, dc.name
              LIMIT $limit",
-            [$businessId, $needle, $needle, $isDealerPicker ? 'DEALER' : 'SELLER']
+            [$businessId, $needle, $needle, $needle, $isDealerPicker ? 'DEALER' : 'SELLER']
         );
         foreach ($rows as $row) {
             $roleParts = [ucfirst(strtolower($row['type']))];
@@ -303,17 +305,18 @@ switch ($kind) {
         $typePlaceholders = implode(',', array_fill(0, count($types), '?'));
         $rows = $db->fetchAll(
             "SELECT id, name, type, phone
-             FROM debtors_creditors
+             FROM debtors_creditors dc
              WHERE business_id = ?
                AND is_active = 1
                AND type IN ($typePlaceholders)
                AND (
                    name LIKE ?
                    OR phone LIKE ?
+                   OR EXISTS (SELECT 1 FROM person_identity_members m WHERE m.business_id = dc.business_id AND m.kind = 'party' AND m.record_id = dc.id AND m.aliases LIKE ?)
                )
              ORDER BY name
              LIMIT $limit",
-            array_merge([$businessId], $types, [$needle, $needle])
+            array_merge([$businessId], $types, [$needle, $needle, $needle])
         );
         foreach ($rows as $row) {
             $results[] = [

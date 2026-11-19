@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 $businessId = Auth::user('business_id');
 Auth::requireEntityAccess('party', 'read');
+$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $id = get('id');
 $party = $db->fetch("SELECT dc.*, a.current_balance, a.current_balance_type FROM debtors_creditors dc LEFT JOIN accounts a ON a.id = dc.account_id WHERE dc.id = ? AND dc.business_id = ?", [$id, $businessId]);
 if (!$party) { setFlash('error', 'Party not found.'); redirect('list.php'); }
@@ -14,6 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
     verifyCsrf();
     try {
         $name = trim((string) post('name'));
+        $linkedPerson = (new PersonIdentity($businessId))->identityFor('party', $id);
+        if ($linkedPerson && $name !== $linkedPerson['name']) throw new Exception('This is a merged person. Keep the shared name; use Merge Persons to consolidate another record.');
         $type = strtoupper((string) post('type'));
         if ($name === '') throw new Exception('Party name is required.');
         if (!in_array($type, ['DEBTOR', 'CREDITOR', 'BUYER', 'SELLER', 'DEALER'], true)) throw new Exception('Invalid party type.');
@@ -46,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'update') {
     }
 }
 
-$engine = new AccountingEngine($businessId, Auth::user('user_id'));
 $openItems = $engine->getPartyOpenItems($party['id']);
 usort($openItems, static function ($left, $right) {
     return strtotime(($right['entry_date'] ?? '') . ' ' . ($right['created_at'] ?? '')) <=> strtotime(($left['entry_date'] ?? '') . ' ' . ($left['created_at'] ?? ''));
@@ -78,6 +80,8 @@ $tokenAvailable = round(array_sum(array_map(static function ($token) {
 <div class="page-header">
     <h1><i class="ri-contacts-book-line"></i> <?= clean($party['name']) ?></h1>
     <div class="page-actions">
+        <a href="../persons/view.php?kind=party&amp;id=<?= clean($id) ?>" class="btn btn-outline btn-sm">Combined Person Statement</a>
+        <?php if (Auth::isAdmin() && !empty($party['is_active'])): ?><a href="../persons/merge.php?kind=party&amp;id=<?= clean($id) ?>" class="btn btn-outline btn-sm">Merge Persons</a><?php endif; ?>
         <?php if (Auth::hasEntityAccess('party', 'write')): ?><a href="view.php?id=<?= $party['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="<?= !empty($party['is_active']) ? 'ri-edit-line' : 'ri-restart-line' ?>"></i> <?= !empty($party['is_active']) ? 'Edit' : 'Restore' ?></a><?php endif; ?>
         <?php if (in_array($party['type'], ['DEALER', 'SELLER', 'CREDITOR'], true)): ?><a href="dealer_ledger.php?id=<?= $party['id'] ?>" class="btn btn-outline btn-sm"><i class="ri-user-shared-line"></i> Dealer / Broker Ledger</a><?php endif; ?>
         <?php if (!empty($party['is_active']) && Auth::isAdmin()): ?><a href="../settings/opening_balances.php?account_id=<?= $party['account_id'] ?>" class="btn btn-outline btn-sm"><i class="ri-scales-3-line"></i> Opening Balance</a><?php endif; ?>
