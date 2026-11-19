@@ -136,9 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $partnerFunding
         )), 2);
         $purchasePrice = $agreedPrice ?? round($purchasePaidNow + $initialPartnerFunding, 2);
-        // NOTE: Seller is only required when there is an outstanding balance
-        // (partial payment). The accounting engine handles full-payment or
-        // no-seller cases directly. See validateCarPurchaseInput().
         $validation = $engine->validateCarPurchaseInput($purchasePrice, $purchaseDate, $paymentAccount, $partnerFunding, $sellerLabel, $purchasePaidNow);
         $partnerFunding = $validation['partner_funding'];
         $purchasePaidNow = $validation['paid_now'];
@@ -257,12 +254,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="<?= clean($party['id']) ?>" <?= post('seller_party_id') === $party['id'] ? 'selected' : '' ?>><?= clean($party['name']) ?> · <?= clean(ucfirst(strtolower($party['type']))) ?><?= $party['phone'] ? ' · ' . clean($party['phone']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <div class="form-hint">The legal owner of this car. Selecting an existing owner reuses their ledger — no duplicate account is created. Link the owner before recording any payment.</div>
+                    <div class="form-hint">If the seller is unknown, leave this blank. Any unpaid amount is kept in a separate payable for this car. Edit the temporary seller's name in Debtors / Creditors once known.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="seller_name">New Owner / Seller Name</label>
                     <input type="text" name="seller_name" id="seller_name" class="form-control" placeholder="Fill only if the owner is new" value="<?= clean(post('seller_name')) ?>">
-                    <div class="form-hint">Leave blank when an existing owner is selected, or when no payment has been made and the owner will be linked later.</div>
+                    <div class="form-hint">Leave blank if you selected an existing owner or don’t know the seller’s name yet.</div>
                 </div>
             </div>
             <div class="form-row">

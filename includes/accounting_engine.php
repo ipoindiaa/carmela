@@ -1565,9 +1565,6 @@ class AccountingEngine {
         if ($paidNow < 0) throw new Exception("Paid now cannot be negative.");
         if ($paidNow - $businessAmount > 0.01) throw new Exception("Paid now cannot exceed business-funded purchase amount.");
         $sellerOutstanding = round($businessAmount - $paidNow, 2);
-        if ($sellerOutstanding > 0.009 && trim((string) $sellerName) === '') {
-            throw new Exception("Seller name is required when purchase payment is pending.");
-        }
         if ($paidNow > 0) {
             $this->validateCashAvailable($paymentAccount, $paidNow);
         }
@@ -1623,7 +1620,11 @@ class AccountingEngine {
         if ($selectedSellerParty) {
             $sellerParty = $selectedSellerParty;
             $sellerPartyId = $selectedSellerParty['id'];
-        } elseif ($sellerName !== '') {
+        } elseif ($sellerName !== '' || $sellerOutstanding > 0.009) {
+            if ($sellerName === '') {
+                // Keep the payable visible and isolated until the owner is known.
+                $sellerName = 'Owner not recorded - ' . $car['registration_no'] . ' (' . $carId . ')';
+            }
             // Always create/link the source (seller) party so the car keeps a
             // seller relationship even when the purchase is fully paid on the spot.
             // A seller ledger line is only posted when money is still owed; the
