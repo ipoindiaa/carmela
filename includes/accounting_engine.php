@@ -2151,12 +2151,15 @@ class AccountingEngine {
         if ($received < 0) throw new Exception('Amount received now cannot be negative.');
         if ($received - $remainingAfterToken > 0.01) throw new Exception('Amount received now cannot exceed the amount remaining after token adjustment.');
         $outstanding = round($remainingAfterToken - $received, 2);
-        // The car's accounting result includes every tagged cost and income.
+        // RTO money is operationally tracked in its own book and must never
+        // change the trading profit of the car. It remains journal-backed for
+        // cash/bank, audit, and RTO reporting, but is deliberately excluded
+        // from every profit figure.
         // Partner terms, however, follow the trading-margin convention used by
         // the operator's deal sheet: sale price less the purchase amount. Sale
         // commission and operating expenses remain business-owned amounts and
         // are not silently shared with car partners.
-        $profit = ($netSalePrice + $commissionAmount) - $totalCost - $this->getCarRtoPnlExpense($carId);
+        $profit = ($netSalePrice + $commissionAmount) - $totalCost;
         $partnerProfitPool = $netSalePrice - round(floatval($car['purchase_price'] ?? 0), 2);
 
         $ownsTransaction = !$this->db->inTransaction();
@@ -5491,8 +5494,10 @@ class AccountingEngine {
         // owned stock (it is allocated to the car account). It is reported
         // separately so operators can see what the sourcing actually cost.
         $dealerCommission = $this->getCarDealerCommissionTotal($carId);
-        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $rtoRecovered + $loanCommissionIncome + $tokenForfeitureNet;
-        $profit = $netBusinessRevenue - $totalCost - $rtoExpense;
+        // RTO receipts and payments remain visible below as memorandum values,
+        // but do not form part of revenue, cost, or profit.
+        $netBusinessRevenue = $netSalePrice + $saleCommissionAmount + $loanCommissionIncome + $tokenForfeitureNet;
+        $profit = $netBusinessRevenue - $totalCost;
         // Partner profit is the agreed trading margin only. Expenses, RTO,
         // loan/token income, and sale commission are reported separately and
         // stay with the business unless explicitly included in deal terms.
@@ -5512,8 +5517,8 @@ class AccountingEngine {
         return [
             'car' => $car,
             'purchase_price' => $car['purchase_price'],
-            'total_expenses' => ($totalCost - $car['purchase_price']) + $rtoExpense,
-            'total_cost' => $totalCost + $rtoExpense,
+            'total_expenses' => $totalCost - $car['purchase_price'],
+            'total_cost' => $totalCost,
             'inventory_cost' => $totalCost,
             'sale_price' => $salePrice,
             'sale_commission_amount' => $saleCommissionAmount,
@@ -6079,7 +6084,7 @@ class AccountingEngine {
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
-             WHERE a.business_id = ? AND a.group_name = 'INCOME' AND a.code <> 'PNL' AND je.entry_date BETWEEN ? AND ?
+             WHERE a.business_id = ? AND a.group_name = 'INCOME' AND a.code NOT IN ('PNL', 'RTO-REC') AND je.entry_date BETWEEN ? AND ?
              GROUP BY a.id, a.code, a.name HAVING amount <> 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
@@ -6089,7 +6094,7 @@ class AccountingEngine {
              FROM accounts a
              JOIN journal_lines jl ON jl.account_id = a.id
              JOIN journal_entries je ON je.id = jl.journal_entry_id AND je.status IN ('POSTED','REVERSED')
-             WHERE a.business_id = ? AND a.group_name = 'EXPENSE' AND je.entry_date BETWEEN ? AND ?
+             WHERE a.business_id = ? AND a.group_name = 'EXPENSE' AND a.code <> 'RTO-EXP' AND je.entry_date BETWEEN ? AND ?
              GROUP BY a.id, a.code, a.name HAVING amount <> 0 ORDER BY amount DESC",
             [$this->businessId, $fromDate, $toDate]
         );
@@ -6163,13 +6168,22 @@ class AccountingEngine {
         $result = ['ASSET' => [], 'LIABILITY' => [], 'EQUITY' => []];
         $totalIncome = 0.0;
         $totalExpense = 0.0;
+        $rtoClearingBalance = 0.0;
 
         foreach ($trialBalance as $row) {
             if ($row['group_name'] === 'INCOME') {
+                if (($row['code'] ?? '') === 'RTO-REC') {
+                    $rtoClearingBalance += $row['balance_type'] === 'CR' ? $row['balance_amount'] : -$row['balance_amount'];
+                    continue;
+                }
                 $totalIncome += $row['balance_type'] === 'CR' ? $row['balance_amount'] : -$row['balance_amount'];
                 continue;
             }
             if ($row['group_name'] === 'EXPENSE') {
+                if (($row['code'] ?? '') === 'RTO-EXP') {
+                    $rtoClearingBalance -= $row['balance_type'] === 'DR' ? $row['balance_amount'] : -$row['balance_amount'];
+                    continue;
+                }
                 $totalExpense += $row['balance_type'] === 'DR' ? $row['balance_amount'] : -$row['balance_amount'];
                 continue;
             }
@@ -6187,6 +6201,20 @@ class AccountingEngine {
                 'amount' => $row['balance_amount'],
                 'balance_type' => $row['balance_type'],
             ];
+        }
+
+        // RTO money is a separate operational clearing balance, not business
+        // profit. Present the net on the balance sheet so excluding it from
+        // current earnings never makes the statement unbalanced.
+        if (abs($rtoClearingBalance) >= 0.01) {
+            $rtoRow = [
+                'code' => 'RTO-CLEARING',
+                'name' => $rtoClearingBalance >= 0 ? 'RTO Money Held' : 'RTO Money Recoverable',
+                'sub_group' => 'RTO Book Clearing',
+                'amount' => abs(round($rtoClearingBalance, 2)),
+                'balance_type' => $rtoClearingBalance >= 0 ? 'CR' : 'DR',
+            ];
+            $result[$rtoClearingBalance >= 0 ? 'LIABILITY' : 'ASSET'][] = $rtoRow;
         }
 
         $netProfit = round($totalIncome - $totalExpense, 2);

@@ -174,6 +174,7 @@ $keyEvents = $db->fetchAll(
         <p class="page-subtitle">Sourced from external entity: <strong><?= clean($car['owner_name'] ?: 'External Party') ?></strong></p>
     </div>
     <div class="page-actions car-detail-actions">
+        <a href="../cars/account_sheet.php?id=<?= urlencode($id) ?>" class="btn btn-outline btn-sm"><i class="ri-file-list-3-line"></i> કાર હિસાબ પત્રક</a>
         <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?>
             <a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit Car</a>
         <?php endif; ?>

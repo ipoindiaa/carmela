@@ -150,7 +150,7 @@ $monthIncome = $db->fetch(
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_entry_id
      JOIN accounts a ON a.id = jl.account_id
-     WHERE je.business_id = ? AND a.group_name = 'INCOME' AND je.status IN ('POSTED','REVERSED')
+     WHERE je.business_id = ? AND a.group_name = 'INCOME' AND a.code <> 'RTO-REC' AND je.status IN ('POSTED','REVERSED')
      AND je.entry_date BETWEEN ? AND ?",
     [$businessId, $monthStart, $monthEnd]
 );
@@ -159,7 +159,7 @@ $monthExpense = $db->fetch(
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_entry_id
      JOIN accounts a ON a.id = jl.account_id
-     WHERE je.business_id = ? AND a.group_name = 'EXPENSE' AND je.status IN ('POSTED','REVERSED')
+     WHERE je.business_id = ? AND a.group_name = 'EXPENSE' AND a.code <> 'RTO-EXP' AND je.status IN ('POSTED','REVERSED')
      AND je.entry_date BETWEEN ? AND ?",
     [$businessId, $monthStart, $monthEnd]
 );

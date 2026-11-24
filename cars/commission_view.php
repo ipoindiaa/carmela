@@ -104,6 +104,7 @@ $entries = $db->fetchAll(
 <div class="page-header">
     <div><h1><i class="ri-hand-coin-line"></i> <?= clean(formatRegistrationNo($car['registration_no'])) ?></h1><p class="page-subtitle">Commission car owned by <?= clean($car['owner_name']) ?></p></div>
     <div class="page-actions">
+        <a href="account_sheet.php?id=<?= urlencode($id) ?>" class="btn btn-outline btn-sm"><i class="ri-file-list-3-line"></i> કાર હિસાબ પત્રક</a>
         <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="commission_view.php?id=<?= clean($id) ?>&amp;edit=1" class="btn btn-outline btn-sm"><i class="ri-edit-line"></i> Edit</a><?php endif; ?>
         <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= clean($id) ?>" class="btn btn-outline btn-sm"><i class="ri-history-line"></i> History</a>
         <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'delete')): ?><a href="../delete_record.php?entity_type=car&amp;id=<?= clean($id) ?>" class="btn btn-danger btn-sm"><i class="ri-delete-bin-line"></i> Delete</a><?php endif; ?>

@@ -37,7 +37,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
 
 <div class="table-container table-container-fill table-container-fit car-profitability-table">
     <table class="table-compact table-total-room">
-        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Partners</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase Amount</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">Partner Profit Pool</th><th class="text-right">RTO Net</th><th class="text-right">Loan Commission</th><th class="text-right">Token Forfeit</th><th class="text-right">Net Profit/Loss</th></tr></thead>
+        <thead><tr><th>Reg. No.</th><th>Make/Model</th><th>Partners</th><th class="text-center">Status</th><th class="text-right">Days</th><th class="text-right">Purchase Amount</th><th class="text-right">Expenses</th><th class="text-right">Total Cost</th><th class="text-right">Sale + Comm.</th><th class="text-right">Partner Profit Pool</th><th class="text-right">RTO Net (Excluded)</th><th class="text-right">Loan Commission</th><th class="text-right">Token Forfeit</th><th class="text-right">Net Profit/Loss</th></tr></thead>
         <tbody>
         <?php foreach ($cars as $car):
             $carProfitability = $engine->getCarProfitability($car['id']);
@@ -57,7 +57,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
             if ($car['status'] === 'SOLD') { $grandTotalCost += $totalCost; $grandTotalSale += $totalSaleRealisation; $grandRtoNet += $rtoNet; $grandLoanCommission += $loanCommissionIncome; $grandTokenForfeit += $tokenForfeitNet; $grandPartnerPool += $partnerProfitPool; $grandProfit += $profit; }
         ?>
         <tr>
-            <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a></td>
+            <td><a href="../cars/view.php?id=<?= $car['id'] ?>" class="text-bold"><?= clean(formatRegistrationNo($car['registration_no'])) ?></a><br><a href="../cars/account_sheet.php?id=<?= urlencode($car['id']) ?>">કાર હિસાબ પત્રક</a></td>
             <td><?= clean($car['make'] . ' ' . $car['model']) ?></td>
             <td><?= clean($car['partner_names'] ?: '-') ?></td>
             <td class="text-center"><?php $sb = ['IN_STOCK'=>'badge-blue','SOLD'=>'badge-green','PENDING_PAYMENT'=>'badge-yellow','CANCELLED'=>'badge-gray']; ?>
@@ -80,7 +80,7 @@ $grandTotalCost = 0; $grandTotalSale = 0; $grandRtoNet = 0; $grandLoanCommission
             </td>
             <td class="text-right amount <?= $rtoNet >= 0 ? 'flow-in' : 'flow-out' ?>">
                 <?= abs($rtoNet) > 0.009 ? formatAmount($rtoNet, true) : '-' ?>
-                <?php if ($rtoRecovered > 0 || $rtoExpense > 0): ?><div class="table-secondary">In <?= formatAmount($rtoRecovered) ?> · Out <?= formatAmount($rtoExpense) ?></div><?php endif; ?>
+                <?php if ($rtoRecovered > 0 || $rtoExpense > 0): ?><div class="table-secondary">In <?= formatAmount($rtoRecovered) ?> · Out <?= formatAmount($rtoExpense) ?> · not in profit</div><?php endif; ?>
             </td>
             <td class="text-right amount flow-in"><?= $loanCommissionIncome > 0 ? formatAmount($loanCommissionIncome) : '-' ?></td>
             <td class="text-right amount <?= $tokenForfeitNet > 0 ? 'flow-in' : ($tokenForfeitNet < 0 ? 'flow-out' : '') ?>"><?= abs($tokenForfeitNet) > 0.009 ? formatAmount($tokenForfeitNet, true) : '-' ?></td>

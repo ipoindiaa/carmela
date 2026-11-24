@@ -85,6 +85,7 @@ function renderCarRows($cars, $engine) {
             </td>
             <td class="text-center">
                 <div class="table-action-stack">
+                    <a href="account_sheet.php?id=<?= urlencode($car['id']) ?>" class="btn btn-sm btn-outline" title="કાર હિસાબ પત્રક" aria-label="કાર હિસાબ પત્રક"><i class="ri-file-list-3-line"></i></a>
                     <a href="view.php?id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="View car" aria-label="View car"><i class="ri-eye-line"></i></a>
                     <?php if ($car['status'] !== 'CANCELLED' && Auth::hasEntityAccess('car', 'write')): ?><a href="view.php?id=<?= $car['id'] ?>&amp;edit=1" class="btn btn-sm btn-outline" title="Edit"><i class="ri-edit-line"></i></a><?php endif; ?>
                     <a href="../reports/change_history.php?entity_type=car&amp;entity_id=<?= $car['id'] ?>" class="btn btn-sm btn-outline" title="Change history"><i class="ri-history-line"></i></a>

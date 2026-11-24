@@ -30,6 +30,7 @@ function debitAccountCode(Database $db, $entryId) {
 $root = dirname(__DIR__);
 $newEntrySource = file_get_contents($root . '/transactions/new.php');
 $entitySearchSource = file_get_contents($root . '/transactions/search_entities.php');
+$dashboardSource = file_get_contents($root . '/dashboard.php');
 assertEntryTaxonomy(
     str_contains($newEntrySource, 'requires_car_selection')
         && str_contains($newEntrySource, 'data-category-requires-car')
@@ -37,6 +38,11 @@ assertEntryTaxonomy(
         && str_contains($newEntrySource, "custom_category_car: {")
         && str_contains($entitySearchSource, "case 'custom_category_car':"),
     'Only custom entry types configured as car-related expose the searchable car link'
+);
+assertEntryTaxonomy(
+    str_contains($dashboardSource, "a.code <> 'RTO-REC'")
+        && str_contains($dashboardSource, "a.code <> 'RTO-EXP'"),
+    'Dashboard monthly profit explicitly excludes both RTO accounts'
 );
 
 $db = Database::getInstance();
@@ -87,6 +93,7 @@ try {
         'is_recoverable' => 0,
         'created_by' => $user['id'],
     ]);
+    $pnlBeforeRto = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'));
     $rtoExpenseId = $engine->rtoExpense($rtoId, $carId, 300, date('Y-m-d'), $cash['id'], 'Taxonomy RTO expense');
     assertEntryTaxonomy(debitAccountCode($db, $rtoExpenseId) === 'RTO-EXP', 'RTO Expense posts to one canonical RTO expense account');
     $rtoAllocation = $db->fetch(
@@ -95,11 +102,42 @@ try {
            AND entry_type_id = ? AND status = 'POSTED'",
         [$business['id'], $carId, systemEntryTypeId('INTERNAL_ALLOCATION')]
     );
-    assertEntryTaxonomy(intval($rtoAllocation['cnt'] ?? 0) === 0, 'New RTO expense remains in Profit & Loss instead of being cancelled into car inventory');
+    assertEntryTaxonomy(intval($rtoAllocation['cnt'] ?? 0) === 0, 'RTO expense remains separate from car inventory cost');
     $rtoProfitability = $engine->getCarProfitability($carId);
     assertEntryTaxonomy(
         abs(floatval($rtoProfitability['rto_expense'] ?? 0) - 300) < 0.01,
-        'Car-wise profitability includes its journal-backed RTO expense'
+        'Car-wise report retains its journal-backed RTO expense as memorandum information'
+    );
+    assertEntryTaxonomy(
+        abs(floatval($rtoProfitability['total_expenses'] ?? 0) - 500) < 0.01
+            && abs(floatval($rtoProfitability['total_cost'] ?? 0) - 500) < 0.01,
+        'RTO expense does not increase car expenses or total cost used for profit'
+    );
+    $pnlAfterRtoExpense = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'));
+    assertEntryTaxonomy(
+        abs(floatval($pnlAfterRtoExpense['net_profit']) - floatval($pnlBeforeRto['net_profit'])) < 0.01,
+        'RTO expense does not reduce any Profit & Loss total'
+    );
+    $engine->rtoRecovery($rtoId, 125, date('Y-m-d'), $cash['id'], 'Taxonomy RTO recovery');
+    $rtoProfitability = $engine->getCarProfitability($carId);
+    $pnlAfterRtoRecovery = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'));
+    assertEntryTaxonomy(
+        abs(floatval($rtoProfitability['rto_recovered'] ?? 0) - 125) < 0.01
+            && abs(floatval($rtoProfitability['rto_net'] ?? 0) + 175) < 0.01,
+        'Car-wise report still shows RTO received, spent, and net values'
+    );
+    assertEntryTaxonomy(
+        abs(floatval($pnlAfterRtoRecovery['net_profit']) - floatval($pnlBeforeRto['net_profit'])) < 0.01,
+        'RTO recovery does not increase any Profit & Loss total'
+    );
+    $balanceSheetAfterRto = $engine->getBalanceSheet(date('Y-m-d'));
+    assertEntryTaxonomy(
+        abs(
+            floatval($balanceSheetAfterRto['total_assets'] ?? 0)
+            - floatval($balanceSheetAfterRto['total_liabilities'] ?? 0)
+            - floatval($balanceSheetAfterRto['total_equity'] ?? 0)
+        ) < 0.01,
+        'Balance Sheet remains balanced while RTO net is kept outside current profit'
     );
 
     foreach (['CAR-REPAIR', 'GEN-EXP', 'RTO-EXP'] as $code) {
@@ -168,6 +206,11 @@ try {
     assertEntryTaxonomy(
         ($saleEntry['narration'] ?? '') === "Car sold - $registration",
         'Sold Car accepts blank narration and writes a transparent system narration'
+    );
+    $soldProfitability = $engine->getCarProfitability($carId);
+    assertEntryTaxonomy(
+        abs(floatval($soldProfitability['profit'] ?? 0) - 1225) < 0.01,
+        'Sold-car profit excludes both RTO expense and RTO recovery'
     );
 
     $db->rollBack();
