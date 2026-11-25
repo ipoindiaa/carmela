@@ -152,7 +152,8 @@ switch ($kind) {
             } elseif ($context === 'CAR_TOKEN_RECEIVED' && $status !== 'IN_STOCK') {
                 $isSelectable = false;
                 $selectionNote = 'Unavailable for a new token';
-            } elseif (in_array($context, ['CAR_EXPENSE', 'CATEGORY_ENTRY'], true) && in_array($status, ['SOLD', 'PENDING_PAYMENT'], true)) {
+            } elseif (($context === 'CAR_EXPENSE' && !in_array($status, ['IN_STOCK', 'SOLD', 'PENDING_PAYMENT'], true))
+                || ($context === 'CATEGORY_ENTRY' && in_array($status, ['SOLD', 'PENDING_PAYMENT'], true))) {
                 $isSelectable = false;
                 $selectionNote = 'Unavailable for a new expense';
             } elseif ($kind === 'payment_car' && $context === 'LOAN_RECEIVED' && ($status !== 'SOLD' && $status !== 'PENDING_PAYMENT')) {

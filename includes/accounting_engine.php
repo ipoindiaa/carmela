@@ -2816,10 +2816,10 @@ class AccountingEngine {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) throw new Exception("Car not found");
 
-        // RULE 3: Sold car cannot receive new expenses without admin override
-        if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)) {
-            throw new Exception("Cannot add expenses to a sold car. Admin override required.");
+        if (!in_array($car['status'], ['IN_STOCK', 'SOLD', 'PENDING_PAYMENT'], true)) {
+            throw new Exception('Select an in-stock or sold car for this expense.');
         }
+        $postSale = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true);
 
         $this->validateCashAvailable($paymentAccount, $amount);
         $grossAmount = round(floatval($amount), 2);
@@ -2837,12 +2837,14 @@ class AccountingEngine {
         }
         $lines[] = ['account_id' => $paymentAccount, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Paid for {$expenseName}"];
 
-        $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, ['car_id' => $carId]);
+        $extras = ['car_id' => $carId];
+        if ($postSale) $extras['entry_type_id'] = systemEntryTypeId('CAR_POST_SALE_REPAIR');
+        $entryId = $this->postJournalEntry('CAR_EXPENSE', $date, $narration, $lines, $extras);
 
         // Owned stock carries its direct costs in its inventory account. An outside
         // car is never our asset: leave its expense in P&L while retaining the car
         // link on the journal entry for its own timeline and profitability.
-        if (($car['ownership_type'] ?? 'OWNED') === 'OWNED' && $grossAmount > 0 && !empty($car['account_id'])) {
+        if (!$postSale && ($car['ownership_type'] ?? 'OWNED') === 'OWNED' && $grossAmount > 0 && !empty($car['account_id'])) {
             $carLines = [
                 ['account_id' => $car['account_id'], 'amount' => $grossAmount, 'type' => 'DR', 'narration' => "$expenseName for {$car['registration_no']}"],
                 ['account_id' => $expenseAccountId, 'amount' => $grossAmount, 'type' => 'CR', 'narration' => "Expense allocated to car"],
@@ -5556,6 +5558,16 @@ class AccountingEngine {
         if (!$car) return null;
 
         $totalCost = $this->getCarTotalCost($carId);
+        if (($car['ownership_type'] ?? 'OWNED') !== 'OUTSIDE') {
+            $postSaleRepairs = $this->db->fetch(
+                "SELECT COALESCE(SUM(entry_amount), 0) AS total
+                 FROM journal_entries
+                 WHERE business_id = ? AND car_id = ? AND entry_type_id = ?
+                   AND status = 'POSTED' AND is_reversal = 0",
+                [$this->businessId, $carId, systemEntryTypeId('CAR_POST_SALE_REPAIR')]
+            );
+            $totalCost += (float) ($postSaleRepairs['total'] ?? 0);
+        }
         $salePrice = $car['sale_price'] ?? 0;
         $saleCommissionAmount = floatval($car['sale_commission_amount'] ?? 0);
         $netSalePrice = $salePrice;

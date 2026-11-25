@@ -158,13 +158,21 @@ try {
         'account_id' => $pendingCarAccountId,
     ]);
     $cash = $db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'CASH-001'", [$business['id']]);
-    $soldExpenseBlocked = false;
-    try {
-        $engine->carExpense($pendingCarId, 500, date('Y-m-d'), $cash['id'], 'Should not post');
-    } catch (Throwable $e) {
-        $soldExpenseBlocked = str_contains($e->getMessage(), 'sold car');
+    foreach (['PENDING_PAYMENT', 'SOLD'] as $status) {
+        $db->query("UPDATE cars SET status = ? WHERE id = ?", [$status, $pendingCarId]);
+        $costBefore = $engine->getCarTotalCost($pendingCarId);
+        $profitBefore = $engine->getCarProfitability($pendingCarId)['profit'];
+        $pnlBefore = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'))['net_profit'];
+        $repair = $engine->carExpense($pendingCarId, 500, date('Y-m-d'), $cash['id'], 'Post-sale repair');
+        assertIntegrity(
+            $engine->getCarTotalCost($pendingCarId) === $costBefore
+                && abs($engine->getCarProfitability($pendingCarId)['profit'] - $profitBefore + 500) < 0.01
+                && abs($engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'))['net_profit'] - $pnlBefore + 500) < 0.01,
+            "$status repair reduces car profit and P&L without increasing inventory cost"
+        );
+        $engine->reverseEntry($repair, 'Undo post-sale repair');
+        assertIntegrity(abs($engine->getCarProfitability($pendingCarId)['profit'] - $profitBefore) < 0.01, 'Repair reversal restores car profit');
     }
-    assertIntegrity($soldExpenseBlocked, 'Cars already sold with pending payment cannot receive new expenses');
 
     $salary = $db->fetch("SELECT * FROM salary_records WHERE business_id = ? ORDER BY processed_date LIMIT 1", [$business['id']]);
     $employee = $db->fetch("SELECT * FROM employees WHERE id = ? AND business_id = ?", [$salary['employee_id'], $business['id']]);
