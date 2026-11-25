@@ -231,6 +231,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         switch ($type) {
+            case 'OD_CHARGES_REFUND':
+                $bank = $db->fetch(
+                    "SELECT id FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'BANK' AND is_active = 1",
+                    [$paymentAccountId, $businessId]
+                );
+                if (!$bank) {
+                    throw new Exception('Select the bank account that received the OD charges refund.');
+                }
+                $category = $db->fetch(
+                    "SELECT id FROM accounts WHERE business_id = ? AND name = 'OD Charges Refund'
+                     AND group_name = 'INCOME' AND sub_group = 'Daily Jama Categories'
+                     AND entity_type = 'GENERAL' AND is_active = 1 ORDER BY code LIMIT 1",
+                    [$businessId]
+                );
+                $categoryId = $category['id'] ?? $engine->createAccount(
+                    'OD-REFUND', 'OD Charges Refund', 'INCOME', 'Daily Jama Categories', 'GENERAL'
+                );
+                $entryId = $engine->categoryEntry($categoryId, 'in', $amount, $date, $paymentAccountId, $narration);
+                break;
+
             case 'OUTSIDE_CAR_RECEIVED':
                 $carId = $engine->createOutsideCar([
                     'registration_no' => post('outside_car_reg_no'),
@@ -712,6 +732,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>">
                         <option value="">— Select Transaction Type —</option>
+                        <option value="OD_CHARGES_REFUND" data-flow="in" data-icon="ri-refund-2-line" data-title="OD Charges Refund" data-desc="Record the amount returned to your bank and include it in Profit &amp; Loss.">OD Charges Refund</option>
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Custom Entry Type" data-desc="Admin-defined money-in or money-out type.">Custom Entry Type</option>
                         <optgroup label="Cars">
                             <option value="CAR_PURCHASE" data-flow="out" data-icon="ri-car-line" data-title="Bought a Car" data-desc="Record the car and its first owner payment. Later owner payments build its purchase amount.">Bought a Car</option>
