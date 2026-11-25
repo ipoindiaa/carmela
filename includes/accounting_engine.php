@@ -3629,19 +3629,13 @@ class AccountingEngine {
      * LOAN RECEIVED (money back from debtor)
      */
     public function loanReceived($partyId, $amount, $date, $receivingAccount, $narration, $carId = null) {
+        if ($carId) {
+            return $this->postCarBuyerPayment($carId, $partyId, $amount, $date, $receivingAccount, $narration);
+        }
         $party = $this->db->fetch("SELECT * FROM debtors_creditors WHERE id = ? AND business_id = ?", [$partyId, $this->businessId]);
         if (!$party) throw new Exception("Party not found");
         if (!in_array($party['type'], ['DEBTOR', 'BUYER'], true)) {
             throw new Exception("Money can be received back only from a debtor or buyer account.");
-        }
-        if ($carId) {
-            $car = $this->db->fetch("SELECT id, registration_no, buyer_party_id FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
-            if (!$car) {
-                throw new Exception("Linked car not found.");
-            }
-            if (!empty($car['buyer_party_id']) && $car['buyer_party_id'] !== $partyId) {
-                throw new Exception("Selected buyer does not match the linked car buyer.");
-            }
         }
 
         $amount = round(floatval($amount), 2);
@@ -3659,18 +3653,93 @@ class AccountingEngine {
         }
 
         $lines = [
-            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => $carId ? "Car payment clearing received from {$party['name']}" : "Received from {$party['name']}"],
-            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => $carId ? "Buyer payment cleared for {$party['name']}" : "Loan repaid by {$party['name']}"],
+            ['account_id' => $receivingAccount, 'amount' => $amount, 'type' => 'DR', 'narration' => "Received from {$party['name']}"],
+            ['account_id' => $party['account_id'], 'amount' => $amount, 'type' => 'CR', 'narration' => "Loan repaid by {$party['name']}"],
         ];
 
-        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration ?: ($carId ? 'Car payment clearing - ' . ($car['registration_no'] ?? $party['name']) : $narration), $lines, [
+        $entryId = $this->postJournalEntry('LOAN_RECEIVED', $date, $narration, $lines, [
             'party_id' => $partyId,
-            'car_id' => $carId ?: null,
-            'entry_type_id' => systemEntryTypeId($carId ? 'CAR_PAYMENT_CLEARING' : 'LOAN_RECEIVED'),
             'entry_amount' => $amount,
         ]);
         $this->refreshPendingCarSaleStatusesForParty($partyId);
         return $entryId;
+    }
+
+    public function postCarBuyerPayment($carId, $partyId, $amount, $date, $cashId, $narration, $refund = false) {
+        $amount = round((float) $amount, 2);
+        if ($amount <= 0 || !$carId || !$partyId) {
+            throw new Exception('Select the car and buyer and enter a positive amount.');
+        }
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        try {
+            $car = $this->db->fetch(
+                "SELECT * FROM cars WHERE id = ? AND business_id = ? FOR UPDATE",
+                [$carId, $this->businessId]
+            );
+            $buyer = $this->db->fetch(
+                "SELECT account_id FROM debtors_creditors WHERE id = ? AND business_id = ? AND type IN ('BUYER','DEBTOR')",
+                [$partyId, $this->businessId]
+            );
+            $cash = $this->db->fetch(
+                "SELECT id FROM accounts WHERE id = ? AND business_id = ? AND entity_type IN ('CASH','BANK') AND is_active = 1",
+                [$cashId, $this->businessId]
+            );
+            if (!$car || !$buyer || !$cash || (!$refund && (
+                $car['buyer_party_id'] !== $partyId
+                || !in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)
+                || !$car['sold_date'] || $date < $car['sold_date']
+            ))) {
+                throw new Exception('Select a valid car, buyer and cash or bank account. A receipt must be dated on or after the sale.');
+            }
+            $applied = $refund ? 0.0 : min($amount, $this->getCarSalePendingFromSalePrice($car));
+            $excess = round($amount - $applied, 2);
+            $lines = [['account_id' => $cashId, 'amount' => $amount, 'type' => $refund ? 'CR' : 'DR']];
+            if ($applied > 0) {
+                $lines[] = ['account_id' => $buyer['account_id'], 'amount' => $applied, 'type' => 'CR', 'narration' => 'Applied to car outstanding'];
+            }
+            if ($excess > 0) {
+                $advance = $this->getOrCreateSystemAccount('BUYER-EXCESS', 'Refundable Buyer Overpayments', 'LIABILITY', 'Current Liabilities');
+                if ($refund) {
+                    $this->validateCashAvailable($cashId, $amount);
+                    $available = $this->getRefundableCarExcess($carId, $partyId, $date);
+                    if ($amount > $available) {
+                        throw new Exception('Refund exceeds available car overpayment of ' . formatAmount($available) . '.');
+                    }
+                }
+                $lines[] = ['account_id' => $advance['id'], 'amount' => $excess, 'type' => $refund ? 'DR' : 'CR', 'narration' => $refund ? 'Buyer excess refunded' : 'Refundable buyer overpayment'];
+            }
+            $entryId = $this->postJournalEntry($refund ? 'GENERAL_EXPENSE' : 'LOAN_RECEIVED', $date, $narration ?: ($refund ? 'Refund car overpayment' : 'Car payment received'), $lines, [
+                'party_id' => $partyId,
+                'car_id' => $carId,
+                'entry_type_id' => systemEntryTypeId($refund ? 'CAR_EXCESS_REFUND' : 'CAR_PAYMENT_CLEARING'),
+            ]);
+            if (!$refund) $this->refreshPendingCarSaleStatusesForParty($partyId);
+            if ($ownsTransaction) $this->db->commit();
+            return $entryId;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    private function getRefundableCarExcess($carId, $partyId, $date) {
+        $rows = $this->db->fetchAll(
+            "SELECT je.entry_date, SUM(CASE WHEN jl.entry_type = 'CR' THEN jl.amount ELSE -jl.amount END) AS movement
+             FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             JOIN accounts a ON a.id = jl.account_id AND a.business_id = je.business_id
+             WHERE je.business_id = ? AND je.car_id = ? AND je.party_id = ?
+               AND je.status IN ('POSTED','REVERSED') AND a.code = 'BUYER-EXCESS'
+             GROUP BY je.entry_date ORDER BY je.entry_date",
+            [$this->businessId, $carId, $partyId]
+        );
+        $balance = 0.0;
+        $available = null;
+        foreach ($rows as $row) {
+            if ($row['entry_date'] > $date) $available = min($available ?? $balance, $balance);
+            $balance += (float) $row['movement'];
+        }
+        return max(0, round(min($available ?? $balance, $balance), 2));
     }
 
     /**
@@ -4477,6 +4546,18 @@ class AccountingEngine {
     }
 
     private function createReversalEntry($entry, $lines, $reason, $reversalDate = null) {
+        if (!empty($entry['car_id']) && !empty($entry['party_id'])) {
+            $this->db->fetch("SELECT id FROM cars WHERE id = ? AND business_id = ? FOR UPDATE", [$entry['car_id'], $this->businessId]);
+            $excess = $this->db->fetch(
+                "SELECT COALESCE(SUM(jl.amount), 0) AS amount FROM journal_lines jl
+                 JOIN accounts a ON a.id = jl.account_id
+                 WHERE jl.journal_entry_id = ? AND jl.entry_type = 'CR' AND a.code = 'BUYER-EXCESS'",
+                [$entry['id']]
+            );
+            if ((float) $excess['amount'] > $this->getRefundableCarExcess($entry['car_id'], $entry['party_id'], $reversalDate ?: $entry['entry_date'])) {
+                throw new Exception('Reverse the linked overpayment refunds before reversing this receipt.');
+            }
+        }
         $reversalLines = [];
         foreach ($lines as $line) {
             $reversalLines[] = [

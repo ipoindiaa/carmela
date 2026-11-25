@@ -231,6 +231,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         switch ($type) {
+            case 'CAR_EXCESS_REFUND':
+                $entryId = $engine->postCarBuyerPayment(post('linked_car_id'), post('debtor_id'), $amount, $date, $paymentAccountId, $narration, true);
+                break;
             case 'OD_CHARGES_REFUND':
                 $bank = $db->fetch(
                     "SELECT id FROM accounts WHERE id = ? AND business_id = ? AND entity_type = 'BANK' AND is_active = 1",
@@ -732,6 +735,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label">What are you doing? *</label>
                     <select name="transaction_type" id="transaction_type" class="native-transaction-select" data-preselected-type="<?= clean($preselectedType) ?>">
                         <option value="">— Select Transaction Type —</option>
+                        <option value="CAR_EXCESS_REFUND" data-flow="out" data-icon="ri-refund-2-line" data-title="Refund Car Overpayment" data-desc="Return the refundable excess for a selected car and buyer.">Refund Car Overpayment</option>
                         <option value="OD_CHARGES_REFUND" data-flow="in" data-icon="ri-refund-2-line" data-title="OD Charges Refund" data-desc="Record the amount returned to your bank and include it in Profit &amp; Loss.">OD Charges Refund</option>
                         <option value="CATEGORY_ENTRY" data-flow="both" data-icon="ri-price-tag-3-line" data-title="Custom Entry Type" data-desc="Admin-defined money-in or money-out type.">Custom Entry Type</option>
                         <optgroup label="Cars">
@@ -1909,7 +1913,7 @@ document.getElementById('transaction_type')?.addEventListener('change', function
     const type = this.value;
     const debtorWrapper = document.getElementById('debtor-select-wrapper');
     const creditorWrapper = document.getElementById('creditor-select-wrapper');
-    const debtorActive = type === 'LOAN_RECEIVED';
+    const debtorActive = type === 'LOAN_RECEIVED' || type === 'CAR_EXCESS_REFUND';
     const creditorActive = type === 'LOAN_REPAID';
     if (debtorWrapper) {
         debtorWrapper.hidden = !debtorActive;
@@ -2452,7 +2456,7 @@ function applyLinkedPartySelection(kind, linkedPartyId, linkedPartyLabel) {
     const txnType = document.getElementById('transaction_type')?.value || '';
     if (kind !== 'payment_car' || !linkedPartyId) return;
 
-    if (txnType === 'LOAN_RECEIVED') {
+    if (txnType === 'LOAN_RECEIVED' || txnType === 'CAR_EXCESS_REFUND') {
         const input = document.getElementById('debtor_id');
         const trigger = document.getElementById('debtor-picker-trigger');
         if (input) input.value = linkedPartyId;
@@ -2624,7 +2628,7 @@ function syncCarClearingUi() {
 
     if (debtorLabel) debtorLabel.textContent = txnType === 'LOAN_RECEIVED' ? 'Buyer / Debtor *' : 'Select Debtor *';
     if (creditorLabel) creditorLabel.textContent = txnType === 'LOAN_REPAID' ? 'Seller / Creditor *' : 'Select Creditor *';
-    if (linkedCarLabel) linkedCarLabel.textContent = (txnType === 'LOAN_RECEIVED' || txnType === 'LOAN_REPAID') ? 'Car for this clearing' : 'Linked Car';
+    if (linkedCarLabel) linkedCarLabel.textContent = txnType === 'CAR_EXCESS_REFUND' ? 'Car for this refund *' : ((txnType === 'LOAN_RECEIVED' || txnType === 'LOAN_REPAID') ? 'Car for this clearing' : 'Linked Car');
 
     if (linkedCarHint) {
         linkedCarHint.textContent = txnType === 'LOAN_RECEIVED'

@@ -296,6 +296,20 @@ try {
     assertUll(count($saleTimeline) === 1 && floatval($saleTimeline[0]['cash_in_amount']) === 200000.0, 'Car timeline keeps the ₹2,00,000 actual sale receipt distinct from the buyer receivable');
 
     $pnl = $engine->getProfitAndLoss($date, $date);
+    $buyerId = $engine->getCarPendingAmounts($carId)['buyer_party_id'];
+    $receipt = $engine->loanReceived($buyerId, 455000, $date, $cash['id'], 'Receipt with excess', $carId);
+    assertUll($engine->getCarPendingAmounts($carId)['sale_pending'] === 0.0, 'Overpayment clears the car receivable');
+    $refund = $engine->postCarBuyerPayment($carId, $buyerId, 80000, $date, $cash['id'], 'Refund excess', true);
+    assertUll($engine->getCarPendingAmounts($carId)['sale_pending'] === 0.0 && $engine->getProfitAndLoss($date, $date) === $pnl, 'Refund leaves car pending and P&L unchanged');
+    $blocked = false;
+    try {
+        $engine->postCarBuyerPayment($carId, $buyerId, 1, $date, $cash['id'], 'Duplicate refund', true);
+    } catch (Exception $e) {
+        $blocked = str_contains($e->getMessage(), 'Refund exceeds');
+    }
+    assertUll($blocked, 'Refund cannot exceed the remaining excess');
+    $engine->reverseEntry($refund, 'Undo test refund');
+    $engine->reverseEntry($receipt, 'Undo test receipt');
     $cogs = array_values(array_filter($pnl['expenses'], static fn($row) => ($row['code'] ?? '') === 'COGS'));
     assertUll(count($cogs) === 1 && floatval($cogs[0]['amount']) === 465000.0, 'Profit and Loss includes the purchase price plus dealer commission as Cost of Cars Sold');
     assertUll(abs(floatval($pnl['net_profit']) - 110000.0) < 0.01, 'Profit and Loss reports sale revenue less the complete car cost');

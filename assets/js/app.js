@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'EMPLOYEE_ADVANCE': ['employee-section'],
                 'LOAN_GIVEN': ['counterparty-section'],
                 'LOAN_RECEIVED': ['party-select-section'],
+                'CAR_EXCESS_REFUND': ['party-select-section'],
                 'LOAN_TAKEN': ['counterparty-section'],
                 'LOAN_REPAID': ['party-select-section'],
                 'CONTRA_TRANSFER': ['contra-section'],
