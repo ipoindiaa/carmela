@@ -1,10 +1,13 @@
 <?php
 $pageTitle = 'Car Detail';
 $pageIcon = '<i class="ri-car-line"></i>';
-require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/accounting_engine.php';
 require_once __DIR__ . '/../includes/attachments.php';
 
+Auth::check();
+$db = Database::getInstance();
 $id = get('id');
 $businessId = Auth::user('business_id');
 $engine = new AccountingEngine($businessId, Auth::user('user_id'));
@@ -112,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+require_once __DIR__ . '/../includes/header.php';
 $profitability = $engine->getCarProfitability($id);
 $profit = $profitability['status'] === 'SOLD' ? $profitability['profit'] : null;
 $expenses = $profitability['total_expenses'];

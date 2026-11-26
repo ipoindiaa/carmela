@@ -61,7 +61,11 @@ try {
     } catch (Exception $e) {
         checkTotalSettlement(str_contains($e->getMessage(), 'cannot exceed available'), 'A second payout cannot exceed the remaining balances');
     }
-    $engine->reverseEntry($entryId, 'Undo full settlement');
+    $entryId = $engine->correctEntry($entryId, $date, 'Correct full settlement', [], '', 1700000);
+    $corrected = $engine->getPartnerPosition($partnerId);
+    checkTotalSettlement($corrected['capital_balance'] === 50000.0 && $corrected['pending_payable'] === 0.0,
+        'Edited settlement reapplies profit first and updates the capital remainder');
+    $engine->reverseEntry($entryId, 'Undo corrected settlement');
     $position = $engine->getPartnerPosition($partnerId);
     checkTotalSettlement($position['capital_balance'] === 1700000.0 && $position['current_balance'] === 50000.0 && $position['pending_payable'] === 50000.0,
         'Reversal restores capital, profit and the profit application register');

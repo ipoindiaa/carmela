@@ -30,6 +30,7 @@ $engine = new AccountingEngine($business['id'], $user['id']);
 $cash = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND code = 'CASH-001'", [$business['id']]);
 $misc = $db->fetch("SELECT * FROM accounts WHERE business_id = ? AND code = 'MISC-EXP'", [$business['id']]);
 assertSplitBill($cash && $misc, 'Required test accounts exist');
+$db->beginTransaction();
 
 $registrationNo = 'GJ09JK1234';
 $car = $db->fetch("SELECT * FROM cars WHERE business_id = ? AND registration_no = ?", [$business['id'], $registrationNo]);
@@ -109,7 +110,18 @@ $register = $engine->getJournalVoucherRegister(date('Y-m-d'), date('Y-m-d'));
 $registerRow = array_values(array_filter($register, static fn($row) => $row['id'] === $voucherId))[0] ?? null;
 assertSplitBill($registerRow && str_contains($registerRow['car_allocations'], $registrationNo . ':::80000.00'), 'Large Bill Register exposes the linked car and allocated amount');
 
-$reversalId = $engine->reverseEntry($postedEntry['id'], 'Split bill linkage regression reversal');
+$splitAmounts = [];
+foreach ($voucherLines as $line) {
+    $splitAmounts[$line['id']] = $line['id'] === $carVoucherLine['id'] ? 70000 : 20000;
+}
+$correctedEntryId = $engine->correctEntry($postedEntry['id'], date('Y-m-d'), 'Corrected split bill', [], '', null, $splitAmounts);
+$reversedOriginal = $db->fetch("SELECT reversed_by, corrected_by_id FROM journal_entries WHERE id = ?", [$postedEntry['id']]);
+$replacementVoucher = $db->fetch("SELECT primary_amount FROM journal_vouchers WHERE posted_entry_id = ?", [$correctedEntryId]);
+assertSplitBill($reversedOriginal['corrected_by_id'] === $correctedEntryId && (float) $replacementVoucher['primary_amount'] === 90000.0,
+    'Editing a split recomputes payment total and links replacement to original');
+assertSplitBill(abs($engine->getCarTotalCost($carId) - ($costBefore + 70000)) < 0.01, 'Corrected split posts only its revised car allocation');
+$engine->reverseEntry($correctedEntryId, 'Undo corrected split');
+$reversalId = $reversedOriginal['reversed_by'];
 $reversedVoucher = $db->fetch("SELECT * FROM journal_vouchers WHERE id = ?", [$voucherId]);
 $reversalCarLine = $db->fetch(
     "SELECT * FROM journal_lines WHERE journal_entry_id = ? AND account_id = ?",
@@ -130,4 +142,5 @@ $auditCount = $db->fetch(
 );
 assertSplitBill(intval($auditCount['cnt']) >= 3, 'Voucher create, post, and reverse changes are audit logged');
 
-echo "Split bill car-linkage regression checks completed.\n";
+$db->rollBack();
+echo "Split bill car-linkage regression checks completed and test data rolled back.\n";

@@ -94,6 +94,13 @@ try {
         'created_by' => $user['id'],
     ]);
     $pnlBeforeRto = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'));
+    $generalRto = $engine->rtoExpenseWithoutCar(1700, date('Y-m-d'), $cash['id'], 'General RTO expense');
+    $generalRtoEntry = $db->fetch("SELECT car_id, transaction_type FROM journal_entries WHERE id = ?", [$generalRto]);
+    assertEntryTaxonomy($generalRtoEntry['car_id'] === null && $generalRtoEntry['transaction_type'] === 'RTO_EXPENSE'
+        && debitAccountCode($db, $generalRto) === 'RTO-EXP'
+        && $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d')) === $pnlBeforeRto,
+        'Car-free RTO expense posts to the RTO ledger and stays out of P&L');
+    $engine->reverseEntry($generalRto, 'Undo general RTO expense');
     $rtoExpenseId = $engine->rtoExpense($rtoId, $carId, 300, date('Y-m-d'), $cash['id'], 'Taxonomy RTO expense');
     assertEntryTaxonomy(debitAccountCode($db, $rtoExpenseId) === 'RTO-EXP', 'RTO Expense posts to one canonical RTO expense account');
     $rtoAllocation = $db->fetch(
@@ -118,7 +125,10 @@ try {
         abs(floatval($pnlAfterRtoExpense['net_profit']) - floatval($pnlBeforeRto['net_profit'])) < 0.01,
         'RTO expense does not reduce any Profit & Loss total'
     );
-    $engine->rtoRecovery($rtoId, 125, date('Y-m-d'), $cash['id'], 'Taxonomy RTO recovery');
+    $expenseCorrection = $engine->correctEntry($rtoExpenseId, date('Y-m-d'), 'Correct RTO cost', [], '', 350);
+    $engine->correctEntry($expenseCorrection, date('Y-m-d'), 'Restore RTO cost', [], '', 300);
+    $recovery = $engine->rtoRecovery($rtoId, 100, date('Y-m-d'), $cash['id'], 'Taxonomy RTO recovery');
+    $engine->correctEntry($recovery, date('Y-m-d'), 'Correct RTO recovery', [], '', 125);
     $rtoProfitability = $engine->getCarProfitability($carId);
     $pnlAfterRtoRecovery = $engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'));
     assertEntryTaxonomy(

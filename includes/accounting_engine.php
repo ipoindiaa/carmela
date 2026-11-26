@@ -2942,10 +2942,20 @@ class AccountingEngine {
     }
 
     /**
-     * Record RTO money received when the operator does not know or need a car
-     * link. This is a general RTO receipt, not an RTO case: the case tables
-     * have mandatory car foreign keys and must not contain fabricated links.
+     * Record a general RTO payment directly in the ledger without a car case.
      */
+    public function rtoExpenseWithoutCar($amount, $date, $paymentAccount, $narration = '') {
+        $amount = round((float) $amount, 2);
+        if (!is_finite($amount) || $amount <= 0) throw new Exception('RTO expense must be greater than zero.');
+        $this->validateDateNotLocked($date);
+        $this->validateCashAvailable($paymentAccount, $amount);
+        $expense = $this->getOrCreateSystemAccount('RTO-EXP', 'RTO Expense', 'EXPENSE', 'Direct Expenses (Car)');
+        return $this->postJournalEntry('RTO_EXPENSE', $date, trim((string) $narration) ?: 'General RTO expense', [
+            ['account_id' => $expense['id'], 'amount' => $amount, 'type' => 'DR', 'narration' => 'General RTO expense'],
+            ['account_id' => $paymentAccount, 'amount' => $amount, 'type' => 'CR', 'narration' => 'Paid RTO expense'],
+        ]);
+    }
+
     public function rtoRecoveryWithoutCar($amount, $date, $receivingAccount, $narration = '') {
         $amount = round(floatval($amount), 2);
         if ($amount <= 0) throw new Exception('Recovery amount must be greater than zero.');
@@ -3374,7 +3384,7 @@ class AccountingEngine {
             // Capital-only payments use the existing withdrawal reversal path.
             $entryId = $this->postJournalEntry($profitPaid > 0 ? 'PARTNER_SETTLEMENT' : 'PARTNER_WITHDRAW',
                 $date, $narration ?: 'Investment and profit settlement - ' . $partner['name'], $lines,
-                ['partner_id' => $partnerId, 'audit_metadata' => [
+                ['partner_id' => $partnerId, 'entry_type_id' => systemEntryTypeId('PARTNER_TOTAL_SETTLEMENT'), 'audit_metadata' => [
                     'capital_repaid' => $capitalPaid, 'profit_settled' => $profitPaid, 'total_paid' => $amount,
                 ]]);
             if ($profitPaid > 0) $this->applyPartnerSettlement($partnerId, $profitPaid, 'PAYABLE', $entryId, $date);
@@ -4194,7 +4204,201 @@ class AccountingEngine {
         ], true);
     }
 
-    public function correctEntry($entryId, $date, $narration, $submittedLines, $reason) {
+    public function entrySupportsSimpleAmountCorrection(array $entry, array $lines): bool {
+        if ($this->supportsOperationalAmountCorrection($entry)) return true;
+        if (count($lines) !== 2) return false;
+        if (($entry['entry_type_id'] ?? '') === systemEntryTypeId('CAR_POST_SALE_REPAIR')) return true;
+        if (!$this->entrySupportsLineCorrection($entry)) return false;
+        return count(array_filter($lines, static fn($line) => in_array($line['account_entity_type'] ?? '', ['CASH', 'BANK'], true))) >= 1;
+    }
+
+    private function isCarBuyerAmountCorrection(array $entry): bool {
+        return !empty($entry['car_id']) && !empty($entry['party_id'])
+            && in_array($entry['entry_type_id'] ?? '', [
+                systemEntryTypeId('CAR_PAYMENT_CLEARING'),
+                systemEntryTypeId('CAR_EXCESS_REFUND'),
+            ], true);
+    }
+
+    private function supportsOperationalAmountCorrection(array $entry): bool {
+        return $this->isCarBuyerAmountCorrection($entry)
+            || in_array($entry['transaction_type'], ['SALARY_PAYMENT', 'RTO_RECOVERY', 'RTO_EXPENSE'], true)
+            || ($entry['transaction_type'] === 'PARTNER_SETTLEMENT' && !empty($entry['partner_id']))
+            || ($entry['transaction_type'] === 'JOURNAL_VOUCHER' && !empty($entry['journal_voucher_id']))
+            || (in_array($entry['transaction_type'], ['LOAN_GIVEN', 'LOAN_TAKEN', 'LOAN_RECEIVED', 'LOAN_REPAID'], true)
+                && empty($entry['car_id']) && !empty($entry['party_id']))
+            || ($entry['transaction_type'] === 'CAR_SALE' && !empty($entry['car_id']) && !empty($entry['party_id'])
+                && ($entry['entry_type_id'] ?? '') === systemEntryTypeId('CAR_SALE'))
+            || (($entry['entry_type_id'] ?? '') === systemEntryTypeId('PARTNER_TOTAL_SETTLEMENT') && !empty($entry['partner_id']))
+            || ($entry['transaction_type'] === 'LOAN_REPAID'
+                && in_array($entry['entry_type_id'] ?? '', [
+                    systemEntryTypeId('CAR_PURCHASE_PAYMENT'),
+                    systemEntryTypeId('SELLER_PAYMENT_CLEARING'),
+                    systemEntryTypeId('COMMISSION_OWNER_PAYMENT'),
+                ], true)
+                && !empty($entry['car_id']) && !empty($entry['party_id']));
+    }
+
+    private function correctOperationalAmount(array $entry, array $oldRows, float $amount, string $date, string $narration, string $reason, array $voucherAmounts = []) {
+        $type = $entry['transaction_type'];
+        $buyerCorrection = $this->isCarBuyerAmountCorrection($entry);
+        $partnerSettlement = $type === 'PARTNER_SETTLEMENT'
+            || ($entry['entry_type_id'] ?? '') === systemEntryTypeId('PARTNER_TOTAL_SETTLEMENT');
+        $totalSettlement = ($entry['entry_type_id'] ?? '') === systemEntryTypeId('PARTNER_TOTAL_SETTLEMENT')
+            || ($type === 'PARTNER_SETTLEMENT' && in_array('Partner investment repaid', array_column($oldRows, 'narration'), true));
+        $incoming = in_array($type, ['LOAN_RECEIVED', 'LOAN_TAKEN', 'RTO_RECOVERY', 'CAR_SALE'], true);
+        $ownerPayment = ($entry['entry_type_id'] ?? '') === systemEntryTypeId('COMMISSION_OWNER_PAYMENT');
+        $cashLines = array_values(array_filter($oldRows, static fn($line) =>
+            in_array($line['account_entity_type'], ['CASH', 'BANK'], true)
+            && ($partnerSettlement || $line['entry_type'] === ($incoming ? 'DR' : 'CR'))
+        ));
+        if ($type !== 'JOURNAL_VOUCHER' && (count($cashLines) !== 1 || !is_finite($amount) || $amount <= 0)) {
+            throw new Exception('Enter a positive amount for an entry with one cash or bank account.');
+        }
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) $this->db->beginTransaction();
+        else $this->db->query('SAVEPOINT car_buyer_amount_correction');
+        try {
+            $car = empty($entry['car_id']) ? null : $this->db->fetch(
+                "SELECT * FROM cars WHERE id = ? AND business_id = ? FOR UPDATE",
+                [$entry['car_id'], $this->businessId]
+            );
+            $current = $this->db->fetch("SELECT status FROM journal_entries WHERE id = ? AND business_id = ? FOR UPDATE", [$entry['id'], $this->businessId]);
+            if (($current['status'] ?? '') !== 'POSTED') throw new Exception('Open the latest entry before editing.');
+            if (($buyerCorrection && $incoming) || $type === 'CAR_SALE') {
+                $later = $this->db->fetch(
+                    "SELECT reference_no FROM journal_entries
+                     WHERE business_id = ? AND car_id = ? AND party_id = ? AND status = 'POSTED'
+                       AND is_reversal = 0 AND id <> ? AND transaction_type IN ('LOAN_RECEIVED','BAD_DEBT')
+                       AND entry_date >= ? AND (entry_date <> ? OR created_at >= ?)
+                     ORDER BY entry_date, created_at LIMIT 1",
+                    [$this->businessId, $entry['car_id'], $entry['party_id'], $entry['id'], min($date, $entry['entry_date']), $entry['entry_date'], $entry['created_at']]
+                );
+                if ($later) throw new Exception('Review later clearing entry ' . $later['reference_no'] . ' before changing this receipt.');
+            }
+            if ($type === 'CAR_SALE' && (!$car || ($car['ownership_type'] ?? 'OWNED') !== 'OWNED'
+                || $car['buyer_party_id'] !== $entry['party_id'] || $car['sold_date'] !== $entry['entry_date'])) {
+                throw new Exception('Open the active owned-car sale to change its price.');
+            }
+            $salary = null;
+            $recovery = null;
+            $expenseCase = null;
+            $voucher = null;
+            $allocations = [];
+            if ($type === 'JOURNAL_VOUCHER') {
+                $voucher = $this->db->fetch(
+                    "SELECT * FROM journal_vouchers WHERE id = ? AND business_id = ? AND posted_entry_id = ? AND status = 'POSTED' FOR UPDATE",
+                    [$entry['journal_voucher_id'], $this->businessId, $entry['id']]
+                );
+                if (!$voucher) throw new Exception('Open the currently posted voucher before editing.');
+                $allocations = $this->db->fetchAll("SELECT * FROM journal_voucher_lines WHERE journal_voucher_id = ? ORDER BY id", [$voucher['id']]);
+                foreach ($allocations as &$allocation) {
+                    if ($voucherAmounts && !array_key_exists($allocation['id'], $voucherAmounts)) {
+                        throw new Exception('Enter an amount for each split line.');
+                    }
+                    $allocation['amount'] = round((float) ($voucherAmounts[$allocation['id']] ?? $allocation['amount']), 2);
+                    if (!is_finite($allocation['amount']) || $allocation['amount'] <= 0) throw new Exception('Every split amount must be positive.');
+                    if ($allocation['entity_type'] === 'CAR') {
+                        $stock = $this->db->fetch("SELECT status FROM cars WHERE business_id = ? AND id = ?", [$this->businessId, $allocation['entity_id']]);
+                        if (($stock['status'] ?? '') !== 'IN_STOCK') throw new Exception('Correct the split allocation before closing its linked car inventory.');
+                    }
+                }
+                unset($allocation);
+                $amount = round(array_sum(array_column($allocations, 'amount')), 2);
+            }
+            if ($partnerSettlement) {
+                $this->db->fetch("SELECT id FROM partners WHERE business_id = ? AND id = ? FOR UPDATE", [$this->businessId, $entry['partner_id']]);
+            }
+            if ($type === 'SALARY_PAYMENT') {
+                $salary = $this->db->fetch("SELECT * FROM salary_records WHERE business_id = ? AND journal_entry_id = ? FOR UPDATE", [$this->businessId, $entry['id']]);
+                if (!$salary) throw new Exception('The original salary month could not be verified.');
+            } elseif ($type === 'RTO_RECOVERY' && $car) {
+                $recovery = $this->db->fetch("SELECT rto_record_id FROM rto_recoveries WHERE business_id = ? AND journal_entry_id = ? FOR UPDATE", [$this->businessId, $entry['id']]);
+                if (!$recovery) throw new Exception('The original RTO recovery record could not be verified.');
+                $this->db->fetch("SELECT id FROM rto_records WHERE id = ? AND business_id = ? FOR UPDATE", [$recovery['rto_record_id'], $this->businessId]);
+            } elseif ($type === 'RTO_EXPENSE' && $car) {
+                $expenseCase = $this->db->fetch(
+                    "SELECT * FROM rto_records WHERE business_id = ? AND expense_entry_id = ? FOR UPDATE",
+                    [$this->businessId, $entry['id']]
+                );
+                if (!$expenseCase || !$car || abs((float) $expenseCase['expense_amount'] - (float) $cashLines[0]['amount']) >= 0.01) {
+                    throw new Exception('Review the RTO case first. This expense cannot be isolated from its other payments.');
+                }
+                if (!empty($expenseCase['is_recoverable']) && $amount < (float) $expenseCase['recovered_amount']) {
+                    throw new Exception('The revised RTO expense cannot be below the amount already recovered.');
+                }
+            } elseif ($type === 'LOAN_REPAID' && !$ownerPayment && !empty($entry['car_id'])
+                && (!$car || ($this->usesPaymentBasedPurchaseAmount($car) && $car['status'] !== 'IN_STOCK'))) {
+                throw new Exception('Correct the purchase price from Car Details when the payment-based car is no longer in stock.');
+            }
+            $reversal = $this->reverseEntry($entry['id'], $reason ?: 'Entry correction');
+            $accountId = $cashLines[0]['account_id'] ?? null;
+            if ($voucher && $voucher['primary_entry_type'] === 'CR') {
+                $this->validateCashAvailable($voucher['primary_account_id'], $amount);
+            }
+            $replacement = match (true) {
+                $voucher !== null => $this->postCorrectedVoucher($voucher, $date, $narration, $amount, $allocations),
+                $partnerSettlement => $this->partnerSettlement(
+                    $entry['partner_id'], $amount, $date, $accountId,
+                    $totalSettlement
+                        ? 'PAY_TOTAL' : ($cashLines[0]['entry_type'] === 'DR' ? 'RECEIVE' : 'PAY'),
+                    $narration
+                ),
+                $type === 'SALARY_PAYMENT' => $this->salaryPayment($entry['employee_id'], $amount, $salary['advance_deducted'], $date, $accountId, $salary['month'], $salary['year']),
+                $type === 'RTO_RECOVERY' => $recovery
+                    ? $this->rtoRecovery($recovery['rto_record_id'], $amount, $date, $accountId, $narration)
+                    : $this->rtoRecoveryWithoutCar($amount, $date, $accountId, $narration),
+                $type === 'RTO_EXPENSE' => $expenseCase
+                    ? $this->rtoExpense($expenseCase['id'], $car['id'], $amount, $date, $accountId, $narration)
+                    : $this->rtoExpenseWithoutCar($amount, $date, $accountId, $narration),
+                $ownerPayment => $this->payCommissionCarOwner($entry['car_id'], $amount, $date, $accountId, $narration),
+                $type === 'LOAN_REPAID' => $this->loanRepaid($entry['party_id'], $amount, $date, $accountId, $narration, $entry['car_id']),
+                $type === 'LOAN_GIVEN' => $this->loanGiven(null, $amount, $date, $accountId, $narration, $entry['party_id']),
+                $type === 'LOAN_TAKEN' => $this->loanTaken(null, $amount, $date, $accountId, $narration, $entry['party_id']),
+                $type === 'LOAN_RECEIVED' && !$buyerCorrection => $this->loanReceived($entry['party_id'], $amount, $date, $accountId, $narration),
+                $type === 'CAR_SALE' => $this->carSale(
+                    $entry['car_id'], $amount, $date, $accountId, $narration, null,
+                    (float) $cashLines[0]['amount'], (float) $car['sale_commission_amount'], $entry['party_id']
+                ),
+                default => $this->postCarBuyerPayment($entry['car_id'], $entry['party_id'], $amount, $date, $accountId, $narration, !$incoming),
+            };
+            $this->db->query(
+                "UPDATE journal_entries SET corrected_from_id = ?, version_no = ?, correction_reason = ? WHERE id = ? AND business_id = ?",
+                [$entry['id'], max(1, (int) $entry['version_no']) + 1, $reason, $replacement, $this->businessId]
+            );
+            $this->db->query("UPDATE journal_entries SET corrected_by_id = ?, correction_reason = ? WHERE id = ? AND business_id = ?", [$replacement, $reason, $entry['id'], $this->businessId]);
+            if (!$voucher) {
+                $this->relinkCorrectedEntry($entry, $replacement, $date, $narration);
+            } else {
+                $this->db->query("UPDATE attachments SET entity_id = ? WHERE business_id = ? AND entity_type = 'JOURNAL_ENTRY' AND entity_id = ?",
+                    [$replacement, $this->businessId, $entry['id']]);
+            }
+            Auth::auditUpdate('journal_entry', $entry['id'], [
+                'entry_amount' => $entry['entry_amount'], 'entry_date' => $entry['entry_date'], 'lines' => $oldRows,
+            ], [
+                'entry_amount' => $amount, 'entry_date' => $date, 'corrected_entry_id' => $replacement,
+                'reversal_entry_id' => $reversal, 'correction_reason' => $reason,
+            ], 'Operational entry amount corrected', 'transactions');
+            if ($ownsTransaction) $this->db->commit();
+            else $this->db->query('RELEASE SAVEPOINT car_buyer_amount_correction');
+            return $replacement;
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $this->db->inTransaction()) $this->db->rollBack();
+            elseif (!$ownsTransaction && $this->db->inTransaction()) {
+                $this->db->query('ROLLBACK TO SAVEPOINT car_buyer_amount_correction');
+                $this->db->query('RELEASE SAVEPOINT car_buyer_amount_correction');
+            }
+            throw $e;
+        }
+    }
+
+    private function postCorrectedVoucher(array $voucher, string $date, string $narration, float $amount, array $allocations): string {
+        $voucherId = $this->saveJournalVoucher($date, $narration, $voucher['primary_account_id'],
+            $voucher['primary_entry_type'], $amount, $allocations, $voucher['voucher_type']);
+        return $this->postJournalVoucher($voucherId);
+    }
+
+    public function correctEntry($entryId, $date, $narration, $submittedLines, $reason, $simpleAmount = null, array $voucherAmounts = []) {
         $entry = $this->db->fetch(
             "SELECT * FROM journal_entries WHERE id = ? AND business_id = ?",
             [$entryId, $this->businessId]
@@ -4205,9 +4409,6 @@ class AccountingEngine {
         }
 
         $reason = trim((string) $reason);
-        if (mb_strlen($reason) < 5) {
-            throw new Exception('Enter a clear correction reason of at least 5 characters.');
-        }
         $date = trim((string) $date);
         $narration = trim((string) $narration);
         if ($narration === '') {
@@ -4230,6 +4431,14 @@ class AccountingEngine {
         foreach ($oldRows as $line) {
             $this->assertCorrectionAccountAccess($line['account_id'], $line['account_entity_type']);
         }
+        if ($this->supportsOperationalAmountCorrection($entry)) {
+            $amount = $simpleAmount ?? $entry['entry_amount'];
+            if ($entry['transaction_type'] === 'CAR_SALE' && $simpleAmount === null) {
+                $sale = $this->db->fetch("SELECT sale_price FROM cars WHERE id = ? AND business_id = ?", [$entry['car_id'], $this->businessId]);
+                $amount = $sale['sale_price'] ?? 0;
+            }
+            return $this->correctOperationalAmount($entry, $oldRows, round((float) $amount, 2), $date, $narration, $reason, $voucherAmounts);
+        }
 
         $oldLines = array_map(function ($line) {
             return [
@@ -4242,7 +4451,7 @@ class AccountingEngine {
         }, $oldRows);
 
         $canEditLines = $this->entrySupportsLineCorrection($entry);
-        $newLines = $canEditLines
+        $newLines = $canEditLines && $simpleAmount === null
             ? $this->normalizeCorrectionLines((array) $submittedLines)
             : array_map(function ($line) {
                 return [
@@ -4252,10 +4461,24 @@ class AccountingEngine {
                     'narration' => trim((string) ($line['narration'] ?? '')),
                 ];
             }, $oldRows);
+        if ($simpleAmount !== null) {
+            if (!$this->entrySupportsSimpleAmountCorrection($entry, $oldRows)) {
+                throw new Exception('This entry needs a correction specific to its transaction type.');
+            }
+            $simpleAmount = round((float) $simpleAmount, 2);
+            if (!is_finite($simpleAmount) || $simpleAmount <= 0) {
+                throw new Exception('Enter an amount greater than zero.');
+            }
+            $newLines = array_map(static function ($line) use ($simpleAmount) {
+                $line['amount'] = $simpleAmount;
+                return $line;
+            }, $oldLines);
+        }
 
         $newLinesForAudit = $this->decorateCorrectionLines($newLines);
         $replacementEntryTypeId = $entry['entry_type_id'] ?: systemEntryTypeId($entry['transaction_type']);
         $replacementEntryAmount = round(floatval($entry['entry_amount'] ?? 0), 2);
+        if ($simpleAmount !== null) $replacementEntryAmount = $simpleAmount;
         if ($canEditLines) {
             $replacementEntryAmount = round(array_sum(array_map(
                 static fn($line) => ($line['type'] ?? '') === 'DR' ? floatval($line['amount'] ?? 0) : 0,
@@ -4296,12 +4519,26 @@ class AccountingEngine {
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
+            $current = $this->db->fetch(
+                "SELECT status, corrected_by_id FROM journal_entries WHERE id = ? AND business_id = ? FOR UPDATE",
+                [$entryId, $this->businessId]
+            );
+            if (!$current || $current['status'] !== 'POSTED' || !empty($current['corrected_by_id'])) {
+                throw new Exception('This entry changed while you were editing it. Open the latest version.');
+            }
             $reversalId = $this->createReversalEntry(
                 $entry,
                 $oldRows,
-                'Correction: ' . $reason,
+                $reason === '' ? 'Entry correction' : 'Correction: ' . $reason,
                 $entry['entry_date']
             );
+            if ($simpleAmount !== null) {
+                foreach ($oldRows as $line) {
+                    if ($line['entry_type'] === 'CR' && in_array($line['account_entity_type'], ['CASH', 'BANK'], true)) {
+                        $this->validateCashAvailable($line['account_id'], $simpleAmount);
+                    }
+                }
+            }
             $replacementId = Database::uuid();
             $referenceNo = getNextRefNo($this->db, $this->businessId, $date, 'COR');
             $replacement = [
@@ -5726,7 +5963,7 @@ class AccountingEngine {
                 'journal_voucher',
                 $voucherId,
                 array_merge($voucherRecord, ['allocations' => $savedAllocations ?? []]),
-                "Large bill {$referenceNo} created with " . count($allocations) . ' allocation line(s)',
+                "Large bill {$voucherRecord['reference_no']} created with " . count($allocations) . ' allocation line(s)',
                 'transactions'
             );
 
@@ -5861,7 +6098,12 @@ class AccountingEngine {
         );
 
         $oldFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $oldContributions)), 2);
-        $normalized = $this->normalizePartnerFunding(max(0.01, floatval($car['purchase_price'])), $partnerFunding);
+        $normalized = $this->normalizePartnerFunding(floatval($car['purchase_price']), $partnerFunding);
+        foreach ($normalized as $row) {
+            if ($row['funding_pct'] > 999.9999) {
+                throw new Exception('The funding is too large relative to the recorded purchase price. Verify the purchase price and funding amounts.');
+            }
+        }
         $newFundingTotal = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $normalized)), 2);
         if ($salePosted && abs($newFundingTotal - $oldFundingTotal) > 0.001) {
             throw new Exception('A sold car’s total funding must stay at ' . formatAmount($oldFundingTotal) . '. You can reallocate it between partners without changing the recorded car cost.');
@@ -5985,32 +6227,41 @@ class AccountingEngine {
 
             if ($fundingChanged) {
                 $fundedRows = array_values(array_filter($newComparable, static fn($row) => floatval($row['amount']) > 0.009));
-                $allocatedByAccount = array_fill_keys(array_column($debitAccounts, 'account_id'), 0.0);
-                foreach ($fundedRows as $index => $row) {
-                    $isLast = $index === count($fundedRows) - 1;
+                // Build the new debit budget in paise. Existing funding keeps
+                // its original account mix; increases belong to car inventory.
+                $newTotal = (int) round($newFundingTotal * 100);
+                $oldTotal = (int) round($oldFundingTotal * 100);
+                $retained = min($oldTotal, $newTotal);
+                $debitBudget = [];
+                $cumulative = 0;
+                $previous = 0;
+                foreach ($debitAccounts as $account) {
+                    $cumulative += (int) round((float) $account['amount'] * 100);
+                    $target = min($retained, (int) round($cumulative * $retained / max(1, $oldTotal)));
+                    $debitBudget[$account['account_id']] = $target - $previous;
+                    $previous = $target;
+                }
+                if ($newTotal > $previous) {
+                    $inventoryAccount = $car['account_id'];
+                    if (!$inventoryAccount) throw new Exception('This car needs an inventory account before adding partner funding.');
+                    $debitBudget[$inventoryAccount] = ($debitBudget[$inventoryAccount] ?? 0) + $newTotal - $previous;
+                }
+                foreach ($fundedRows as $row) {
                     $lines = [];
-                    $rowDebitTotal = 0.0;
-                    foreach ($debitAccounts as $debitAccount) {
-                        $accountId = $debitAccount['account_id'];
-                        $accountTotal = round(floatval($debitAccount['amount']), 2);
-                        $allocation = $isLast
-                            ? round($accountTotal - $allocatedByAccount[$accountId], 2)
-                            : round($accountTotal * (floatval($row['amount']) / max(0.01, $oldFundingTotal)), 2);
+                    $remaining = (int) round((float) $row['amount'] * 100);
+                    foreach ($debitBudget as $accountId => $available) {
+                        $allocation = min($available, $remaining);
                         if ($allocation <= 0) continue;
-                        $allocatedByAccount[$accountId] += $allocation;
-                        $rowDebitTotal += $allocation;
+                        $debitBudget[$accountId] -= $allocation;
+                        $remaining -= $allocation;
                         $lines[] = [
                             'account_id' => $accountId,
-                            'amount' => $allocation,
+                            'amount' => $allocation / 100,
                             'type' => 'DR',
                             'narration' => "Corrected partner funding for {$car['registration_no']}",
                         ];
                     }
-                    $difference = round(floatval($row['amount']) - $rowDebitTotal, 2);
-                    if (abs($difference) > 0.001 && !empty($lines)) {
-                        $lines[0]['amount'] = round($lines[0]['amount'] + $difference, 2);
-                        $allocatedByAccount[$lines[0]['account_id']] += $difference;
-                    }
+                    if ($remaining !== 0) throw new Exception('Unable to allocate the corrected funding to its debit accounts.');
                     $lines[] = [
                         'account_id' => $row['capital_account_id'],
                         'amount' => round(floatval($row['amount']), 2),

@@ -193,6 +193,8 @@ try {
     assertUll($fixedCar['purchase_amount_mode'] === 'FIXED' && abs(floatval($fixedCar['purchase_price']) - 50000.0) < 0.01
         && abs($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending'] - 8000.0) < 0.01,
         'After setting an agreed price, installments reduce the payable without increasing car cost');
+    $fixedInstallment = $engine->correctEntry($fixedInstallment, $date, 'Corrected agreed-price installment', [], '', 10000);
+    assertUll(abs(floatval($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending']) - 10000) < 0.01, 'Editing an installment updates only the remaining seller payable');
     $engine->reverseEntry($fixedInstallment, 'ULL reverse installment against agreed price', $date);
     assertUll(abs($engine->getCarPendingAmounts($paymentBasedCarId)['purchase_pending'] - 20000.0) < 0.01, 'Reversing an installment restores the payable on an agreed-price car');
 
@@ -308,8 +310,16 @@ try {
         $blocked = str_contains($e->getMessage(), 'Refund exceeds');
     }
     assertUll($blocked, 'Refund cannot exceed the remaining excess');
-    $engine->reverseEntry($refund, 'Undo test refund');
-    $engine->reverseEntry($receipt, 'Undo test receipt');
+    $correctedRefund = $engine->correctEntry($refund, $date, 'Corrected refund', [], '', 30000);
+    assertUll($engine->getProfitAndLoss($date, $date) === $pnl, 'Editing a refund leaves profit unchanged');
+    $engine->reverseEntry($correctedRefund, 'Undo test refund');
+    $correctedReceipt = $engine->correctEntry($receipt, $date, 'Corrected receipt', [], '', 350000);
+    assertUll($engine->getCarPendingAmounts($carId)['sale_pending'] === 25000.0, 'Editing a receipt recalculates the car balance');
+    assertUll($engine->getProfitAndLoss($date, $date) === $pnl, 'Editing a receipt leaves profit unchanged');
+    $engine->reverseEntry($correctedReceipt, 'Undo test receipt');
+    $saleId = $engine->correctEntry($saleId, $date, 'Correct sale price', [], '', 580000);
+    assertUll($engine->getCarPendingAmounts($carId)['sale_pending'] === 380000.0, 'Sale price correction preserves the original receipt and recalculates the buyer balance');
+    $saleId = $engine->correctEntry($saleId, $date, 'Restore sale price', [], '', 575000);
     $cogs = array_values(array_filter($pnl['expenses'], static fn($row) => ($row['code'] ?? '') === 'COGS'));
     assertUll(count($cogs) === 1 && floatval($cogs[0]['amount']) === 465000.0, 'Profit and Loss includes the purchase price plus dealer commission as Cost of Cars Sold');
     assertUll(abs(floatval($pnl['net_profit']) - 110000.0) < 0.01, 'Profit and Loss reports sale revenue less the complete car cost');
@@ -342,6 +352,23 @@ try {
     $lossPnl = $engine->getProfitAndLoss($date, $date);
     assertUll($lossPnl['net_profit'] === -65000.0 && $lossPnl['partner_profit'] === -12500.0
         && $lossPnl['tiranga_profit'] === -52500.0, 'A partner loss reduces Tiranga’s share of the combined loss');
+
+    $unfundedCar = Database::uuid();
+    $unfundedAccount = $engine->createAccount('UF-' . $suffix, 'Unfunded car inventory', 'ASSET', 'Inventory', 'CAR', $unfundedCar);
+    $db->insert('cars', [
+        'id' => $unfundedCar, 'business_id' => $business['id'], 'registration_no' => 'GJ99UF' . substr($suffix, 0, 4),
+        'purchase_date' => date('Y-m-d'), 'purchase_price' => 0, 'status' => 'IN_STOCK', 'account_id' => $unfundedAccount,
+    ]);
+    $engine->correctCarPartnerFunding($unfundedCar, [
+        ['partner_id' => $profitPartnerId, 'amount' => 500000, 'profit_share_pct' => 50],
+    ], date('Y-m-d'), 'Record first partner funding after saving the car');
+    $firstFunding = $db->fetch("SELECT current_balance, current_balance_type FROM accounts WHERE id = ?", [$unfundedAccount]);
+    assertUll((float) $firstFunding['current_balance'] === 500000.0 && $firstFunding['current_balance_type'] === 'DR',
+        'First ₹5,00,000 partner funding creates an equal car inventory debit');
+    $engine->correctCarPartnerFunding($unfundedCar, [
+        ['partner_id' => $profitPartnerId, 'amount' => 499999.99, 'profit_share_pct' => 50],
+    ], $date, 'Correct funding by one paisa');
+    assertUll($engine->getCarTotalCost($unfundedCar) === 499999.99, 'Funding decrease remains balanced to the paisa');
 
     $db->rollBack();
     echo "Universal ledger linking regression checks completed and test data rolled back.\n";

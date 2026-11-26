@@ -67,7 +67,18 @@ if (!Auth::isAdmin()) {
             || in_array($account['id'], $writablePrimaryIds, true);
     }));
 }
+$isVoucher = $entry['transaction_type'] === 'JOURNAL_VOUCHER' && !empty($entry['journal_voucher_id']);
+$voucherLines = $isVoucher ? $db->fetchAll(
+    "SELECT vl.id, vl.amount, a.name FROM journal_voucher_lines vl
+     JOIN journal_vouchers v ON v.id = vl.journal_voucher_id
+     JOIN accounts a ON a.id = vl.account_id AND a.business_id = v.business_id
+     WHERE v.business_id = ? AND v.id = ? ORDER BY vl.id",
+    [$businessId, $entry['journal_voucher_id']]
+) : [];
+$voucherAmounts = [];
+$canEditAmount = !$isVoucher && $engine->entrySupportsSimpleAmountCorrection($entry, $lines);
 $canEditLines = $engine->entrySupportsLineCorrection($entry);
+$formAmount = null;
 $formDate = $entry['entry_date'];
 $formNarration = $entry['narration'];
 $formReason = '';
@@ -85,6 +96,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formDate = trim((string) post('entry_date'));
     $formNarration = trim((string) post('narration'));
     $formReason = trim((string) post('correction_reason'));
+    if ($isVoucher) {
+        foreach ((array) ($_POST['voucher_amount'] ?? []) as $lineId => $value) {
+            $voucherAmounts[$lineId] = parseDecimalInput($value);
+        }
+    }
+    if ($canEditAmount && trim((string) post('corrected_amount')) !== '') {
+        $formAmount = parseDecimalInput(post('corrected_amount'));
+    }
     if ($canEditLines) {
         $accountIds = $_POST['line_account_id'] ?? [];
         $types = $_POST['line_type'] ?? [];
@@ -107,7 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formDate,
             $formNarration,
             $canEditLines ? $formLines : [],
-            $formReason
+            $formReason,
+            $formAmount,
+            $voucherAmounts
         );
         setFlash('success', 'Entry corrected. The original and reversal are preserved in Change History.');
         redirect("view.php?id=$replacementId");
@@ -164,6 +185,14 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
                 </div>
             </div>
             <div class="form-group">
+                <?php if ($canEditAmount): ?>
+                    <label class="form-label" for="corrected_amount"><?= $entry['transaction_type'] === 'CAR_SALE' ? 'Corrected Sale Price (₹)' : 'Corrected Amount (₹)' ?></label>
+                    <input id="corrected_amount" name="corrected_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($formAmount ?? '') ?>">
+                    <div class="form-hint"><?php if ($entry['transaction_type'] === 'CAR_SALE'): ?>The original receipt and commission are retained. The buyer balance is recalculated.<?php else: ?>Original amount: <?= formatAmount($entry['entry_amount'] ?: $lines[0]['amount']) ?>. The correction uses the existing cash or bank account.<?php endif; ?><?php if ($canEditLines): ?> A new amount here overrides edits to the journal lines below.<?php endif; ?></div>
+                <?php endif; ?>
+                <?php if (in_array($entry['transaction_type'], ['CAR_PURCHASE', 'PURCHASE_AMOUNT_CORRECTION'], true) && !empty($entry['car_id'])): ?>
+                    <p><a href="../cars/view.php?id=<?= urlencode($entry['car_id']) ?>&amp;edit=1#purchase-amount-correction">Correct the agreed purchase price from Car Details</a></p>
+                <?php endif; ?>
                 <label class="form-label">Narration (Optional)</label>
                 <textarea name="narration" class="form-control" rows="3" placeholder="Optional"><?= clean($formNarration) ?></textarea>
             </div>
@@ -174,11 +203,21 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
         <div class="card-header">
             <div>
                 <h3><i class="ri-scales-3-line"></i> Journal Lines</h3>
-                <?php if (!$canEditLines): ?><div class="text-muted correction-card-note">Amounts and accounts are locked because this entry is linked to an operational record.</div><?php endif; ?>
+                <?php if (!$canEditLines && !$canEditAmount && !$isVoucher): ?><div class="text-muted correction-card-note">This linked entry requires a transaction-specific amount correction.</div><?php endif; ?>
             </div>
             <?php if ($canEditLines): ?><button type="button" class="btn btn-outline btn-sm" id="add-correction-line"><i class="ri-add-line"></i> Add Line</button><?php endif; ?>
         </div>
-        <?php if ($canEditLines): ?>
+        <?php if ($isVoucher): ?>
+            <div class="card-body">
+                <p>The payment or receipt total is recalculated from these allocations.</p>
+                <?php foreach ($voucherLines as $line): ?>
+                    <div class="form-group">
+                        <label class="form-label" for="allocation-<?= clean($line['id']) ?>"><?= clean($line['name']) ?></label>
+                        <input id="allocation-<?= clean($line['id']) ?>" name="voucher_amount[<?= clean($line['id']) ?>]" class="form-control currency-input" inputmode="decimal" required value="<?= clean($voucherAmounts[$line['id']] ?? $line['amount']) ?>">
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php elseif ($canEditLines): ?>
             <div class="card-body correction-lines" id="correction-lines">
                 <?php foreach ($formLines as $index => $line): ?>
                     <div class="correction-line" data-correction-line>
@@ -230,8 +269,8 @@ function renderCorrectionAccountOptions($accounts, $selectedId = '') {
     <div class="card correction-reason-card">
         <div class="card-body">
             <div class="form-group">
-                <label class="form-label">Reason for Change *</label>
-                <textarea name="correction_reason" class="form-control" rows="3" required minlength="5" placeholder="Example: Payment amount entered incorrectly"><?= clean($formReason) ?></textarea>
+                <label class="form-label">Reason for Change (Optional)</label>
+                <textarea name="correction_reason" class="form-control" rows="3" placeholder="Example: Payment amount entered incorrectly"><?= clean($formReason) ?></textarea>
                 <div class="form-hint">This reason is permanent and visible in Change History.</div>
             </div>
             <div class="correction-form-actions">

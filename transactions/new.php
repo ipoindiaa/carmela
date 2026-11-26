@@ -547,6 +547,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'RTO_EXPENSE':
+                if (trim((string) post('rto_car_id')) === '') {
+                    $details = array_filter([
+                        trim((string) $narration), trim((string) post('rto_type_name')),
+                        trim((string) post('rto_party_name')), trim((string) post('rto_agent_name')),
+                    ], static fn($value) => $value !== '');
+                    $entryId = $engine->rtoExpenseWithoutCar($amount, $date, $paymentAccountId, implode(' · ', array_unique($details)));
+                    break;
+                }
                 $ownsRtoTransaction = !$db->inTransaction();
                 if ($ownsRtoTransaction) $db->beginTransaction();
                 try {
@@ -663,8 +671,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($type === 'CAR_SALE' && $attachmentCarId) {
                     uploadEntityAttachments($businessId, 'CAR', $attachmentCarId, 'BUYER', 'buyer_images', Auth::user('user_id'), 'documents');
                 }
-                if (in_array($type, ['RTO_EXPENSE', 'RTO_RECOVERY'], true) && !empty($rtoRecord['id'])) {
-                    uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'documents');
+                if (in_array($type, ['RTO_EXPENSE', 'RTO_RECOVERY'], true)) {
+                    if (!empty($rtoRecord['id'])) {
+                        uploadEntityAttachments($businessId, 'RTO_RECORD', $rtoRecord['id'], 'RTO_DOC', 'rto_docs', Auth::user('user_id'), 'documents');
+                    } else {
+                        uploadEntityAttachments($businessId, 'JOURNAL_ENTRY', $entryId, 'VOUCHER', 'rto_docs', Auth::user('user_id'), 'documents');
+                    }
                 }
             } catch (Exception $uploadError) {
                 $uploadWarning = $postedEntryLabel . ' entry posted successfully, but upload failed: ' . $uploadError->getMessage();
@@ -745,7 +757,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="TOKEN_REFUND" data-flow="out" data-icon="ri-refund-2-line" data-title="Return Car Token" data-desc="Return a recorded buyer token from Cash or Bank. Car selection is optional.">Return Car Token</option>
                             <option value="CAR_SALE" data-flow="in" data-icon="ri-money-rupee-circle-line" data-title="Sold a Car" data-desc="Business received money from buyer.">Sold a Car</option>
                             <option value="CAR_EXPENSE" data-flow="out" data-icon="ri-tools-line" data-title="Car Repair / Service" data-desc="Business paid expense for a car.">Car Repair / Service</option>
-                            <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay RTO fee or agent amount for a specific car.">RTO Expense</option>
+                            <option value="RTO_EXPENSE" data-flow="out" data-icon="ri-file-shield-2-line" data-title="RTO Expense" data-desc="Pay an RTO fee or agent. Link a car if applicable.">RTO Expense</option>
                             <option value="RTO_RECOVERY" data-flow="in" data-icon="ri-refund-2-line" data-title="RTO Received" data-desc="Record RTO money received from buyer/customer. Link the car when this receipt belongs to one car.">RTO Received</option>
                         </optgroup>
                         <optgroup label="Business">
@@ -1300,13 +1312,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </h4>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label" id="rto-car-label">Car *</label>
+                        <label class="form-label">Car (Optional)</label>
                         <input type="hidden" name="rto_car_id" id="rto_car_id" value="<?= clean($preselectedCarId) ?>">
                         <button type="button" class="picker-trigger picker-trigger-wide" id="rto-car-picker-trigger" onclick="openEntityPicker('rto_car', this)">
                             <span><?= $preselectedCar ? clean($preselectedCar['registration_no']) : 'Select car for RTO' ?></span>
                             <i class="ri-search-line"></i>
                         </button>
-                        <div class="form-hint" id="rto-car-hint">Required for RTO expense and car-linked recovery.</div>
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('rto_car_id').value = ''; syncRtoRecoveryUi();">Clear car</button>
+                        <div class="form-hint" id="rto-car-hint">Leave blank to record a general RTO entry.</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">RTO Narration (Optional)</label>
@@ -1881,21 +1894,17 @@ function syncTokenReturnUi() {
 function syncRtoRecoveryUi() {
     const type = document.getElementById('transaction_type')?.value || '';
     const isRecovery = type === 'RTO_RECOVERY';
-    const label = document.getElementById('rto-car-label');
     const hint = document.getElementById('rto-car-hint');
     const input = document.getElementById('rto_car_id');
     const trigger = document.getElementById('rto-car-picker-trigger');
 
-    if (label) label.innerHTML = isRecovery
-        ? 'Car <span class="text-muted">(Optional)</span>'
-        : 'Car *';
     if (hint) hint.textContent = isRecovery
         ? 'Leave blank to record a general RTO receipt. Select a car when this receipt belongs to that car’s RTO history.'
-        : 'Required for RTO expense and car-linked recovery.';
+        : 'Leave blank to record a general RTO expense. Select a car to include it in that car’s RTO history.';
     if (trigger?.querySelector('span') && !input?.value) {
         trigger.querySelector('span').textContent = isRecovery
             ? 'No car — general RTO receipt'
-            : 'Select car for RTO';
+            : 'Select car (optional)';
     }
 }
 

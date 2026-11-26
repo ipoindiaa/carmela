@@ -170,7 +170,12 @@ try {
                 && abs($engine->getProfitAndLoss(date('Y-m-d'), date('Y-m-d'))['net_profit'] - $pnlBefore + 500) < 0.01,
             "$status repair reduces car profit and P&L without increasing inventory cost"
         );
-        $engine->reverseEntry($repair, 'Undo post-sale repair');
+        $replacement = $engine->correctEntry($repair, date('Y-m-d'), 'Corrected post-sale repair', [], '', 750);
+        assertIntegrity(
+            abs($engine->getCarProfitability($pendingCarId)['profit'] - $profitBefore + 750) < 0.01,
+            'Amount correction replaces the repair cost and accepts a blank reason'
+        );
+        $engine->reverseEntry($replacement, 'Undo post-sale repair');
         assertIntegrity(abs($engine->getCarProfitability($pendingCarId)['profit'] - $profitBefore) < 0.01, 'Repair reversal restores car profit');
     }
 
@@ -183,6 +188,18 @@ try {
         $duplicateSalaryBlocked = str_contains($e->getMessage(), 'already processed');
     }
     assertIntegrity($duplicateSalaryBlocked, 'Duplicate employee salary month remains blocked');
+    $salaryYear = (int) date('Y') + 1;
+    $salaryEntry = $engine->salaryPayment($employee['id'], 1000, 0, date('Y-m-d'), $cash['id'], 12, $salaryYear);
+    $salaryReplacement = $engine->correctEntry($salaryEntry, date('Y-m-d'), '', [], '', 1200);
+    $correctedSalary = $db->fetch(
+        "SELECT month, year, gross_salary, net_paid FROM salary_records WHERE business_id = ? AND journal_entry_id = ?",
+        [$business['id'], $salaryReplacement]
+    );
+    assertIntegrity(
+        (int) $correctedSalary['month'] === 12 && (int) $correctedSalary['year'] === $salaryYear
+            && (float) $correctedSalary['gross_salary'] === 1200.0 && (float) $correctedSalary['net_paid'] === 1200.0,
+        'Salary correction changes the amount while preserving its payroll month'
+    );
 
     $profitAndLossBefore = $engine->getProfitAndLoss('2000-01-01', date('Y-m-d'));
     $expenseBefore = round(array_sum(array_map(static fn($row) => floatval($row['amount']), $profitAndLossBefore['expenses'])), 2);

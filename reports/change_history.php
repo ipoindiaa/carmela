@@ -12,7 +12,30 @@ if (!$entityType || !$entityId) {
 }
 Auth::requireEntityAccess($entityType, 'read');
 
-$history = Auth::getRecordHistory($entityType, $entityId, $businessId, 200);
+$history = [];
+if ($entityType === 'journal_entry') {
+    $queue = [$entityId];
+    $visited = [];
+    while ($queue) {
+        $versionId = array_pop($queue);
+        if (!$versionId || isset($visited[$versionId])) continue;
+        $visited[$versionId] = true;
+        if (!Auth::canAccessTransactionEntry($versionId, $businessId, 'read')) continue;
+        $version = $db->fetch(
+            "SELECT corrected_from_id, corrected_by_id, original_entry_id, reversed_by
+             FROM journal_entries WHERE id = ? AND business_id = ?",
+            [$versionId, $businessId]
+        );
+        if (!$version) continue;
+        foreach ($version as $linkedId) {
+            if ($linkedId) $queue[] = $linkedId;
+        }
+        $history = array_merge($history, Auth::getRecordHistory($entityType, $versionId, $businessId, 200));
+    }
+    usort($history, static fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
+} else {
+    $history = Auth::getRecordHistory($entityType, $entityId, $businessId, 200);
+}
 $entityLabel = ucwords(str_replace('_', ' ', $entityType));
 
 function decodeAuditJson($value) {
