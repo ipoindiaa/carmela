@@ -402,18 +402,18 @@ unset($_SESSION['car_purchase_amount_correction_draft'][$id]);
     <div class="card-body">
         <?php if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED'): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This is not a bought business car.</strong><span>Commission and outside cars do not have a business purchase amount to correct.</span></div></div>
-        <?php elseif ($car['status'] !== 'IN_STOCK'): ?>
-            <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>This car is no longer in stock.</strong><span>Reverse the sale first, then correct its purchase amount so profit and sale history remain traceable.</span></div></div>
         <?php elseif (!$sellerParty): ?>
             <div class="alert alert-warning"><i class="ri-information-line"></i><div><strong>No vehicle owner / seller is linked to this car.</strong><span>Link the original seller first so the correction updates the correct party ledger.</span></div></div>
             <div class="form-actions form-actions-start"><a href="purchase_payment.php?id=<?= clean($car['id']) ?>" class="btn btn-primary"><i class="ri-tools-line"></i> Fix Historical Purchase Record</a></div>
         <?php else: ?>
+            <?php $soldPriceCorrection = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true); ?>
+            <?php if ($soldPriceCorrection): ?><p>The cost adjustment is recorded on the sale date. The buyer’s sale and receipts remain recorded.</p><?php endif; ?>
             <div class="alert alert-info"><i class="ri-information-line"></i><div><strong>Current purchase amount: <?= formatAmount($car['purchase_price']) ?></strong><span>This does not edit or delete the original purchase. It posts a dated correction against <?= clean($sellerParty['name']) ?>, updates this car's cost and purchase balance, and keeps the full audit history. No Cash or Bank amount is moved by this correction.</span></div></div>
             <form method="POST" data-confirm-submit="Save this purchase amount correction? The original purchase entry will remain in History and the seller balance will be adjusted.">
                 <?= csrfField() ?><input type="hidden" name="action" value="correct_purchase_amount">
                 <div class="form-row-3">
                     <div class="form-group"><label class="form-label" for="purchase_amount">Agreed Purchase Price (₹) *</label><input id="purchase_amount" type="text" name="purchase_amount" class="form-control currency-input" inputmode="decimal" value="<?= clean($purchaseAmountCorrectionDraft['purchase_amount'] ?? ($isPaymentBasedPurchase ? '' : $car['purchase_price'])) ?>" required><div class="form-hint">Include amounts already paid. Once saved, later installments reduce the balance without increasing the price.</div><output id="purchase-price-preview" class="form-hint" aria-live="polite"></output></div>
-                    <div class="form-group"><label class="form-label" for="correction_date">Correction Date *</label><input id="correction_date" type="date" name="correction_date" class="form-control" value="<?= clean($purchaseAmountCorrectionDraft['correction_date'] ?? date('Y-m-d')) ?>" required></div>
+                    <div class="form-group"><label class="form-label" for="correction_date">Correction Date *</label><input id="correction_date" type="date" name="correction_date" class="form-control" value="<?= clean($soldPriceCorrection ? $car['sold_date'] : ($purchaseAmountCorrectionDraft['correction_date'] ?? date('Y-m-d'))) ?>" <?= $soldPriceCorrection ? 'readonly' : '' ?> required></div>
                     <div class="form-group"><label class="form-label">Vehicle Owner / Seller</label><div class="form-control form-control-readonly"><?= clean($sellerParty['name']) ?></div><div class="form-hint">The seller ledger is linked automatically.</div></div>
                 </div>
                 <div class="form-group"><label class="form-label" for="correction_reason">Reason for Correction *</label><textarea id="correction_reason" name="correction_reason" class="form-control" rows="3" minlength="5" maxlength="500" required placeholder="Example: Purchase was entered as ₹11,50,000; confirmed owner deal is ₹11,00,000."><?= clean($purchaseAmountCorrectionDraft['correction_reason'] ?? '') ?></textarea></div>

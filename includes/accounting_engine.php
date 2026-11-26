@@ -4042,7 +4042,11 @@ class AccountingEngine {
         if (!$car) throw new Exception('Car not found.');
         if (($car['ownership_type'] ?? 'OWNED') !== 'OWNED') throw new Exception('Purchase amount correction is available only for bought business cars.');
         $settingAgreedPrice = $this->usesPaymentBasedPurchaseAmount($car);
-        if (($car['status'] ?? '') !== 'IN_STOCK') throw new Exception('Purchase amount can be corrected only while the car is in stock. Reverse the sale first if this car has already been sold.');
+        $sold = in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true);
+        if (!$sold && $car['status'] !== 'IN_STOCK') throw new Exception('Only active cars can have their purchase price corrected.');
+        if ($sold && (empty($car['sold_date']) || $date !== $car['sold_date'])) {
+            throw new Exception('Use the original sale accounting date when correcting the cost of a sold car.');
+        }
         if (empty($car['seller_party_id'])) throw new Exception('This car has no linked vehicle owner / seller. First use Fix Historical Purchase Record so the correction can keep the seller ledger matched.');
 
         $seller = $this->db->fetch(
@@ -4074,19 +4078,45 @@ class AccountingEngine {
         }
 
         $difference = round($correctedAmount - $currentAmount, 2);
+        $costAccountId = $car['account_id'];
+        if ($sold) {
+            $costAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'PNL'", [$this->businessId]);
+            $costAccountId = $costAccount['id'] ?? null;
+        }
         $increase = $difference > 0;
         $adjustmentAmount = abs($difference);
         $lines = $increase ? [
-            ['account_id' => $car['account_id'], 'amount' => $adjustmentAmount, 'type' => 'DR', 'narration' => 'Purchase value increased for ' . $car['registration_no']],
+            ['account_id' => $costAccountId, 'amount' => $adjustmentAmount, 'type' => 'DR', 'narration' => 'Purchase value increased for ' . $car['registration_no']],
             ['account_id' => $seller['account_id'], 'amount' => $adjustmentAmount, 'type' => 'CR', 'narration' => 'Additional amount payable to ' . $seller['name']],
         ] : [
             ['account_id' => $seller['account_id'], 'amount' => $adjustmentAmount, 'type' => 'DR', 'narration' => 'Purchase value reduced; refund / advance receivable from ' . $seller['name']],
-            ['account_id' => $car['account_id'], 'amount' => $adjustmentAmount, 'type' => 'CR', 'narration' => 'Purchase value reduced for ' . $car['registration_no']],
+            ['account_id' => $costAccountId, 'amount' => $adjustmentAmount, 'type' => 'CR', 'narration' => 'Purchase value reduced for ' . $car['registration_no']],
         ];
 
         $ownsTransaction = !$this->db->inTransaction();
         if ($ownsTransaction) $this->db->beginTransaction();
         try {
+            $current = $this->db->fetch("SELECT status, sold_date, purchase_price, seller_party_id, purchase_amount_mode FROM cars WHERE business_id = ? AND id = ? FOR UPDATE",
+                [$this->businessId, $carId]);
+            foreach (['status', 'sold_date', 'purchase_price', 'seller_party_id', 'purchase_amount_mode'] as $field) {
+                if (!$current || $current[$field] !== $car[$field]) throw new Exception('The car changed while you were editing. Reload it and try again.');
+            }
+            $sale = null;
+            if ($sold && $adjustmentAmount > 0) {
+                $sale = $this->db->fetch("SELECT * FROM journal_entries WHERE business_id = ? AND car_id = ?
+                    AND transaction_type = 'CAR_SALE' AND status = 'POSTED' AND is_reversal = 0 AND entry_date = ?
+                    AND COALESCE(entry_type_id, '') <> ? AND narration NOT LIKE 'Close car account %' LIMIT 1",
+                    [$this->businessId, $carId, $date, systemEntryTypeId('INTERNAL_ALLOCATION')]);
+                if (!$sale) throw new Exception('The posted sale could not be verified.');
+                $allocations = $this->db->fetchAll("SELECT * FROM journal_entries WHERE business_id = ? AND car_id = ?
+                    AND transaction_type = 'PROFIT_DISTRIBUTION' AND status = 'POSTED' AND is_reversal = 0 FOR UPDATE",
+                    [$this->businessId, $carId]);
+                foreach ($allocations as $allocation) {
+                    $allocationLines = $this->db->fetchAll("SELECT * FROM journal_lines WHERE journal_entry_id = ?", [$allocation['id']]);
+                    $this->assertEntryCanBeReversed($allocation, $allocationLines);
+                    $this->reverseEntry($allocation['id'], 'Purchase price correction', $date);
+                }
+            }
             $entryId = $adjustmentAmount > 0 ? $this->postJournalEntry(
                 'PURCHASE_AMOUNT_CORRECTION',
                 $date,
@@ -4100,6 +4130,7 @@ class AccountingEngine {
                 ]
             ) : null;
             $this->db->query("UPDATE cars SET purchase_price = ?, purchase_amount_mode = 'FIXED' WHERE id = ? AND business_id = ?", [$correctedAmount, $carId, $this->businessId]);
+            if ($sale) $this->recordPartnerProfitDistribution($carId, round((float) $car['sale_price'] - $correctedAmount, 2), $date);
             Auth::auditUpdate(
                 'car',
                 $carId,
@@ -5241,6 +5272,16 @@ class AccountingEngine {
                             : (floatval($token['refunded_amount'] ?? 0) > 0.009 ? 'PARTIAL' : 'OPEN'),
                         ]), 'Car sale reversed; token restored as available', 'transactions');
                     }
+                    $soldCostAdjustment = $this->getSoldPurchaseCostAdjustment($entry['car_id']);
+                    if (abs($soldCostAdjustment) >= 0.01) {
+                        $carAccount = $this->db->fetch("SELECT account_id FROM cars WHERE id = ? AND business_id = ?", [$entry['car_id'], $this->businessId]);
+                        $costAccount = $this->db->fetch("SELECT id FROM accounts WHERE business_id = ? AND code = 'PNL'", [$this->businessId]);
+                        $reversal = $this->db->fetch("SELECT entry_date FROM journal_entries WHERE id = ? AND business_id = ?", [$reversalId, $this->businessId]);
+                        $this->postJournalEntry('PURCHASE_AMOUNT_CORRECTION', $reversal['entry_date'], 'Restore corrected purchase cost to inventory', [
+                            ['account_id' => $carAccount['account_id'], 'amount' => abs($soldCostAdjustment), 'type' => $soldCostAdjustment > 0 ? 'DR' : 'CR'],
+                            ['account_id' => $costAccount['id'], 'amount' => abs($soldCostAdjustment), 'type' => $soldCostAdjustment > 0 ? 'CR' : 'DR'],
+                        ], ['car_id' => $entry['car_id'], 'entry_type_id' => systemEntryTypeId('INTERNAL_ALLOCATION'), 'entry_amount' => 0]);
+                    }
                     $this->db->query(
                         "UPDATE cars
                          SET status = 'IN_STOCK',
@@ -5790,11 +5831,26 @@ class AccountingEngine {
         }
     }
 
+    private function getSoldPurchaseCostAdjustment($carId): float {
+        $row = $this->db->fetch(
+            "SELECT COALESCE(SUM(CASE WHEN jl.entry_type = 'DR' THEN jl.amount ELSE -jl.amount END), 0) AS amount
+             FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id = je.id
+             JOIN accounts a ON a.id = jl.account_id AND a.business_id = je.business_id
+             WHERE je.business_id = ? AND je.car_id = ? AND je.transaction_type = 'PURCHASE_AMOUNT_CORRECTION'
+               AND je.status = 'POSTED' AND je.is_reversal = 0 AND a.code = 'PNL'",
+            [$this->businessId, $carId]
+        );
+        return (float) $row['amount'];
+    }
+
     public function getCarProfitability($carId) {
         $car = $this->db->fetch("SELECT * FROM cars WHERE id = ? AND business_id = ?", [$carId, $this->businessId]);
         if (!$car) return null;
 
         $totalCost = $this->getCarTotalCost($carId);
+        if (in_array($car['status'], ['SOLD', 'PENDING_PAYMENT'], true)) {
+            $totalCost += $this->getSoldPurchaseCostAdjustment($carId);
+        }
         if (($car['ownership_type'] ?? 'OWNED') !== 'OUTSIDE') {
             $postSaleRepairs = $this->db->fetch(
                 "SELECT COALESCE(SUM(entry_amount), 0) AS total
@@ -6457,7 +6513,9 @@ class AccountingEngine {
                AND a.code = 'PNL'
                AND je.status IN ('POSTED', 'REVERSED')
                AND ((je.transaction_type = 'CAR_SALE' AND je.is_reversal = 0 AND je.narration LIKE 'Close car account %')
-                 OR (je.is_reversal = 1 AND original.transaction_type = 'CAR_SALE' AND original.narration LIKE 'Close car account %'))
+                 OR (je.is_reversal = 1 AND original.transaction_type = 'CAR_SALE' AND original.narration LIKE 'Close car account %')
+                 OR je.transaction_type = 'PURCHASE_AMOUNT_CORRECTION'
+                 OR (je.is_reversal = 1 AND original.transaction_type = 'PURCHASE_AMOUNT_CORRECTION'))
                AND je.entry_date BETWEEN ? AND ?
              GROUP BY a.id",
             [$this->businessId, $fromDate, $toDate]
